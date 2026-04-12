@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   # ---------------------------------------------
@@ -73,6 +72,26 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true # Forces React to detect file changes on Windows hosts
     command: npm run dev
+
+  # For the Jury Demo
+  robin_ui:
+    build: ./backend/services/robin
+    ports:
+      - "8501:8501"
+    command: streamlit run ui.py
+    env_file: .env
+    volumes:
+      - ./backend/services/robin:/app
+
+  # For Lumina's Background Automation
+  robin_api:
+    build: ./backend/services/robin
+    ports:
+      - "5000:5000"
+    command: uvicorn api_bridge:app --host 0.0.0.0 --port 5000 
+    env_file: .env
+    volumes:
+      - ./backend/services/robin:/app
 
 # ---------------------------------------------
 # PERSISTENT STORAGE
