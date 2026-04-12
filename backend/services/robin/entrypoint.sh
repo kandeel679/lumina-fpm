@@ -18,5 +18,11 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Tor is ready."
-echo "Starting Robin: AI-Powered Dark Web OSINT Tool..."
-exec streamlit run ui.py --server.port=8501 --server.address=0.0.0.0
+
+if [ "$#" -gt 0 ]; then
+    echo "Running override command: $@"
+    exec "$@"
+else
+    echo "Starting Robin: AI-Powered Dark Web OSINT Tool..."
+    exec streamlit run ui.py --server.port=8501 --server.address=0.0.0.0
+fi

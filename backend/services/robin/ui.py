@@ -298,7 +298,7 @@ else:
 # Main UI - logo and input
 _, logo_col, _ = st.columns(3)
 with logo_col:
-    st.image(".github/assets/robin_logo.png", width=200)
+    st.image("assets/robin_logo.png", width=200)
 
 # Display text box and button
 with st.form("search_form", clear_on_submit=True):

@@ -21,5 +21,6 @@ COPY . .
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8501
+EXPOSE 5000
 
 ENTRYPOINT ["/app/entrypoint.sh"]
