@@ -1,5 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from models import crud
+from models.models import get_db
+from sqlalchemy import text
+
 app = FastAPI(
     title="LuminaFPM Backend API",
     description="API for the LuminaFPM application",
@@ -14,7 +18,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+SessionLocal = get_db()
 
 
 @app.get("/")
@@ -25,11 +29,16 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
-
-@app.get("/allpolicies")
-def allpolicies():
-    
-    return {"message": "Welcome to the LuminaFPM API!"}
+@app.get("/checkdbconnection")
+def checkdbconnection():
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        return {"message": "Database connection successful"}
+    except Exception as e:
+        return {"message": f"Database connection failed: {e}"}
+    finally:
+        db.close()
     
 # if __name__ == "__main__":
 #     import uvicorn
