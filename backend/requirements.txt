@@ -1,2 +1,5 @@
-fastapi
 uvicorn
+fastapi
+sqlalchemy
+pydantic
+psycopg2-binary
