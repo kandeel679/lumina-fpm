@@ -11,6 +11,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # ---------------------------------------------
   # 2. THE MESSAGE BROKER (Redis for Celery)
@@ -33,10 +38,12 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app # Live-reload: Your local code mirrors into the container
-      # depends_on:
-      #   - db
-      #- redis
-      # The command overrides the Dockerfile to ensure live-reload (--reload) is active
+    depends_on:
+      db:
+        condition: service_healthy
+      # redis:
+      #   condition: service_started
+    # The command overrides the Dockerfile to ensure live-reload (--reload) is active
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     # ---------------------------------------------
     # 4. THE BACKGROUND WORKER (Celery)
@@ -71,7 +78,7 @@ services:
       - api
     environment:
       - CHOKIDAR_USEPOLLING=true # Forces React to detect file changes on Windows hosts
-    command: npm run dev
+    command: npm run dev -- --host
 
 
   # ── ROBIN (Dark-Web OSINT Tool — kept for testing) ──
