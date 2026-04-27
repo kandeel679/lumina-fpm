@@ -3,3 +3,9 @@ fastapi
 sqlalchemy
 pydantic
 psycopg2-binary
+python-dotenv
+requests
+beautifulsoup4
+pysocks
+google-generativeai
+sse-starlette

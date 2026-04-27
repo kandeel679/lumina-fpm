@@ -15,6 +15,23 @@
   --color-text-muted: #4b5563;
 
   --color-border: #1f2937;
+
+  /* Threat Intel severity tokens */
+  --color-severity-critical: #dc2626;
+  --color-severity-critical-bg: rgba(220, 38, 38, 0.1);
+  --color-severity-critical-border: rgba(220, 38, 38, 0.3);
+
+  --color-severity-high: #f97316;
+  --color-severity-high-bg: rgba(249, 115, 22, 0.1);
+  --color-severity-high-border: rgba(249, 115, 22, 0.3);
+
+  --color-severity-medium: #eab308;
+  --color-severity-medium-bg: rgba(234, 179, 8, 0.1);
+  --color-severity-medium-border: rgba(234, 179, 8, 0.3);
+
+  --color-severity-low: #3b82f6;
+  --color-severity-low-bg: rgba(59, 130, 246, 0.1);
+  --color-severity-low-border: rgba(59, 130, 246, 0.3);
 }
 
 @layer base {

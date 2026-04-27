@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr *)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(git fetch *)",
+      "Read(//c/Users/HP/.claude/projects/C--Users-HP-Desktop-graduation-lumina-fpm/memory//**)",
+      "Read(//c/Users/HP/.claude/projects/C--Users-HP-Desktop-graduation-lumina-fpm/memory/**)",
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest services/lumina_threat_intel/tests/ -v)"
+    ]
+  }
+}

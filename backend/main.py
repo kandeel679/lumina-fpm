@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from models import crud
-from models.models import get_db
+from models.models import get_db, Base
 from sqlalchemy import text
+
+# Import threat-intel DB models so they register with Base.metadata
+from services.lumina_threat_intel import db_models as ti_models  # noqa: F401
+from services.lumina_threat_intel.api import router as threat_intel_router
 
 app = FastAPI(
     title="LuminaFPM Backend API",
@@ -19,6 +23,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 SessionLocal = get_db()
+
+# Mount the Threat Intel router
+app.include_router(threat_intel_router)
+
+# Create threat-intel tables on startup (matches existing pattern in crud.py)
+@app.on_event("startup")
+def create_threat_intel_tables():
+    """Auto-create threat-intel tables if they don't exist."""
+    from models.models import get_db as _get_db
+    from sqlalchemy import create_engine
+    from os import getenv
+    engine = create_engine(getenv("DATABASE_URL", ""), echo=False)
+    Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")
