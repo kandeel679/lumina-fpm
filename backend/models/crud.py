@@ -30,6 +30,21 @@ def drop_database(engine):
 # Since there are 10 models, generic CRUD functions save boilerplate 
 # and can operate on any model simply by passing the model class.
 
+def get_all(db: Session, model_class, skip: int = 0, limit: int = 100):
+    """
+    Generic paginated list for any model.
+    Usage: get_all(db, models.Vendor, skip=0, limit=10)
+    """
+    return db.query(model_class).offset(skip).limit(limit).all()
+
+
+def get_by_id(db: Session, model_class, pk_name: str, pk_value: Any):
+    """
+    Generic single-record lookup by primary key.
+    Usage: get_by_id(db, models.Vendor, "vendor_id", 1)
+    """
+    return db.query(model_class).filter(getattr(model_class, pk_name) == pk_value).first()
+
 def insert_data(db: Session, model_class, data: Dict[str, Any]):
     """
     Generic insert for any model.
