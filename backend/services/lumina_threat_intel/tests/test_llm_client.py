@@ -4,9 +4,9 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pydantic import BaseModel
 
-from ..llm_client import _extract_json, call_llm_structured
-from ..exceptions import LLMValidationError, LLMProviderError
-from ..schemas import QueryGenerationOutput, CategoryRefinementOutput
+from services.lumina_threat_intel.llm_client import _extract_json, call_llm_structured
+from services.lumina_threat_intel.exceptions import LLMValidationError, LLMProviderError
+from services.lumina_threat_intel.schemas import QueryGenerationOutput, CategoryRefinementOutput
 
 
 class TestExtractJson:

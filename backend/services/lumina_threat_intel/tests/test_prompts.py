@@ -1,9 +1,9 @@
 """Tests for prompt construction and anti-hallucination validator."""
 import pytest
-from ..prompts.query_generator import QUERY_GENERATOR_PROMPT
-from ..prompts.refiners import build_refiner_prompt, CATEGORY_GUIDANCE_MAP
-from ..prompts.shared import SHARED_PREAMBLE
-from ..orchestrator import _validate_iocs_in_source
+from services.lumina_threat_intel.prompts.query_generator import QUERY_GENERATOR_PROMPT
+from services.lumina_threat_intel.prompts.refiners import build_refiner_prompt, CATEGORY_GUIDANCE_MAP
+from services.lumina_threat_intel.prompts.shared import SHARED_PREAMBLE
+from services.lumina_threat_intel.orchestrator import _validate_iocs_in_source
 
 
 class TestSharedPreamble:

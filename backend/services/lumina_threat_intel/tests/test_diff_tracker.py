@@ -1,7 +1,7 @@
 """Tests for diff_tracker — hash computation and new/seen classification."""
 import pytest
 from unittest.mock import MagicMock, patch
-from ..diff_tracker import compute_finding_hash, mark_new_findings
+from services.lumina_threat_intel.diff_tracker import compute_finding_hash, mark_new_findings
 
 
 def _make_finding(**kwargs):
