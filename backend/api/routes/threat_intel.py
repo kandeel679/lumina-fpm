@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from api.deps import get_db_session
+from fastapi.responses import JSONResponse
+from fastapi import BackgroundTasks
+
+from services.lumina_threat_intel.orchestrator import run_scan
+from services.lumina_threat_intel.db_models import ThreatIntelReport
+from api.deps import get_db_session, SessionLocal
 from models import models, crud
 from schemas.pydantic_schemas import (
     ThreatIntelligenceCreate, ThreatIntelligenceUpdate, ThreatIntelligenceResponse,
@@ -15,6 +20,49 @@ router = APIRouter(prefix="/api/v1/threat-intel", tags=["Threat Intelligence"])
 # =====================================================================
 # THREAT INTELLIGENCE ENDPOINTS
 # =====================================================================
+
+@router.post("/scan", status_code=202)
+def trigger_threat_intel_scan(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_session)
+):
+    # 1. First, create the initial report synchronously so we can return its ID
+    report = ThreatIntelReport(
+        trigger_type="manual",
+        status="running"
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    report_id = report.id
+
+    # 2. Define a wrapper function that creates its OWN database session
+    def run_scan_in_background(r_id: int):
+        # Create a new session specifically for the background thread
+        bg_session = SessionLocal() 
+        try:
+            # Re-fetch the report in this new session
+            bg_report = bg_session.query(ThreatIntelReport).get(r_id)
+            if bg_report:
+                # Execute the long-running Tor scrape and LLM analysis
+                run_scan(bg_session, trigger_type="manual", report=bg_report)
+        finally:
+            # Always close the background session to prevent connection leaks
+            bg_session.close()
+
+    # 3. Queue the task to run without blocking the event loop
+    background_tasks.add_task(run_scan_in_background, report_id)
+
+    # 4. Return immediately to the client
+    return JSONResponse(
+        status_code=202,
+        content={
+            "message": "Scan started in background", 
+            "report_id": report_id,
+            "status": "running"
+        }
+    )
+
 
 @router.get("/", response_model=List[ThreatIntelligenceResponse])
 def list_threat_intel(skip: int = 0, limit: int = 100, db: Session = Depends(get_db_session)):
