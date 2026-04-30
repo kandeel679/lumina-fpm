@@ -83,6 +83,7 @@ class ThreatIntelReport(Base):
         "ThreatIntelFinding",
         back_populates="report",
         cascade="all, delete-orphan",
+        foreign_keys="[ThreatIntelFinding.report_id]",
     )
     raw_scrapes = relationship(
         "ThreatIntelRawScrape",
