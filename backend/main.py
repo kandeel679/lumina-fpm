@@ -1,13 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from models import crud
-from models.models import get_db
 from sqlalchemy import text
+
+from models.models import get_db
+from models import crud, models
+from api.routes import vendors, devices, rules, network_objects, threat_intel
 
 app = FastAPI(
     title="LuminaFPM Backend API",
-    description="API for the LuminaFPM application",
-    version="0.0.1"
+    description="API for the LuminaFPM Firewall Policy Management application",
+    version="0.1.0"
 )
 
 # Configure CORS to allow communication with the frontend
@@ -18,16 +20,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Database session factory
 SessionLocal = get_db()
 
 
+# =====================================================================
+# STARTUP EVENT — Auto-create tables if they don't exist
+# =====================================================================
+@app.on_event("startup")
+def on_startup():
+    db = SessionLocal()
+    try:
+        engine = db.get_bind()
+        crud.create_database(engine)
+    finally:
+        db.close()
+
+
+# =====================================================================
+# CORE ENDPOINTS
+# =====================================================================
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the LuminaFPM API!"}
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
 
 @app.get("/checkdbconnection")
 def checkdbconnection():
@@ -39,8 +61,13 @@ def checkdbconnection():
         return {"message": f"Database connection failed: {e}"}
     finally:
         db.close()
-    
-# if __name__ == "__main__":
-#     import uvicorn
-#     # This allows you to run the file directly during development
-#     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+# =====================================================================
+# REGISTER API ROUTERS
+# =====================================================================
+app.include_router(vendors.router)
+app.include_router(devices.router)
+app.include_router(rules.router)
+app.include_router(network_objects.router)
+app.include_router(threat_intel.router)
