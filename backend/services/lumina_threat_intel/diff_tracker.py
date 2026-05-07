@@ -56,7 +56,10 @@ def mark_new_findings(
                 ThreatIntelFinding.finding_hash,
                 ThreatIntelFinding.report_id,
             )
-            .join(ThreatIntelReport)
+            .join(
+                ThreatIntelReport,
+                ThreatIntelFinding.report_id == ThreatIntelReport.id,
+            )
             .filter(
                 ThreatIntelReport.scan_started_at >= cutoff,
                 ThreatIntelFinding.finding_hash.isnot(None),

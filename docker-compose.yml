@@ -18,7 +18,25 @@ services:
       retries: 10
 
   # ---------------------------------------------
-  # 2. THE MESSAGE BROKER (Redis for Celery)
+  # 2. TOR SOCKS PROXY (for dark-web scraping)
+  # ---------------------------------------------
+  # tor:
+  #   image: dperson/torproxy:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9050:9050"
+  #   environment:
+  #     - TOR_NewCircuitPeriod=30
+  #     - TOR_MaxCircuitDirtiness=600
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "nc -z 127.0.0.1 9050 || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
+
+  # ---------------------------------------------
+  # 3. THE MESSAGE BROKER (Redis for Celery)
   # ---------------------------------------------
   # redis:
   #   image: redis:7-alpine
@@ -27,7 +45,7 @@ services:
   #   restart: unless-stopped
 
   # ---------------------------------------------
-  # 3. THE BACKEND API (FastAPI)
+  # 4. THE BACKEND API (FastAPI)
   # ---------------------------------------------
   api:
     build:
@@ -44,7 +62,8 @@ services:
       # redis:
       #   condition: service_started
     # The command overrides the Dockerfile to ensure live-reload (--reload) is active
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    entrypoint: ["/bin/sh", "-c", "chmod +x ./entrypoint.sh && exec ./entrypoint.sh"]
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     # ---------------------------------------------
     # 4. THE BACKGROUND WORKER (Celery)
     # ---------------------------------------------

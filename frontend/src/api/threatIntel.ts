@@ -13,7 +13,7 @@ import type {
   ThreatCategory,
 } from '../types/threatIntel';
 
-const API_BASE = '/api/threat-intel';
+const API_BASE = '/api/v1/threat-intel';
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

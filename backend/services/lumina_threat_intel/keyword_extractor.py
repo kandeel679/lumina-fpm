@@ -7,7 +7,7 @@ from the existing FirewallDevice, Vendor, and PolicyRule tables.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,13 @@ from models.models import FirewallDevice, Vendor, NetworkObject
 logger = logging.getLogger(__name__)
 
 
-def extract_keywords(db: Session) -> dict[str, list[str]]:
+def extract_keywords(db: Session, device_ids: Optional[list[int]] = None) -> dict[str, list[str]]:
     """Extract a keyword bundle from the Lumina DB.
+
+    Args:
+        db: SQLAlchemy session.
+        device_ids: Optional list of device IDs to scope extraction to.
+                    If None or empty, all devices are included.
 
     Returns:
         {
@@ -36,7 +41,10 @@ def extract_keywords(db: Session) -> dict[str, list[str]]:
 
     try:
         # --- Firmware versions ---
-        devices = db.query(FirewallDevice).all()
+        device_query = db.query(FirewallDevice)
+        if device_ids:
+            device_query = device_query.filter(FirewallDevice.device_id.in_(device_ids))
+        devices = device_query.all()
         firmware_set: set[str] = set()
         vendor_model_set: set[str] = set()
 

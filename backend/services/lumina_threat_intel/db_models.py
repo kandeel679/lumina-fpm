@@ -60,6 +60,9 @@ class ThreatIntelReport(Base):
     queries_generated_count = Column(Integer, nullable=True)
     onion_pages_scraped_count = Column(Integer, nullable=True)
 
+    # Device scope: list[int] of device IDs scanned, or null = all devices
+    scanned_device_ids = Column(JSONB, nullable=True)
+
     # Markdown narrative produced by the final LLM call
     narrative_summary = Column(Text, nullable=True)
 

@@ -1,13 +1,18 @@
 """Unified LLM client for Lumina Threat Intel.
 
-Supports Gemini (default), OpenAI, Anthropic, and Ollama via environment
-variables. Uses structured JSON output mode when available.
+Powered by Robin's proven LangChain-based LLM engine. Supports all providers
+configured in Robin's llm_utils (OpenAI, Anthropic, Google Gemini, Ollama,
+OpenRouter, llama.cpp).
+
+The public interface (call_llm_structured, call_llm_text) is unchanged so
+all existing callers (orchestrator, prompts) work without modification.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import sys
 from typing import Optional, Type
 
 from pydantic import BaseModel, ValidationError
@@ -17,112 +22,55 @@ from .prompts.shared import LLM_RETRY_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
-# Environment config
-LTI_LLM_PROVIDER = os.getenv("LTI_LLM_PROVIDER", "gemini").lower()
-LTI_LLM_MODEL = os.getenv("LTI_LLM_MODEL", "gemini-2.5-flash")
-LTI_LLM_API_KEY = os.getenv("LTI_LLM_API_KEY", "")
-LTI_LLM_TIMEOUT = int(os.getenv("LTI_LLM_TIMEOUT_SECONDS", "120"))
+# ── Robin import path setup ──
+# Robin lives at services/robin — make sure Python can import it.
+_robin_dir = os.path.join(
+    os.path.dirname(__file__), os.pardir, "robin",
+)
+_robin_dir = os.path.normpath(_robin_dir)
+if _robin_dir not in sys.path:
+    sys.path.insert(0, _robin_dir)
+
+# Now import Robin's LLM machinery
+from llm import get_llm as _robin_get_llm          # noqa: E402
+from llm_utils import get_model_choices             # noqa: E402
+
+# ── Configuration ──
+# Use ROBIN_MODEL env var, fall back to the Lumina-specific vars for compat
+ROBIN_MODEL = os.getenv(
+    "ROBIN_MODEL",
+    os.getenv("LTI_LLM_MODEL", "gemini-2.5-flash"),
+)
 LTI_LLM_MAX_RETRIES = int(os.getenv("LTI_LLM_MAX_RETRIES", "3"))
 
-
-def _call_gemini(prompt: str, model: str, api_key: str, timeout: int) -> str:
-    """Call Google Gemini API and return raw text response."""
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        raise LLMProviderError(
-            "google-generativeai is not installed. "
-            "Run: pip install google-generativeai"
-        )
-
-    genai.configure(api_key=api_key)
-    gen_model = genai.GenerativeModel(model)
-    response = gen_model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            temperature=0,
-            response_mime_type="application/json",
-        ),
-        request_options={"timeout": timeout},
-    )
-    return response.text
+# Cache the LLM instance so we don't re-create it on every call
+_llm_instance = None
 
 
-def _call_openai(prompt: str, model: str, api_key: str, timeout: int) -> str:
-    """Call OpenAI-compatible API and return raw text response."""
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise LLMProviderError(
-            "openai is not installed. Run: pip install openai"
-        )
-
-    client = OpenAI(api_key=api_key, timeout=timeout)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        response_format={"type": "json_object"},
-    )
-    return response.choices[0].message.content or ""
-
-
-def _call_anthropic(prompt: str, model: str, api_key: str, timeout: int) -> str:
-    """Call Anthropic API and return raw text response."""
-    try:
-        import anthropic
-    except ImportError:
-        raise LLMProviderError(
-            "anthropic is not installed. Run: pip install anthropic"
-        )
-
-    client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
-    response = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        temperature=0,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text
-
-
-def _call_ollama(prompt: str, model: str, timeout: int) -> str:
-    """Call local Ollama instance and return raw text response."""
-    import requests
-
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-    resp = requests.post(
-        f"{base_url.rstrip('/')}/api/generate",
-        json={
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0},
-        },
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    return resp.json().get("response", "")
+def _get_llm():
+    """Lazy-initialize and cache the Robin LLM instance."""
+    global _llm_instance
+    if _llm_instance is None:
+        logger.info("Initializing Robin LLM with model: %s", ROBIN_MODEL)
+        try:
+            _llm_instance = _robin_get_llm(ROBIN_MODEL)
+        except Exception as e:
+            raise LLMProviderError(
+                f"Failed to initialize Robin LLM (model={ROBIN_MODEL}): {e}"
+            ) from e
+    return _llm_instance
 
 
 def _call_llm_raw(prompt: str) -> str:
-    """Route to the configured LLM provider and return the raw text."""
-    provider = LTI_LLM_PROVIDER
-    model = LTI_LLM_MODEL
-    api_key = LTI_LLM_API_KEY
-    timeout = LTI_LLM_TIMEOUT
-
-    if provider == "gemini":
-        return _call_gemini(prompt, model, api_key, timeout)
-    elif provider == "openai":
-        return _call_openai(prompt, model, api_key, timeout)
-    elif provider == "anthropic":
-        return _call_anthropic(prompt, model, api_key, timeout)
-    elif provider == "ollama":
-        return _call_ollama(prompt, model, timeout)
-    else:
-        raise LLMProviderError(f"Unknown LLM provider: {provider}")
+    """Invoke the Robin LLM and return the raw text response."""
+    try:
+        llm = _get_llm()
+        response = llm.invoke(prompt)
+        # LangChain response can be an AIMessage object or string
+        text = getattr(response, "content", str(response))
+        return text or ""
+    except Exception as e:
+        raise LLMProviderError(f"Robin LLM call failed: {e}") from e
 
 
 def _extract_json(text: str) -> str:
@@ -183,6 +131,9 @@ def call_llm_structured(
             retry_note = LLM_RETRY_INSTRUCTION.format(error=last_error[:500])
             current_prompt = prompt + "\n\n" + retry_note
 
+        except LLMProviderError:
+            raise
+
         except Exception as e:
             logger.error("LLM provider error: %s", str(e))
             raise LLMProviderError(str(e)) from e
@@ -199,6 +150,13 @@ def call_llm_text(prompt: str) -> str:
     """
     try:
         return _call_llm_raw(prompt)
+    except LLMProviderError:
+        raise
     except Exception as e:
         logger.error("LLM text call failed: %s", str(e))
         raise LLMProviderError(str(e)) from e
+
+
+def get_robin_model_name() -> str:
+    """Return the configured Robin model name for report metadata."""
+    return ROBIN_MODEL

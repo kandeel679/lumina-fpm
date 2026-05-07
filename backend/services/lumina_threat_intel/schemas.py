@@ -127,6 +127,10 @@ class ScanRequest(BaseModel):
     categories: list[ThreatCategory] = Field(
         default_factory=lambda: list(ThreatCategory)
     )
+    device_ids: Optional[list[int]] = Field(
+        default=None,
+        description="Device IDs to scan. null or empty = all devices.",
+    )
     force_refresh_keywords: bool = False
 
 
@@ -134,6 +138,8 @@ class ScanCreatedResponse(BaseModel):
     """Immediate response after triggering a scan."""
     report_id: int
     status: ScanStatus = ScanStatus.RUNNING
+    device_ids: Optional[list[int]] = None
+    device_count: int = 0
 
 
 class IOCResponse(BaseModel):
@@ -196,6 +202,7 @@ class ReportSummaryResponse(BaseModel):
     narrative_summary: Optional[str]
     stats: Optional[ReportStatsResponse]
     llm_model_name: Optional[str]
+    scanned_device_ids: Optional[list[int]] = None
     archived: bool
     created_at: Optional[datetime]
 

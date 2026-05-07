@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models.models import get_db
+from models.models import get_db, FirewallDevice, Vendor
 
 from .db_models import (
     ThreatIntelFinding,
@@ -40,7 +40,7 @@ from .stream import format_sse_message, sse_publisher
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/threat-intel", tags=["Threat Intel"])
+router = APIRouter(prefix="/api/v1/threat-intel", tags=["Threat Intel"])
 
 # DB session dependency
 SessionLocal = get_db()
@@ -101,12 +101,33 @@ def trigger_scan(
             detail="A scan is already running. Wait for it to complete.",
         )
 
+    # Normalize and validate device_ids
+    device_ids = request.device_ids
+    if device_ids is not None and len(device_ids) == 0:
+        device_ids = None
+
+    if device_ids:
+        # Verify all requested device IDs exist
+        existing_ids = {
+            row[0]
+            for row in db.query(FirewallDevice.device_id)
+            .filter(FirewallDevice.device_id.in_(device_ids))
+            .all()
+        }
+        missing = set(device_ids) - existing_ids
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Device(s) not found: {sorted(missing)}",
+            )
+
     # Create report synchronously so we can return its ID immediately
     report = ThreatIntelReport(
         trigger_type=request.trigger_type.value,
         triggered_by_admin_id=None,
         status="running",
         scan_started_at=datetime.utcnow(),
+        scanned_device_ids=device_ids,
     )
     db.add(report)
     db.commit()
@@ -123,6 +144,7 @@ def trigger_scan(
                     session,
                     trigger_type=request.trigger_type.value,
                     requested_categories=categories,
+                    device_ids=device_ids,
                     report=rpt,
                 )
         except Exception as e:
@@ -132,7 +154,18 @@ def trigger_scan(
 
     background_tasks.add_task(_run_pipeline)
 
-    return ScanCreatedResponse(report_id=report.id, status=ScanStatus.RUNNING)
+    # Count devices in scope
+    if device_ids:
+        device_count = len(device_ids)
+    else:
+        device_count = db.query(func.count(FirewallDevice.device_id)).scalar() or 0
+
+    return ScanCreatedResponse(
+        report_id=report.id,
+        status=ScanStatus.RUNNING,
+        device_ids=device_ids,
+        device_count=device_count,
+    )
 
 
 @router.get("/scans", response_model=PaginatedResponse)
@@ -176,6 +209,7 @@ def list_reports(
             narrative_summary=r.narrative_summary,
             stats=r.stats,
             llm_model_name=r.llm_model_name,
+            scanned_device_ids=r.scanned_device_ids,
             archived=r.archived,
             created_at=r.created_at,
         ))
@@ -248,6 +282,7 @@ def get_report_detail(report_id: int, db: Session = Depends(get_session)):
         narrative_summary=report.narrative_summary,
         stats=report.stats,
         llm_model_name=report.llm_model_name,
+        scanned_device_ids=report.scanned_device_ids,
         archived=report.archived,
         created_at=report.created_at,
         findings=finding_responses,
@@ -298,6 +333,39 @@ async def stream_scan_progress(report_id: int, db: Session = Depends(get_session
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/devices")
+def list_scannable_devices(db: Session = Depends(get_session)):
+    """List all firewall devices available for scanning.
+
+    Returns a lightweight list for the frontend multi-select UI.
+    """
+    devices = (
+        db.query(FirewallDevice)
+        .order_by(FirewallDevice.hostname)
+        .all()
+    )
+
+    items = []
+    for d in devices:
+        vendor_name = None
+        if d.vendor:
+            vendor_name = d.vendor.name
+        else:
+            vendor = db.query(Vendor).filter(Vendor.vendor_id == d.vendor_id).first()
+            vendor_name = vendor.name if vendor else None
+
+        items.append({
+            "device_id": d.device_id,
+            "hostname": d.hostname,
+            "vendor_name": vendor_name,
+            "management_ip": d.management_ip,
+            "firmware_version": d.firmware_version,
+            "status": d.status,
+        })
+
+    return {"devices": items, "total": len(items)}
 
 
 @router.get("/findings")

@@ -174,7 +174,7 @@ export async function enrichWithAnomalies(policies, devices) {
 
 // ─── THREAT INTELLIGENCE ─────────────────────────────────────────
 export async function fetchThreats(devices) {
-  const raw = await get('/threat-intel/');
+  const raw = await get('/threat-intel/scans');
   const deviceMap = {};
   devices.forEach(d => { deviceMap[d.deviceId] = d; });
 

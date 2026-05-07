@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 def correlate_findings(
     db: Session,
     findings: list[dict[str, Any]],
+    device_ids: Optional[list[int]] = None,
 ) -> list[dict[str, Any]]:
     """Correlate findings against firewall inventory.
 
@@ -33,6 +34,9 @@ def correlate_findings(
     - NetworkObject values (IPs, domains)
     - FirewallDevice firmware_version or management_ip
     - CVEs mentioned in device context
+
+    Args:
+        device_ids: If provided, only correlate against these devices and their rules.
 
     Mutates and returns the findings list with correlation fields populated.
     """
@@ -42,7 +46,13 @@ def correlate_findings(
     # Pre-load correlation data from DB
     try:
         all_net_objects = db.query(NetworkObject).all()
-        all_devices = db.query(FirewallDevice).all()
+        device_query = db.query(FirewallDevice)
+        if device_ids:
+            device_query = device_query.filter(FirewallDevice.device_id.in_(device_ids))
+        all_devices = device_query.all()
+
+        scoped_device_id_set = {d.device_id for d in all_devices} if device_ids else None
+
         all_mappings = db.query(RuleObjectMapping).all()
     except Exception as e:
         logger.error("Failed to load correlation data: %s", str(e))
@@ -60,9 +70,14 @@ def correlate_findings(
                 "type": obj.type,
             })
 
-    # object_id -> list of rule_ids
+    # object_id -> list of rule_ids (scoped to target devices if applicable)
     obj_to_rules: dict[int, list[int]] = {}
     for mapping in all_mappings:
+        # If scoping to specific devices, we need to check if the rule belongs to a scoped device
+        if scoped_device_id_set is not None:
+            rule = db.query(PolicyRule).filter(PolicyRule.rule_id == mapping.rule_id).first()
+            if rule and rule.device_id not in scoped_device_id_set:
+                continue
         obj_to_rules.setdefault(mapping.object_id, []).append(mapping.rule_id)
 
     # device management IPs and firmware versions
