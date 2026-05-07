@@ -53,7 +53,6 @@ class FirewallDevice(Base):
     vendor = relationship("Vendor", back_populates="devices")
     assignments = relationship("AdminDeviceAssignment", back_populates="device", cascade="all, delete-orphan")
     rules = relationship("PolicyRule", back_populates="device", cascade="all, delete-orphan")
-    threats = relationship("ThreatIntelligence", back_populates="device", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<FirewallDevice(device_id={self.device_id}, hostname='{self.hostname}')>"
@@ -119,7 +118,6 @@ class PolicyRule(Base):
     device = relationship("FirewallDevice", back_populates="rules")
     object_mappings = relationship("RuleObjectMapping", back_populates="rule", cascade="all, delete-orphan")
     anomalies = relationship("RuleAnomaly", back_populates="rule", cascade="all, delete-orphan")
-    threat_correlations = relationship("ThreatCorrelation", back_populates="rule", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_rule_vendor_uuid", "device_id", "vdom_vsys", "vendor_uuid",
@@ -165,41 +163,4 @@ class RuleAnomaly(Base):
     def __repr__(self):
         return f"<RuleAnomaly(anomaly_id={self.anomaly_id}, anomaly_type='{self.anomaly_type}')>"
 
-class ThreatIntelligence(Base):
-    __tablename__ = "threat_intelligence"
 
-    threat_id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, ForeignKey("firewall_device.device_id"), nullable=False)
-    target_version = Column(String(50), nullable=True)
-    intelligence_summary = Column(Text, nullable=True)
-    risk_score = Column(Float, nullable=True)
-    source_url = Column(String(500), nullable=True)
-
-    device = relationship("FirewallDevice", back_populates="threats")
-    correlations = relationship("ThreatCorrelation", back_populates="threat", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index("idx_threat_device_version", "device_id", "target_version"),
-    )
-
-    def __repr__(self):
-        return f"<ThreatIntelligence(threat_id={self.threat_id}, target_version='{self.target_version}')>"
-
-class ThreatCorrelation(Base):
-    __tablename__ = "threat_correlation"
-
-    rule_id = Column(Integer, ForeignKey("policy_rule.rule_id"), primary_key=True)
-    threat_id = Column(Integer, ForeignKey("threat_intelligence.threat_id"), primary_key=True)
-    match_strength = Column(Float, nullable=True)
-    confidence_level = Column(Float, nullable=True)
-    correlation_date = Column(DateTime, default=datetime.utcnow)
-
-    rule = relationship("PolicyRule", back_populates="threat_correlations")
-    threat = relationship("ThreatIntelligence", back_populates="correlations")
-
-    __table_args__ = (
-        Index("idx_tc_threat", "threat_id"),
-    )
-
-    def __repr__(self):
-        return f"<ThreatCorrelation(rule_id={self.rule_id}, threat_id={self.threat_id})>"

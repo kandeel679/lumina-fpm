@@ -10,7 +10,7 @@ from services.lumina_threat_intel.api import router as threat_intel_router
 
 from models.models import get_db
 from models import crud, models
-from api.routes import vendors, devices, rules, network_objects, threat_intel
+from api.routes import vendors, devices, rules, network_objects
 
 app = FastAPI(
     title="LuminaFPM Backend API",
@@ -89,4 +89,3 @@ app.include_router(vendors.router)
 app.include_router(devices.router)
 app.include_router(rules.router)
 app.include_router(network_objects.router)
-app.include_router(threat_intel.router)

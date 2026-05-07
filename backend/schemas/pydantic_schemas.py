@@ -211,45 +211,4 @@ class RuleAnomalyResponse(RuleAnomalyBase):
     detected_at: Optional[datetime] = None
 
 
-# =====================================================================
-# THREAT INTELLIGENCE SCHEMAS
-# =====================================================================
 
-class ThreatIntelligenceBase(BaseModel):
-    device_id: int
-    target_version: Optional[str] = None
-    intelligence_summary: Optional[str] = None
-    risk_score: Optional[float] = None
-    source_url: Optional[str] = None
-
-class ThreatIntelligenceCreate(ThreatIntelligenceBase):
-    pass
-
-class ThreatIntelligenceUpdate(BaseModel):
-    device_id: Optional[int] = None
-    target_version: Optional[str] = None
-    intelligence_summary: Optional[str] = None
-    risk_score: Optional[float] = None
-    source_url: Optional[str] = None
-
-class ThreatIntelligenceResponse(ThreatIntelligenceBase):
-    model_config = ConfigDict(from_attributes=True)
-    threat_id: int
-
-
-# =====================================================================
-# THREAT CORRELATION SCHEMAS
-# =====================================================================
-
-class ThreatCorrelationBase(BaseModel):
-    rule_id: int
-    threat_id: int
-    match_strength: Optional[float] = None
-    confidence_level: Optional[float] = None
-
-class ThreatCorrelationCreate(ThreatCorrelationBase):
-    pass
-
-class ThreatCorrelationResponse(ThreatCorrelationBase):
-    model_config = ConfigDict(from_attributes=True)
-    correlation_date: Optional[datetime] = None
