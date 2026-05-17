@@ -174,27 +174,32 @@ export async function enrichWithAnomalies(policies, devices) {
 
 // ─── THREAT INTELLIGENCE ─────────────────────────────────────────
 export async function fetchThreats(devices) {
-  const raw = await get('/threat-intel/scans');
+  const res = await get('/threat-intel/findings?page_size=100');
+  const raw = res.items || [];
   const deviceMap = {};
   devices.forEach(d => { deviceMap[d.deviceId] = d; });
 
   return raw.map(t => {
-    const dev = deviceMap[t.device_id] || {};
-    const summary = t.intelligence_summary || '';
+    // Determine the matched device for fallback
+    const matchedDevId = (t.matched_device_ids && t.matched_device_ids.length > 0) ? t.matched_device_ids[0] : null;
+    const dev = deviceMap[matchedDevId] || {};
+    const summary = t.description || '';
 
-    // Try to extract CVE ID from summary
-    const cveMatch = summary.match(/CVE-\d{4}-\d+/);
-    const cveId = cveMatch ? cveMatch[0] : `THREAT-${t.threat_id}`;
+    // Try to extract CVE ID from summary or title
+    const cveMatch = summary.match(/CVE-\d{4}-\d+/) || (t.title && t.title.match(/CVE-\d{4}-\d+/));
+    const cveId = cveMatch ? cveMatch[0] : `THREAT-${t.id}`;
 
-    // Extract title (text before the first period)
-    const titleMatch = summary.match(/^(?:CVE-\d{4}-\d+:\s*)?(.+?)\./) ;
-    const title = titleMatch ? titleMatch[1].trim() : summary.slice(0, 80);
+    const title = t.title || summary.slice(0, 80);
 
-    const risk = t.risk_score || 0;
-    const severity = severityFromRisk(risk);
+    const severity = t.severity ? t.severity.charAt(0).toUpperCase() + t.severity.slice(1) : 'Medium';
 
-    // Determine exploit status from summary keywords
+    // Determine risk score from severity
+    const riskScores = { Critical: 95, High: 80, Medium: 55, Low: 25 };
+    const risk = riskScores[severity] || 50;
+
+    // Determine exploit status from summary keywords or category
     let exploitStatus = 'No Known Exploit';
+    if (t.category === 'exploit') exploitStatus = 'Active Exploitation';
     const lowerSummary = summary.toLowerCase();
     if (lowerSummary.includes('actively exploited') || lowerSummary.includes('active exploitation'))
       exploitStatus = 'Active Exploitation';
@@ -203,18 +208,18 @@ export async function fetchThreats(devices) {
 
     return {
       id: cveId,
-      threatId: t.threat_id,
+      threatId: t.id,
       severity,
       cvss: risk,
       title,
       description: summary,
-      affectedFirmware: [t.target_version].filter(Boolean),
+      affectedFirmware: [],
       vendors: [dev.vendor].filter(Boolean),
-      affectedFirewalls: [dev.name].filter(Boolean),
-      publishedDate: new Date().toISOString().split('T')[0],
+      affectedFirewalls: (t.matched_device_ids || []).map(id => deviceMap[id]?.name).filter(Boolean),
+      publishedDate: t.created_at ? t.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
       patchedIn: 'See vendor advisory',
       exploitStatus,
-      references: t.source_url ? [t.source_url] : [],
+      references: t.source_onion_url ? [t.source_onion_url] : [],
     };
   });
 }
