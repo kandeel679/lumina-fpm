@@ -4,6 +4,7 @@ from typing import List
 
 from api.deps import get_db_session
 from models import models, crud
+from tasks.anomaly import run_anomaly_analysis_task
 from schemas.pydantic_schemas import (
     PolicyRuleCreate, PolicyRuleUpdate, PolicyRuleResponse,
     RuleObjectMappingCreate, RuleObjectMappingResponse,
@@ -125,3 +126,17 @@ def delete_rule_anomaly(rule_id: int, anomaly_id: int, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Anomaly not found for this rule")
     crud.delete_data(db, models.RuleAnomaly, "anomaly_id", anomaly_id)
     return None
+
+
+# =====================================================================
+# DEVICE ANALYSIS (Trigger Background Task)
+# =====================================================================
+
+@router.post("/device/{device_id}/analyze", tags=["Rule Anomalies"])
+def analyze_device_rules(device_id: int, db: Session = Depends(get_db_session)):
+    device = crud.get_by_id(db, models.FirewallDevice, "device_id", device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+        
+    task = run_anomaly_analysis_task.delay(device_id)
+    return {"status": "accepted", "task_id": task.id, "message": "Anomaly analysis started in background"}

@@ -4,6 +4,7 @@ from typing import List
 
 from api.deps import get_db_session
 from models import models, crud
+from services.connectors.mock_connector import MockFirewallConnector
 from schemas.pydantic_schemas import (
     DeviceCreate, DeviceUpdate, DeviceResponse,
     AdminDeviceAssignmentCreate, AdminDeviceAssignmentResponse,
@@ -49,6 +50,24 @@ def delete_device(device_id: int, db: Session = Depends(get_db_session)):
     if not deleted:
         raise HTTPException(status_code=404, detail="Device not found")
     return None
+
+
+@router.post("/{device_id}/sync", tags=["Firewall Devices"])
+def sync_device_rules(device_id: int, db: Session = Depends(get_db_session)):
+    device = crud.get_by_id(db, models.FirewallDevice, "device_id", device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+        
+    connector = MockFirewallConnector()
+    rules_data = connector.fetch_normalized_rules(device_id=device_id)
+    
+    # Save rules
+    inserted_rules = []
+    for rule_data in rules_data:
+        inserted = crud.insert_data(db, models.PolicyRule, rule_data)
+        inserted_rules.append(inserted)
+        
+    return {"status": "success", "message": f"Synced {len(inserted_rules)} rules"}
 
 
 # =====================================================================

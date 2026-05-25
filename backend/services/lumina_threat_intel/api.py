@@ -5,12 +5,15 @@ All endpoints are mounted under /api/threat-intel by main.py.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+import redis
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -23,7 +26,6 @@ from .db_models import (
     ThreatIntelRawScrape,
     ThreatIntelReport,
 )
-from .orchestrator import run_scan
 from .schemas import (
     DashboardStatsResponse,
     FindingResponse,
@@ -36,9 +38,11 @@ from .schemas import (
     ScanRequest,
     ScanStatus,
 )
-from .stream import format_sse_message, sse_publisher
+from .stream import format_sse_message
 
 logger = logging.getLogger(__name__)
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 router = APIRouter(prefix="/api/v1/threat-intel", tags=["Threat Intel"])
 
@@ -84,10 +88,13 @@ def _check_rate_limit(admin_id: Optional[int]) -> None:
 @router.post("/scans", response_model=ScanCreatedResponse)
 def trigger_scan(
     request: ScanRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_session),
 ):
-    """Trigger a manual threat-intel scan. Runs in background."""
+    """Trigger a manual threat-intel scan.
+
+    The scan is dispatched to a Celery worker via ``.delay()``.
+    Progress is tracked through a Redis key polled by the SSE endpoint.
+    """
     _check_rate_limit(None)
 
     running = (
@@ -135,24 +142,15 @@ def trigger_scan(
 
     categories = [c.value for c in request.categories]
 
-    def _run_pipeline():
-        session = SessionLocal()
-        try:
-            rpt = session.query(ThreatIntelReport).get(report.id)
-            if rpt:
-                run_scan(
-                    session,
-                    trigger_type=request.trigger_type.value,
-                    requested_categories=categories,
-                    device_ids=device_ids,
-                    report=rpt,
-                )
-        except Exception as e:
-            logger.exception("Background scan failed: %s", str(e))
-        finally:
-            session.close()
+    # Dispatch to Celery worker
+    from tasks.threat_intel import run_scan_task
 
-    background_tasks.add_task(_run_pipeline)
+    run_scan_task.delay(
+        report_id=report.id,
+        trigger_type=request.trigger_type.value,
+        categories=categories,
+        device_ids=device_ids,
+    )
 
     # Count devices in scope
     if device_ids:
@@ -303,26 +301,63 @@ def archive_report(report_id: int, db: Session = Depends(get_session)):
 
 @router.get("/scans/{report_id}/stream")
 async def stream_scan_progress(report_id: int, db: Session = Depends(get_session)):
-    """SSE stream of pipeline events for a running scan."""
+    """SSE stream of pipeline events for a running scan.
+
+    Reads progress from a Redis key written by the Celery worker.
+    This works cross-container since both API and worker share the
+    same Redis instance.
+    """
     report = db.query(ThreatIntelReport).filter(ThreatIntelReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    queue = sse_publisher.subscribe(report_id)
-
     async def event_generator():
+        r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        key = f"scan_progress:{report_id}"
+        last_phase = None
         try:
             while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield format_sse_message(event)
+                raw = r.get(key)
+                if raw:
+                    progress = json.loads(raw)
+                    current_phase = progress.get("phase", "")
 
-                    if event.get("event") in ("done", "failed"):
+                    # Only emit if phase changed (avoid duplicate events)
+                    if current_phase != last_phase:
+                        last_phase = current_phase
+                        event = {
+                            "event": progress.get("status", "progress"),
+                            "data": progress,
+                        }
+                        yield format_sse_message(event)
+
+                    # Terminal states
+                    status = progress.get("status", "")
+                    if status in ("SUCCESS", "FAILED"):
                         break
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
+                else:
+                    # No progress yet — check if report already finished
+                    db_session = SessionLocal()
+                    try:
+                        rpt = db_session.query(ThreatIntelReport).filter(
+                            ThreatIntelReport.id == report_id
+                        ).first()
+                        if rpt and rpt.status in ("completed", "failed", "partial"):
+                            yield format_sse_message({
+                                "event": "done",
+                                "data": {"status": rpt.status, "report_id": report_id},
+                            })
+                            break
+                    finally:
+                        db_session.close()
+
+                # Poll interval
+                await asyncio.sleep(1)
+
+                # Keepalive
+                yield ": keepalive\n\n"
         finally:
-            sse_publisher.unsubscribe(report_id, queue)
+            r.close()
 
     return StreamingResponse(
         event_generator(),

@@ -335,6 +335,20 @@ def run_scan(
         else:
             # ── Step 3: Search dark web via Robin's Tor engine ──
             logger.info("Step 3: Searching %d queries across dark web via Robin", len(queries))
+            
+            # Check Tor proxy connection first to fail fast
+            import socket
+            proxy_host = os.environ.get("LTI_TOR_SOCKS_HOST", "127.0.0.1")
+            proxy_port = int(os.environ.get("LTI_TOR_SOCKS_PORT", 9050))
+            try:
+                with socket.create_connection((proxy_host, proxy_port), timeout=5):
+                    pass
+            except OSError as e:
+                error_msg = f"Failed to connect to Tor proxy at {proxy_host}:{proxy_port}: {e}"
+                logger.error(error_msg)
+                _log_error(report, "search_dark_web", error_msg)
+                raise Exception(error_msg)
+
             search_results = search_dark_web(queries, max_workers=5)
             logger.info("Search returned %d results", len(search_results))
 

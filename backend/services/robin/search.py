@@ -56,9 +56,12 @@ def get_tor_session():
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
+    proxy_host = os.environ.get("LTI_TOR_SOCKS_HOST", "127.0.0.1")
+    proxy_port = os.environ.get("LTI_TOR_SOCKS_PORT", "9050")
+    proxy_url = f"socks5h://{proxy_host}:{proxy_port}"
     session.proxies = {
-        "http": "socks5h://127.0.0.1:9050",
-        "https": "socks5h://127.0.0.1:9050"
+        "http": proxy_url,
+        "https": proxy_url
     }
     return session
 

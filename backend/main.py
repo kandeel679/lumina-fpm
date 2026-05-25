@@ -8,6 +8,9 @@ from sqlalchemy import text
 from services.lumina_threat_intel import db_models as ti_models  # noqa: F401
 from services.lumina_threat_intel.api import router as threat_intel_router
 
+# Ensure Celery app is initialized (needed for .delay() calls from API)
+import celery_app as _celery_app  # noqa: F401
+
 from models.models import get_db
 from models import crud, models
 from api.routes import vendors, devices, rules, network_objects
