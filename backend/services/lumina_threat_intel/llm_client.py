@@ -62,15 +62,18 @@ def _get_llm():
 
 
 def _call_llm_raw(prompt: str) -> str:
-    """Invoke the Robin LLM and return the raw text response."""
+    """Invoke the LTI Model Router and return the raw text response.
+
+    The router (model_router.py) handles multi-provider creation with relaxed
+    Gemini safety settings (so dark-web content isn't blocked) and ordered
+    fallback across the configured model chain (OpenCode Zen open models, etc.).
+    """
     try:
-        llm = _get_llm()
-        response = llm.invoke(prompt)
-        # LangChain response can be an AIMessage object or string
-        text = getattr(response, "content", str(response))
+        from .model_router import invoke_with_fallback
+        text, _model_used = invoke_with_fallback(prompt)
         return text or ""
     except Exception as e:
-        raise LLMProviderError(f"Robin LLM call failed: {e}") from e
+        raise LLMProviderError(f"LLM call failed: {e}") from e
 
 
 def _extract_json(text: str) -> str:
