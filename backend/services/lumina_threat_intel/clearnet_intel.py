@@ -10,7 +10,9 @@ flow through correlation / diff / persistence unchanged.
 """
 from __future__ import annotations
 
+import datetime
 import logging
+import os
 from typing import Any, Optional
 
 import requests
@@ -20,6 +22,10 @@ from models.models import FirewallDevice
 from .sources import CLEARNET_FEEDS
 
 logger = logging.getLogger(__name__)
+
+NVD_LOOKBACK_DAYS = int(os.getenv("LTI_NVD_LOOKBACK_DAYS", "120"))  # NVD window max 120
+# Customer vendor (lowercased substring) -> NVD url key in sources.CLEARNET_FEEDS
+_NVD_VENDOR_KEY = {"fortinet": "fortios", "palo alto": "pan_os", "cisco": "cisco_asa"}
 
 # Customer vendor name (lowercased substring) -> FIREWALL-PRODUCT match tokens.
 # Deliberately product-specific (not bare vendor names) so we don't pull
@@ -110,18 +116,127 @@ def fetch_kev_findings(
     return findings
 
 
+def _customer_nvd_keys(db: Session, device_ids: Optional[list[int]]) -> set[str]:
+    q = db.query(FirewallDevice)
+    if device_ids:
+        q = q.filter(FirewallDevice.device_id.in_(device_ids))
+    keys: set[str] = set()
+    for d in q.all():
+        vname = ((d.vendor.name if d.vendor else "") or "").strip().lower()
+        for token, urlkey in _NVD_VENDOR_KEY.items():
+            if token in vname:
+                keys.add(urlkey)
+    return keys
+
+
+def _cvss_to_criticality(score: Optional[float], severity: Optional[str]) -> str:
+    if severity and severity.lower() in ("critical", "high", "medium", "low"):
+        return severity.lower()
+    if score is None:
+        return "info"
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    if score > 0:
+        return "low"
+    return "info"
+
+
+def fetch_nvd_findings(
+    db: Session,
+    device_ids: Optional[list[int]] = None,
+    timeout: int = 25,
+    per_vendor_cap: int = 15,
+) -> list[dict[str, Any]]:
+    """Recent NVD CVEs per customer firewall product (CVSS-scored), last N days."""
+    keys = _customer_nvd_keys(db, device_ids)
+    if not keys:
+        return []
+    end = datetime.datetime.utcnow()
+    start = end - datetime.timedelta(days=NVD_LOOKBACK_DAYS)
+    fmt = "%Y-%m-%dT%H:%M:%S.000"
+    out: list[dict[str, Any]] = []
+    for urlkey in keys:
+        base = CLEARNET_FEEDS["nvd"]["urls"].get(urlkey)
+        if not base:
+            continue
+        url = (f"{base}&pubStartDate={start.strftime(fmt)}"
+               f"&pubEndDate={end.strftime(fmt)}&resultsPerPage={per_vendor_cap}")
+        try:
+            r = requests.get(url, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            logger.warning("NVD fetch failed for %s: %s", urlkey, str(e)[:120])
+            continue
+        for item in data.get("vulnerabilities", [])[:per_vendor_cap]:
+            cve = item.get("cve", {})
+            cid = cve.get("id", "")
+            desc = next((d.get("value", "") for d in cve.get("descriptions", [])
+                         if d.get("lang") == "en"), "")
+            score = sev = None
+            metrics = cve.get("metrics", {})
+            for mk in ("cvssMetricV31", "cvssMetricV40", "cvssMetricV30", "cvssMetricV2"):
+                if metrics.get(mk):
+                    cd = metrics[mk][0].get("cvssData", {})
+                    score = cd.get("baseScore")
+                    sev = cd.get("baseSeverity")
+                    break
+            crit = _cvss_to_criticality(score, sev)
+            out.append({
+                "category": "exploit",
+                "criticality": crit,
+                "severity": "low" if crit == "info" else crit,
+                "relevance_score": 50,
+                "relevance_band": "medium",
+                "relevance_reason": f"NVD CVE for {urlkey.replace('_', '-')} (customer product)",
+                "confidence": 90,
+                "title": f"{cid}: {desc[:120]}".strip()[:512],
+                "description": desc[:1000],
+                "iocs": [{"type": "cve", "value": cid}] if cid else [],
+                "source": {
+                    "onion_url": None, "search_engine": None, "scraped_at": None,
+                    "raw_excerpt": desc[:500], "page_title": "NVD",
+                    "marketplace_or_forum": "NVD (NIST)",
+                },
+                "recommended_actions": ["Review vendor advisory and patch affected versions"],
+                "tags": ["nvd", "cve"],
+            })
+    logger.info("NVD: %d recent CVE findings for customer products", len(out))
+    return out
+
+
 def fetch_clearnet_findings(
     db: Session,
     device_ids: Optional[list[int]] = None,
 ) -> list[dict[str, Any]]:
-    """All clearnet connectors, merged. v1 = CISA KEV.
+    """All clearnet connectors, merged + de-duplicated by CVE.
 
-    Extensible: add NVD (per-vendor CPE) and vendor PSIRT feeds here — see
-    sources.CLEARNET_FEEDS for the validated endpoints.
+    KEV (actively-exploited) takes priority; NVD adds recent CVSS-scored CVEs not
+    already in KEV. Extensible to vendor PSIRT (see sources.CLEARNET_FEEDS).
     """
     findings: list[dict[str, Any]] = []
+    seen_cves: set[str] = set()
+
+    def _add(items: list[dict[str, Any]]) -> None:
+        for f in items:
+            cves = [i.get("value", "").upper() for i in f.get("iocs", []) if i.get("type") == "cve"]
+            primary = cves[0] if cves else None
+            if primary and primary in seen_cves:
+                continue
+            if primary:
+                seen_cves.add(primary)
+            findings.append(f)
+
     try:
-        findings.extend(fetch_kev_findings(db, device_ids))
+        _add(fetch_kev_findings(db, device_ids))
     except Exception as e:
         logger.error("KEV connector failed: %s", str(e)[:150])
+    try:
+        _add(fetch_nvd_findings(db, device_ids))
+    except Exception as e:
+        logger.error("NVD connector failed: %s", str(e)[:150])
     return findings
