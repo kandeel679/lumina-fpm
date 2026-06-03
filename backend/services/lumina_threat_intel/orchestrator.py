@@ -565,9 +565,15 @@ def run_scan(
             # so the model reasons relevance natively instead of returning
             # generic dark-web OSINT. Corpus is token-budgeted to fit one call.
             logger.info("Step 6+7: Consolidated Findings extraction (1 LLM call)")
-            # Clean-input only: send a moderation-safe digest (metadata +
-            # defanged indicators), NEVER raw dark-web page text (gateways block it).
-            corpus = _build_clean_digest(scrape_data, max_items=25)
+            # Corpus mode (env LTI_CORPUS_MODE):
+            #   "digest"   = moderation-safe metadata + defanged IOCs (default;
+            #                for restrictive gateways like Gemini/AgentRouter)
+            #   "excerpts" = Robin-style truncated REAL page text (for permissive
+            #                APIs like DeepSeek/Ollama) -> richer, dedicated reports
+            if os.getenv("LTI_CORPUS_MODE", "digest").lower() == "excerpts":
+                corpus = _build_corpus(scrape_data, max_pages=25, max_chars=60000)
+            else:
+                corpus = _build_clean_digest(scrape_data, max_items=25)
             keyword_json = json.dumps(keywords, indent=2)
 
             if not corpus.strip():

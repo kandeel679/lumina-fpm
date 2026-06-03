@@ -151,6 +151,18 @@ def create_llm(model_id: str):
         return ChatOpenAI(model=model, base_url=base, api_key=key,
                           temperature=0, max_retries=2, timeout=120)
 
+    # DeepSeek direct API — permissive proper backend API (the Robin-style path).
+    # ids: "deepseek/deepseek-chat" (V3, cheap) or "deepseek/deepseek-reasoner".
+    if mid.startswith("deepseek/"):
+        from langchain_openai import ChatOpenAI
+        model = mid.split("/", 1)[1]
+        key = os.getenv("DEEPSEEK_API_KEY")
+        if not key:
+            raise RuntimeError(f"DEEPSEEK_API_KEY not set (required for '{mid}')")
+        base = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        return ChatOpenAI(model=model, base_url=base, api_key=key,
+                          temperature=0, max_retries=2, timeout=120)
+
     if mid.startswith("gemini"):
         from langchain_google_genai import ChatGoogleGenerativeAI
         key = os.getenv("GOOGLE_API_KEY") or os.getenv("LTI_LLM_API_KEY")
