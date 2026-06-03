@@ -1,4 +1,5 @@
 .env
 node_modules
 __pycache__
-.venv
+.venv.lti_budget_state.json
+backend/.lti_budget_state.json

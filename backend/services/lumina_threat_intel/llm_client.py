@@ -61,16 +61,16 @@ def _get_llm():
     return _llm_instance
 
 
-def _call_llm_raw(prompt: str) -> str:
-    """Invoke the LTI Model Router and return the raw text response.
+def _call_llm_raw(prompt: str, tier: str = "strong") -> str:
+    """Invoke the LTI Model Router (tiered, budget-aware) and return raw text.
 
-    The router (model_router.py) handles multi-provider creation with relaxed
-    Gemini safety settings (so dark-web content isn't blocked) and ordered
-    fallback across the configured model chain (OpenCode Zen open models, etc.).
+    `tier` selects the model class: "fast" (cheap, simple steps), "strong"
+    (Findings reasoning), or "premium" (max quality). The router downgrades to
+    the cheapest model when the soft budget cap is reached.
     """
     try:
         from .model_router import invoke_with_fallback
-        text, _model_used = invoke_with_fallback(prompt)
+        text, _model_used = invoke_with_fallback(prompt, tier=tier)
         return text or ""
     except Exception as e:
         raise LLMProviderError(f"LLM call failed: {e}") from e
@@ -92,6 +92,7 @@ def call_llm_structured(
     prompt: str,
     output_schema: Type[BaseModel],
     max_retries: Optional[int] = None,
+    tier: str = "strong",
 ) -> BaseModel:
     """Call the LLM and validate the output against a Pydantic schema.
 
@@ -113,7 +114,7 @@ def call_llm_structured(
 
     for attempt in range(1, max_retries + 1):
         try:
-            raw_text = _call_llm_raw(current_prompt)
+            raw_text = _call_llm_raw(current_prompt, tier=tier)
             logger.info(
                 "LLM call attempt %d/%d — got %d chars",
                 attempt, max_retries, len(raw_text),

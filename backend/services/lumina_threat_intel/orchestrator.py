@@ -268,7 +268,7 @@ def _generate_queries_batched(
     prompt = QUERY_GENERATOR_PROMPT.format(keyword_bundle_json=keyword_bundle_json)
 
     try:
-        result = call_llm_structured(prompt, QueryGenerationOutput)
+        result = call_llm_structured(prompt, QueryGenerationOutput, tier="fast")
     except (LLMValidationError, LLMProviderError) as e:
         logger.error("Batched query generation failed: %s", str(e))
         return []
@@ -356,6 +356,49 @@ def _build_corpus(
         if len(blocks) >= max_pages or total >= max_chars:
             break
     return "\n\n=====\n\n".join(blocks)
+
+
+def _build_clean_digest(scrape_data: list[dict[str, Any]], max_items: int = 25) -> str:
+    """Build a MODERATION-SAFE digest of dark-web search hits for the LLM.
+
+    Cloud gateways (Gemini, AgentRouter, ...) block raw dark-web page text. So
+    we NEVER send raw prose to the cloud LLM. Instead we send only benign
+    metadata + code-extracted, DEFANGED indicators (CVE / IP / email) pulled
+    from each page. Raw text stays local (used for persistence/correlation only).
+    """
+    import re
+    from urllib.parse import urlparse
+
+    cve_re = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
+    ipv4_re = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+    email_re = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+    def _defang(s: str) -> str:
+        return s.replace("http", "hxxp").replace(".", "[.]")
+
+    items: list[dict[str, Any]] = []
+    for sd in scrape_data:
+        text = sd.get("text") or ""
+        url = sd.get("url", "")
+        title = (sd.get("title") or "")[:180]
+        try:
+            host = urlparse(url).hostname or ""
+        except Exception:
+            host = ""
+        cves = sorted({m.upper() for m in cve_re.findall(text)})[:10]
+        ips = sorted(set(ipv4_re.findall(text)))[:8]
+        emails = sorted(set(email_re.findall(text)))[:5]
+        items.append({
+            "title": title,
+            "source": host,
+            "url": url,
+            "cves": cves,
+            "ips": [_defang(x) for x in ips],
+            "emails": [_defang(x) for x in emails],
+        })
+        if len(items) >= max_items:
+            break
+    return json.dumps(items, indent=1)
 
 
 def run_scan(
@@ -522,7 +565,9 @@ def run_scan(
             # so the model reasons relevance natively instead of returning
             # generic dark-web OSINT. Corpus is token-budgeted to fit one call.
             logger.info("Step 6+7: Consolidated Findings extraction (1 LLM call)")
-            corpus = _build_corpus(scrape_data, max_pages=25, max_chars=60000)
+            # Clean-input only: send a moderation-safe digest (metadata +
+            # defanged indicators), NEVER raw dark-web page text (gateways block it).
+            corpus = _build_clean_digest(scrape_data, max_items=25)
             keyword_json = json.dumps(keywords, indent=2)
 
             if not corpus.strip():
@@ -538,7 +583,7 @@ def run_scan(
                 )
                 try:
                     result = call_llm_structured(
-                        findings_prompt, AssessedFindingsOutput,
+                        findings_prompt, AssessedFindingsOutput, tier="strong",
                     )
                     report.narrative_summary = result.narrative_summary or ""
                     report.coverage_note = result.coverage_note or ""

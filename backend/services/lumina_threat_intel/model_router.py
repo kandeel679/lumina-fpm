@@ -1,35 +1,99 @@
-"""LTI Model Router — multi-provider model creation with relaxed safety and
-ordered fallback. Lives entirely in LTI (does NOT modify Robin).
+"""LTI Model Router — tiered, budget-aware, multi-provider model selection.
 
-Two problems this solves:
-  1. Gemini's consumer safety filters BLOCK dark-web threat content, returning
-     EMPTY responses (observed: "Findings extraction failed" on real scrapes).
-     Here we build the Gemini client with all safety thresholds = BLOCK_NONE so
-     threat-intel content is analysed, not refused.
-  2. Free Gemini caps at 20 requests/day. This router routes to OpenCode Zen
-     open models (and others) and falls back across a chain on error/empty/429.
+Lumina picks the model PER REQUEST based on the task's need (fast vs big-brain)
+and the remaining budget, with fallback. Lives entirely in LTI (no Robin edits).
 
-Config via env (all optional; sensible defaults):
-  LTI_MODEL_CHAIN        comma-separated model ids, tried in order. e.g.
-                         "opencode/big-pickle,opencode/deepseek-v3.2,gemini-2.5-flash-lite"
-  OPENCODE_ZEN_API_KEY   key from https://opencode.ai/auth (needed for opencode/* ids)
-  OPENCODE_ZEN_BASE_URL  default https://opencode.ai/zen/v1
-  GOOGLE_API_KEY / LTI_LLM_API_KEY   for gemini-* ids
-  ROBIN_MODEL / LTI_LLM_MODEL        single-model fallback (back-compat)
+Tiers (task -> tier):
+  fast    : query generation, simple steps         -> deepseek-v4-flash
+  strong  : the Findings reasoning + assessment     -> deepseek-v4-pro -> claude-haiku (fallback)
+  premium : explicit "max quality" only             -> claude-opus-4-6
+
+Budget (soft cap, default $20): estimated spend is tracked in a state file; once
+spend crosses the cap threshold, ALL tiers downgrade to the cheapest model and a
+warning is logged (never a hard stop — clearnet KEV findings are free anyway).
+
+Providers:
+  agentrouter/<model>  -> AgentRouter OpenAI-compatible endpoint (DeepSeek/GLM/Claude)
+  gemini*              -> Gemini with safety BLOCK_NONE (legacy/fallback)
+  opencode/<model>     -> OpenCode Zen (OpenAI-compatible)
+  anything else        -> Robin's resolver (back-compat)
+
+Config (env, all optional):
+  AGENTROUTER_TOKEN, AGENTROUTER_BASE_URL (default https://agentrouter.org)
+  LTI_CHAIN_FAST / LTI_CHAIN_STRONG / LTI_CHAIN_PREMIUM  (comma-separated overrides)
+  LTI_BUDGET_USD (default 20), LTI_BUDGET_STATE_FILE (default /app/.lti_budget_state.json)
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 
 logger = logging.getLogger(__name__)
 
+AGENTROUTER_BASE_URL = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
 OPENCODE_ZEN_BASE_URL = os.getenv("OPENCODE_ZEN_BASE_URL", "https://opencode.ai/zen/v1")
+BUDGET_USD = float(os.getenv("LTI_BUDGET_USD", "20"))
+BUDGET_STATE_FILE = os.getenv("LTI_BUDGET_STATE_FILE", "/app/.lti_budget_state.json")
+# Downgrade everything to the cheapest model once spend crosses this fraction.
+BUDGET_DOWNGRADE_AT = float(os.getenv("LTI_BUDGET_DOWNGRADE_AT", "0.9"))
+
+# Per-1M-token prices (USD). DeepSeek-Pro/Haiku/Opus confirmed; flash & GLM est.
+MODEL_CATALOG: dict[str, dict] = {
+    "agentrouter/deepseek-v4-flash": {"tier": "fast", "in": 0.10, "out": 0.40},
+    "agentrouter/deepseek-v4-pro": {"tier": "strong", "in": 0.44, "out": 0.87},
+    "agentrouter/glm-5.1": {"tier": "strong", "in": 0.50, "out": 2.00},
+    "agentrouter/claude-haiku-4-5-20251001": {"tier": "strong", "in": 1.00, "out": 5.00},
+    "agentrouter/claude-opus-4-6": {"tier": "premium", "in": 5.00, "out": 25.00},
+}
+
+_CHEAPEST = "agentrouter/deepseek-v4-flash"
+
+_DEFAULT_CHAINS = {
+    "fast": ["agentrouter/deepseek-v4-flash"],
+    "strong": ["agentrouter/deepseek-v4-pro", "agentrouter/claude-haiku-4-5-20251001"],
+    "premium": ["agentrouter/claude-opus-4-6", "agentrouter/claude-haiku-4-5-20251001"],
+}
 
 
+# ── Budget state (estimated spend) ──────────────────────────────────────────
+def _read_spend() -> float:
+    try:
+        with open(BUDGET_STATE_FILE) as f:
+            return float(json.load(f).get("spend_usd", 0.0))
+    except Exception:
+        return 0.0
+
+
+def _add_spend(amount: float) -> float:
+    total = _read_spend() + max(0.0, amount)
+    try:
+        with open(BUDGET_STATE_FILE, "w") as f:
+            json.dump({"spend_usd": round(total, 6)}, f)
+    except Exception as e:  # pragma: no cover
+        logger.warning("Could not persist budget state: %s", e)
+    return total
+
+
+def _estimate_cost(model_id: str, prompt: str, output: str) -> float:
+    meta = MODEL_CATALOG.get(model_id)
+    if not meta:
+        return 0.0
+    in_tok = len(prompt) / 4.0          # ~4 chars/token heuristic
+    out_tok = len(output) / 4.0
+    return (in_tok / 1e6) * meta["in"] + (out_tok / 1e6) * meta["out"]
+
+
+def budget_status() -> dict:
+    spent = _read_spend()
+    return {"spent_usd": round(spent, 4), "cap_usd": BUDGET_USD,
+            "remaining_usd": round(BUDGET_USD - spent, 4),
+            "downgraded": spent >= BUDGET_USD * BUDGET_DOWNGRADE_AT}
+
+
+# ── Provider creation ────────────────────────────────────────────────────────
 def _gemini_safety_off():
-    """All Gemini harm categories -> BLOCK_NONE (analyse threat content)."""
     try:
         from langchain_google_genai import HarmBlockThreshold, HarmCategory
         return {
@@ -38,53 +102,35 @@ def _gemini_safety_off():
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
-    except Exception as e:  # pragma: no cover
-        logger.warning("Could not load Gemini safety enums: %s", e)
+    except Exception:
         return None
-
-
-AGENTROUTER_BASE_URL = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
 
 
 def create_llm(model_id: str):
     """Create a LangChain chat model for a model id, entirely within LTI."""
     mid = (model_id or "").strip()
 
-    # --- AgentRouter (Anthropic-compatible gateway; Claude et al., $150 credits) ---
-    # Use ids like "agentrouter/claude-opus-4-6". Claude does NOT refuse defensive
-    # dark-web threat analysis the way Gemini's consumer API does.
+    # AgentRouter — OpenAI-compatible /v1 endpoint (DeepSeek/GLM/Claude uniformly)
     if mid.startswith("agentrouter/"):
-        from langchain_anthropic import ChatAnthropic
+        from langchain_openai import ChatOpenAI
         model = mid.split("/", 1)[1]
         key = os.getenv("AGENTROUTER_TOKEN") or os.getenv("ANTHROPIC_AUTH_TOKEN")
         if not key:
             raise RuntimeError(f"AGENTROUTER_TOKEN not set (required for '{mid}')")
-        return ChatAnthropic(
-            model=model,
-            base_url=AGENTROUTER_BASE_URL,
-            api_key=key,
-            temperature=0,
-            max_retries=2,
-            timeout=120,
-            max_tokens=4096,
-        )
+        base = AGENTROUTER_BASE_URL.rstrip("/")
+        if not base.endswith("/v1"):
+            base = base + "/v1"
+        return ChatOpenAI(model=model, base_url=base, api_key=key,
+                          temperature=0, max_retries=2, timeout=120)
 
-    # --- OpenCode Zen (OpenAI-compatible gateway, open models) ---
     if mid.startswith("opencode/"):
         from langchain_openai import ChatOpenAI
         key = os.getenv("OPENCODE_ZEN_API_KEY") or os.getenv("OPENCODE_API_KEY")
         if not key:
             raise RuntimeError(f"OPENCODE_ZEN_API_KEY not set (required for '{mid}')")
-        return ChatOpenAI(
-            model=mid,
-            base_url=OPENCODE_ZEN_BASE_URL,
-            api_key=key,
-            temperature=0,
-            max_retries=2,
-            timeout=120,
-        )
+        return ChatOpenAI(model=mid, base_url=OPENCODE_ZEN_BASE_URL, api_key=key,
+                          temperature=0, max_retries=2, timeout=120)
 
-    # --- Gemini with safety relaxed (so dark-web content isn't blocked) ---
     if mid.startswith("gemini"):
         from langchain_google_genai import ChatGoogleGenerativeAI
         key = os.getenv("GOOGLE_API_KEY") or os.getenv("LTI_LLM_API_KEY")
@@ -94,44 +140,59 @@ def create_llm(model_id: str):
             kwargs["safety_settings"] = safety
         return ChatGoogleGenerativeAI(**kwargs)
 
-    # --- Anything else: defer to Robin's resolver (openai/anthropic/ollama) ---
-    robin_dir = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), os.pardir, "robin")
-    )
+    robin_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, "robin"))
     if robin_dir not in sys.path:
         sys.path.insert(0, robin_dir)
     from llm import get_llm as robin_get_llm  # noqa: E402
     return robin_get_llm(mid)
 
 
-def get_model_chain() -> list[str]:
-    """Ordered list of model ids to try. LTI_MODEL_CHAIN wins; else single model."""
-    chain = os.getenv("LTI_MODEL_CHAIN", "")
-    ids = [m.strip() for m in chain.split(",") if m.strip()]
-    if not ids:
-        ids = [os.getenv("ROBIN_MODEL") or os.getenv("LTI_LLM_MODEL") or "gemini-2.5-flash"]
-    return ids
+# ── Tiered selection + budget-aware downgrade ────────────────────────────────
+def _chain_for(tier: str) -> list[str]:
+    env = os.getenv(f"LTI_CHAIN_{tier.upper()}", "")
+    ids = [m.strip() for m in env.split(",") if m.strip()]
+    return ids or _DEFAULT_CHAINS.get(tier, _DEFAULT_CHAINS["strong"])
 
 
-def invoke_with_fallback(prompt: str) -> tuple[str, str]:
-    """Try each model in the chain until one returns non-empty text.
+def select_chain(tier: str) -> list[str]:
+    """Return the model chain for a tier, downgraded to cheapest if over budget."""
+    chain = list(_chain_for(tier))
+    spent = _read_spend()
+    if spent >= BUDGET_USD * BUDGET_DOWNGRADE_AT:
+        logger.warning(
+            "Budget soft-cap: $%.4f/$%.2f spent (>=%.0f%%) -> downgrading '%s' tier to cheapest (%s)",
+            spent, BUDGET_USD, BUDGET_DOWNGRADE_AT * 100, tier, _CHEAPEST,
+        )
+        return [_CHEAPEST]
+    # Always keep the cheapest as a final fallback
+    if _CHEAPEST not in chain:
+        chain.append(_CHEAPEST)
+    return chain
 
-    Treats an EMPTY response as a failure (Gemini returns empty when it blocks),
-    so the chain advances to the next model instead of silently producing nothing.
 
-    Returns (text, model_id_used). Raises RuntimeError if every model fails.
+def invoke_with_fallback(prompt: str, tier: str = "strong") -> tuple[str, str]:
+    """Invoke the chosen tier's model chain until one returns non-empty text.
+
+    Records estimated spend on success. Empty output (e.g. a content block) is
+    treated as failure so the chain advances. Returns (text, model_id_used).
     """
     last_err = "no models configured"
-    for mid in get_model_chain():
+    for mid in select_chain(tier):
         try:
             llm = create_llm(mid)
             resp = llm.invoke(prompt)
             text = getattr(resp, "content", str(resp)) or ""
             if text.strip():
+                cost = _estimate_cost(mid, prompt, text)
+                total = _add_spend(cost)
+                logger.info(
+                    "LLM tier=%s model=%s ~$%.5f (cumulative ~$%.4f/$%.2f)",
+                    tier, mid, cost, total, BUDGET_USD,
+                )
                 return text, mid
-            last_err = f"empty response from '{mid}' (possibly safety-blocked)"
+            last_err = f"empty response from '{mid}'"
             logger.warning(last_err)
         except Exception as e:
             last_err = f"{mid}: {e}"
             logger.warning("Model '%s' failed, trying next: %s", mid, str(e)[:160])
-    raise RuntimeError(f"All models in chain failed. Last error: {last_err}")
+    raise RuntimeError(f"All models in '{tier}' chain failed. Last error: {last_err}")
