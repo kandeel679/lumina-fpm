@@ -1,0 +1,15 @@
+SocksPort 0.0.0.0:9050
+ControlPort 0.0.0.0:9051
+CookieAuthentication 1
+
+UseBridges 1
+ClientTransportPlugin obfs4 exec /usr/bin/lyrebird
+
+# To get fresh bridges:
+# 1. Visit https://bridges.torproject.org/options
+# 2. Select "obfs4" under "Pluggable Transports" and click "Get Bridges"
+# 3. Paste the returned bridge lines below (without the comment symbol `#`)
+#
+# Example:
+# Bridge obfs4 192.0.2.1:1234 9716378A7509A0EC00A1647F4693F5F407A8A344 cert=73bb6171 iat-mode=0
+Bridge obfs4 108.50.202.242:46037 C26661629B7B8E05CB11D109360D02447EB9B5B5 cert=+A3dhOmzBR23iD4LoSgTO3fzTPsov91wbeA2c2D2FcQSlEV4H6ruI6ksxxsejqFsRbyDeQ iat-mode=0

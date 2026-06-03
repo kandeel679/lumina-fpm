@@ -21,7 +21,9 @@ services:
   # 2. TOR SOCKS PROXY (for dark-web scraping)
   # ---------------------------------------------
   tor-proxy:
-    image: dperson/torproxy:latest
+    build:
+      context: ./tor-proxy
+      dockerfile: Dockerfile
     restart: always
     ports:
       - "9050:9050"
