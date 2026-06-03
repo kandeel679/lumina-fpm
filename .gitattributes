@@ -1,0 +1,5 @@
+# Force LF on shell scripts so Windows checkouts (core.autocrlf=true) don't
+# re-introduce CRLF, which breaks Linux container entrypoints
+# ("exec ./entrypoint.sh: not found"). See Phase 1 fix.
+*.sh text eol=lf
+entrypoint.sh text eol=lf
