@@ -110,18 +110,26 @@ def create_llm(model_id: str):
     """Create a LangChain chat model for a model id, entirely within LTI."""
     mid = (model_id or "").strip()
 
-    # AgentRouter — OpenAI-compatible /v1 endpoint (DeepSeek/GLM/Claude uniformly)
+    # AgentRouter — Anthropic-style endpoint (mimics the Claude Code client that
+    # AgentRouter authorizes). The OpenAI /v1 client was rejected as
+    # "unauthorized client". ChatAnthropic posts to {base_url}/v1/messages.
+    # (Set LTI_AGENTROUTER_MODE=openai to use the OpenAI-compatible /v1 path.)
     if mid.startswith("agentrouter/"):
-        from langchain_openai import ChatOpenAI
         model = mid.split("/", 1)[1]
         key = os.getenv("AGENTROUTER_TOKEN") or os.getenv("ANTHROPIC_AUTH_TOKEN")
         if not key:
             raise RuntimeError(f"AGENTROUTER_TOKEN not set (required for '{mid}')")
-        base = AGENTROUTER_BASE_URL.rstrip("/")
-        if not base.endswith("/v1"):
-            base = base + "/v1"
-        return ChatOpenAI(model=model, base_url=base, api_key=key,
-                          temperature=0, max_retries=2, timeout=120)
+        if os.getenv("LTI_AGENTROUTER_MODE", "anthropic").lower() == "openai":
+            from langchain_openai import ChatOpenAI
+            base = AGENTROUTER_BASE_URL.rstrip("/")
+            if not base.endswith("/v1"):
+                base = base + "/v1"
+            return ChatOpenAI(model=model, base_url=base, api_key=key,
+                              temperature=0, max_retries=2, timeout=120)
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model, base_url=AGENTROUTER_BASE_URL.rstrip("/"),
+                             api_key=key, temperature=0, max_retries=2,
+                             timeout=120, max_tokens=4096)
 
     if mid.startswith("opencode/"):
         from langchain_openai import ChatOpenAI
@@ -129,6 +137,18 @@ def create_llm(model_id: str):
         if not key:
             raise RuntimeError(f"OPENCODE_ZEN_API_KEY not set (required for '{mid}')")
         return ChatOpenAI(model=mid, base_url=OPENCODE_ZEN_BASE_URL, api_key=key,
+                          temperature=0, max_retries=2, timeout=120)
+
+    # OpenRouter — standard pay-as-you-go gateway; accepts API clients (no
+    # Claude-Code-only restriction). ids: "openrouter/deepseek/deepseek-chat", etc.
+    if mid.startswith("openrouter/"):
+        from langchain_openai import ChatOpenAI
+        model = mid.split("/", 1)[1]
+        key = os.getenv("OPENROUTER_API_KEY")
+        if not key:
+            raise RuntimeError(f"OPENROUTER_API_KEY not set (required for '{mid}')")
+        base = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        return ChatOpenAI(model=model, base_url=base, api_key=key,
                           temperature=0, max_retries=2, timeout=120)
 
     if mid.startswith("gemini"):
