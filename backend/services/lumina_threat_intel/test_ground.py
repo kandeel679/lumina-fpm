@@ -56,7 +56,7 @@ def main():
         # Execute the scan
         report = run_scan(
             db=db,
-            trigger_type="test_ground",
+            trigger_type="manual",
             admin_id=1,  # Mock admin
             requested_categories=categories
         )
