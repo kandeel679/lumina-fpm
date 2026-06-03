@@ -560,6 +560,20 @@ def run_scan(
                     "count": len(all_findings),
                 })
 
+        # ── Clearnet seed findings (deterministic, no LLM / no Tor) ──
+        # Authoritative CVE/KEV data scoped to the customer's firewall vendors;
+        # reliable even when Tor is flaky, and free against the LLM budget.
+        try:
+            from .clearnet_intel import fetch_clearnet_findings
+            clearnet_findings = fetch_clearnet_findings(db, device_ids=device_ids)
+            if clearnet_findings:
+                all_findings.extend(clearnet_findings)
+                logger.info("Merged %d clearnet (CISA KEV) findings", len(clearnet_findings))
+                sse_publisher.emit(report.id, "clearnet_merged", {"count": len(clearnet_findings)})
+        except Exception as e:
+            logger.error("Clearnet intel failed: %s", str(e))
+            _log_error(report, "clearnet", str(e))
+
         # ── Step 8: Dedupe IOCs ──
         all_findings = _dedupe_iocs(all_findings)
 
