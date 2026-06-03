@@ -43,9 +43,31 @@ def _gemini_safety_off():
         return None
 
 
+AGENTROUTER_BASE_URL = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
+
+
 def create_llm(model_id: str):
     """Create a LangChain chat model for a model id, entirely within LTI."""
     mid = (model_id or "").strip()
+
+    # --- AgentRouter (Anthropic-compatible gateway; Claude et al., $150 credits) ---
+    # Use ids like "agentrouter/claude-opus-4-6". Claude does NOT refuse defensive
+    # dark-web threat analysis the way Gemini's consumer API does.
+    if mid.startswith("agentrouter/"):
+        from langchain_anthropic import ChatAnthropic
+        model = mid.split("/", 1)[1]
+        key = os.getenv("AGENTROUTER_TOKEN") or os.getenv("ANTHROPIC_AUTH_TOKEN")
+        if not key:
+            raise RuntimeError(f"AGENTROUTER_TOKEN not set (required for '{mid}')")
+        return ChatAnthropic(
+            model=model,
+            base_url=AGENTROUTER_BASE_URL,
+            api_key=key,
+            temperature=0,
+            max_retries=2,
+            timeout=120,
+            max_tokens=4096,
+        )
 
     # --- OpenCode Zen (OpenAI-compatible gateway, open models) ---
     if mid.startswith("opencode/"):
