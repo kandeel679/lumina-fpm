@@ -36,7 +36,10 @@ from .db_models import (
     ThreatIntelReport,
 )
 from .schemas import (
+    AssessedFindingsOutput,
     CategoryRefinementOutput,
+    ConsolidatedFindingsOutput,
+    QueryGenerationOutput,
     ScanStatus,
     ThreatCategory,
     TriggerType,
@@ -47,6 +50,7 @@ from .diff_tracker import mark_new_findings
 from .llm_client import call_llm_structured, call_llm_text, get_robin_model_name
 from .prompts.query_generator import QUERY_GENERATOR_PROMPT
 from .prompts.refiners import build_refiner_prompt
+from .prompts.findings import build_findings_prompt
 from .prompts.shared import SHARED_PREAMBLE
 from .scraper.engine import search_dark_web, scrape_results
 from .stream import sse_publisher
@@ -243,6 +247,117 @@ def _build_search_queries_from_keywords(
     return queries
 
 
+def _generate_queries_batched(
+    keywords: dict[str, list[str]],
+    requested_categories: list[str],
+    max_queries: int = 8,
+) -> list[dict[str, str]]:
+    """Generate ALL dark-web search queries in a SINGLE structured LLM call.
+
+    Replaces ``_build_search_queries_from_keywords`` (which called Robin's
+    ``refine_query`` once per keyword value — 30-50 calls that exhausted the
+    Gemini free-tier 5-req/min quota in Step 2 alone). Uses LTI's own
+    ``QUERY_GENERATOR_PROMPT`` + ``QueryGenerationOutput`` schema, which were
+    already present but previously unused.
+    """
+    if keywords_are_empty(keywords):
+        logger.warning("Keyword bundle empty — no queries generated")
+        return []
+
+    keyword_bundle_json = json.dumps(keywords, indent=2)
+    prompt = QUERY_GENERATOR_PROMPT.format(keyword_bundle_json=keyword_bundle_json)
+
+    try:
+        result = call_llm_structured(prompt, QueryGenerationOutput)
+    except (LLMValidationError, LLMProviderError) as e:
+        logger.error("Batched query generation failed: %s", str(e))
+        return []
+
+    queries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for gq in result.queries:
+        category = gq.category.value if hasattr(gq.category, "value") else str(gq.category)
+        if category not in requested_categories:
+            continue
+        query_text = (gq.query or "").strip()
+        key = query_text.lower()
+        if query_text and key not in seen:
+            seen.add(key)
+            queries.append({"query": query_text, "category": category})
+        if len(queries) >= max_queries:
+            break
+
+    logger.info(
+        "Generated %d search queries in 1 batched LLM call (was 30-50 calls)",
+        len(queries),
+    )
+    return queries
+
+
+def _filter_results_in_code(
+    search_results: list[dict[str, str]],
+    queries: list[dict[str, str]],
+    top_n: int = 20,
+) -> list[dict[str, str]]:
+    """Rank and trim search results WITHOUT an LLM call.
+
+    Replaces Robin's ``filter_results`` (1 LLM call that, worse, judged every
+    result against ``queries[0]`` only). Scores each result by query-term
+    overlap in its title + a small bonus for content-like URLs, then keeps the
+    top_n. Pure code → 0 tokens, 0 rate-limit cost.
+    """
+    if not search_results:
+        return []
+
+    terms: set[str] = set()
+    for q in queries:
+        for tok in (q.get("query") or "").lower().split():
+            if len(tok) >= 3:
+                terms.add(tok)
+
+    content_markers = ("/product", "/topic", "/thread", "/post", "/cve", "/exploit", "/leak")
+
+    def score(r: dict[str, str]) -> int:
+        title = (r.get("title") or "").lower()
+        link = (r.get("link") or "").lower()
+        s = sum(1 for t in terms if t in title)
+        if any(seg in link for seg in content_markers):
+            s += 1
+        return s
+
+    ranked = sorted(search_results, key=score, reverse=True)
+    return ranked[:top_n]
+
+
+def _build_corpus(
+    scrape_data: list[dict[str, Any]],
+    max_pages: int = 25,
+    max_chars: int = 60000,
+) -> str:
+    """Assemble ONE token-budgeted corpus from scraped pages for the single
+    consolidated Findings call. Each page is labelled with its source so the
+    model can cite source_url / page_title accurately.
+    """
+    blocks: list[str] = []
+    total = 0
+    for sd in scrape_data:
+        text = (sd.get("text") or "").strip()
+        if not text:
+            continue
+        url = sd.get("url", "")
+        title = sd.get("title", "")
+        block = f"[SOURCE_URL: {url}]\n[PAGE_TITLE: {title}]\n{text}"
+        if total + len(block) > max_chars:
+            block = block[: max(0, max_chars - total)]
+        if not block:
+            break
+        blocks.append(block)
+        total += len(block)
+        if len(blocks) >= max_pages or total >= max_chars:
+            break
+    return "\n\n=====\n\n".join(blocks)
+
+
 def run_scan(
     db: Session,
     trigger_type: str = "manual",
@@ -318,9 +433,7 @@ def run_scan(
         # ── Step 2: Generate dark-web queries via Robin's LLM ──
         logger.info("Step 2: Generating dark-web queries via Robin's refine_query")
         try:
-            queries = _build_search_queries_from_keywords(
-                llm, keywords, requested_categories,
-            )
+            queries = _generate_queries_batched(keywords, requested_categories)
         except Exception as e:
             logger.error("Query generation failed: %s", str(e))
             _log_error(report, "query_generation", str(e))
@@ -360,23 +473,16 @@ def run_scan(
                 "results_count": len(search_results),
             })
 
-            # ── Step 4: Filter results via Robin's LLM ──
+            # ── Step 4: Filter results in code (no LLM call) ──
             if search_results:
-                logger.info("Step 4: Filtering %d results via Robin's LLM", len(search_results))
-                try:
-                    # Robin's filter expects list of {"title", "link"} dicts
-                    # and a query string. Use the first query as the filter query.
-                    filter_query = queries[0]["query"]
-                    filtered = _robin_filter_results(llm, filter_query, search_results)
-                    if filtered:
-                        search_results = filtered
-                        logger.info("Filtered to %d results", len(search_results))
-                except Exception as e:
-                    logger.warning(
-                        "Robin filter_results failed, using unfiltered: %s",
-                        str(e)[:150],
-                    )
-                    _log_error(report, "filter_results", str(e))
+                before = len(search_results)
+                search_results = _filter_results_in_code(
+                    search_results, queries, top_n=20,
+                )
+                logger.info(
+                    "Step 4: Filtered %d -> %d results in code (no LLM call)",
+                    before, len(search_results),
+                )
 
             # ── Step 5: Scrape onion pages via Robin's engine ──
             def scrape_progress(done: int, total: int) -> None:
@@ -410,82 +516,49 @@ def run_scan(
                 "pages_scraped": len(scrape_data),
             })
 
-            # ── Step 6: Generate narrative summary via Robin's LLM ──
-            logger.info("Step 6: Generating narrative summary via Robin")
-            try:
-                # Build content dict for Robin: {url: text}
-                robin_content = {}
-                for sd in scrape_data:
-                    url = sd.get("url", "")
-                    text = sd.get("text", "")
-                    if url and text:
-                        robin_content[url] = text
-
-                # Use first query as the main investigation query
-                main_query = queries[0]["query"] if queries else "threat intelligence"
-
-                narrative = _robin_generate_summary(
-                    llm,
-                    main_query,
-                    robin_content,
-                    preset="threat_intel",
-                    custom_instructions="",
-                )
-                report.narrative_summary = narrative
-            except Exception as e:
-                logger.error("Narrative generation failed: %s", str(e))
-                _log_error(report, "narrative", str(e))
-                report.narrative_summary = "Narrative generation failed."
-                had_partial_failures = True
-
-            # ── Step 7: Extract structured findings via LLM refiner prompts ──
-            logger.info("Step 7: Refining findings per category")
+            # ── Step 6+7: ONE consolidated Findings call ──
+            # Replaces Robin's generic narrative + the 5 per-category refiners
+            # (6 LLM calls -> 1). The customer's firewall fingerprint is injected
+            # so the model reasons relevance natively instead of returning
+            # generic dark-web OSINT. Corpus is token-budgeted to fit one call.
+            logger.info("Step 6+7: Consolidated Findings extraction (1 LLM call)")
+            corpus = _build_corpus(scrape_data, max_pages=25, max_chars=60000)
             keyword_json = json.dumps(keywords, indent=2)
 
-            for cat in requested_categories:
-                # Filter scrape data relevant to this category
-                cat_texts = [
-                    sd.get("text", "")
-                    for sd in scrape_data
-                    if sd.get("category") == cat and sd.get("text")
-                ]
-
-                if not cat_texts:
-                    # If no category-specific data, use all scrape data
-                    # (Robin doesn't tag by category during search)
-                    cat_texts = [
-                        sd.get("text", "")
-                        for sd in scrape_data
-                        if sd.get("text")
-                    ]
-
-                if not cat_texts:
-                    sse_publisher.emit(report.id, "category_refined", {
-                        "category": cat, "count": 0,
-                    })
-                    continue
-
-                combined_text = "\n\n---\n\n".join(cat_texts[:20])  # Cap input size
-                refiner_prompt = build_refiner_prompt(cat, keyword_json, combined_text)
-
+            if not corpus.strip():
+                logger.warning("Empty corpus — no findings to extract")
+                report.narrative_summary = (
+                    "No dark-web content was retrieved for analysis."
+                )
+            else:
+                findings_prompt = build_findings_prompt(
+                    firewall_context_json=keyword_json,
+                    requested_categories=requested_categories,
+                    scraped_text=corpus,
+                )
                 try:
-                    refinement = call_llm_structured(
-                        refiner_prompt, CategoryRefinementOutput,
+                    result = call_llm_structured(
+                        findings_prompt, AssessedFindingsOutput,
                     )
-                    cat_findings = [f.model_dump() for f in refinement.findings]
+                    report.narrative_summary = result.narrative_summary or ""
+                    report.coverage_note = result.coverage_note or ""
+                    all_findings = [f.model_dump(mode="json") for f in result.findings]
+                    # Derive the legacy severity column from criticality (info -> low)
+                    for fd in all_findings:
+                        crit = fd.get("criticality") or "low"
+                        fd["severity"] = "low" if crit == "info" else crit
+                    # Validate IOCs against source (no hallucinations)
+                    all_findings = _validate_iocs_in_source(all_findings)
                 except (LLMValidationError, LLMProviderError) as e:
-                    logger.error("Refiner failed for category %s: %s", cat, str(e))
-                    _log_error(report, f"refiner_{cat}", str(e))
+                    logger.error("Consolidated findings extraction failed: %s", str(e))
+                    _log_error(report, "findings", str(e))
+                    report.narrative_summary = "Findings extraction failed."
                     had_partial_failures = True
-                    cat_findings = []
+                    all_findings = []
 
-                # Validate IOCs against source (C3)
-                cat_findings = _validate_iocs_in_source(cat_findings)
-
-                sse_publisher.emit(report.id, "category_refined", {
-                    "category": cat, "count": len(cat_findings),
+                sse_publisher.emit(report.id, "findings_extracted", {
+                    "count": len(all_findings),
                 })
-                all_findings.extend(cat_findings)
 
         # ── Step 8: Dedupe IOCs ──
         all_findings = _dedupe_iocs(all_findings)
@@ -495,6 +568,12 @@ def run_scan(
         all_findings = correlate_findings(db, all_findings, device_ids=device_ids)
         sse_publisher.emit(report.id, "correlation_complete", {})
 
+        # Clean state (assessment model): clean = NO finding reached relevance
+        # band medium or high (computed AFTER the correlator's hybrid adjustment).
+        report.clean = not any(
+            f.get("relevance_band") in ("medium", "high") for f in all_findings
+        )
+
         # ── Step 10: Diff ──
         logger.info("Step 10: Diff tracking")
         all_findings = mark_new_findings(db, report.id, all_findings)
@@ -502,11 +581,19 @@ def run_scan(
         # ── Step 11: Persist findings and IOCs ──
         logger.info("Step 11: Persisting %d findings", len(all_findings))
         for fd in all_findings:
+            # Info-criticality findings appear in the narrative but are NOT
+            # persisted as finding rows (assessment-model decision).
+            if fd.get("criticality") == "info":
+                continue
             source = fd.get("source", {})
             finding_row = ThreatIntelFinding(
                 report_id=report.id,
                 category=fd.get("category", "exploit"),
                 severity=fd.get("severity", "low"),
+                criticality=fd.get("criticality"),
+                relevance_score=fd.get("relevance_score"),
+                relevance_band=fd.get("relevance_band"),
+                relevance_reason=fd.get("relevance_reason"),
                 confidence=fd.get("confidence", 0),
                 title=fd.get("title", "Untitled")[:512],
                 description=fd.get("description"),

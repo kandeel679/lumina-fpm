@@ -55,6 +55,9 @@ services:
     environment:
       - LTI_TOR_SOCKS_HOST=tor-proxy
       - LTI_TOR_SOCKS_PORT=9050
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "8000:8000"
     volumes:
@@ -79,6 +82,9 @@ services:
     environment:
       - LTI_TOR_SOCKS_HOST=tor-proxy
       - LTI_TOR_SOCKS_PORT=9050
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./backend:/app
     depends_on:

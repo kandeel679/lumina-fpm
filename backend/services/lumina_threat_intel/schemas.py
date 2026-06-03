@@ -110,6 +110,70 @@ class CategoryRefinementOutput(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
 
 
+class ConsolidatedFindingsOutput(BaseModel):
+    """LLM output from the single consolidated Findings call.
+
+    Replaces the separate Robin narrative + 5 per-category refiner calls
+    (6 LLM calls -> 1). ``narrative_summary`` is firewall-scoped; ``findings``
+    spans all requested categories in one pass.
+    """
+    narrative_summary: str = Field(default="")
+    findings: list[Finding] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Assessment model (Phase 2.4): Criticality x Relevance
+# ---------------------------------------------------------------------------
+
+class Criticality(str, enum.Enum):
+    """Intrinsic danger of the threat itself (independent of the customer)."""
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RelevanceBand(str, enum.Enum):
+    """How much the finding pertains to THIS firewall inventory."""
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class AssessedFinding(BaseModel):
+    """A finding carrying both assessment axes (criticality + relevance).
+
+    The LLM proposes relevance_score/band/reason; code later verifies it
+    against the firewall inventory (hybrid relevance) in the correlator.
+    """
+    category: ThreatCategory
+    criticality: Criticality
+    relevance_score: int = Field(ge=0, le=100, default=0)
+    relevance_band: RelevanceBand = RelevanceBand.NONE
+    relevance_reason: str = ""
+    confidence: int = Field(ge=0, le=100, default=50)
+    title: str = Field(max_length=512)
+    description: str = ""
+    iocs: list[IOC] = Field(default_factory=list)
+    source: FindingSource
+    recommended_actions: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class AssessedFindingsOutput(BaseModel):
+    """LLM output from the consolidated Findings call (assessment-model version).
+
+    ``clean`` = no finding reached relevance band medium+ ("this FW is clean").
+    ``coverage_note`` summarises what was searched/ruled out for the clean path.
+    """
+    clean: bool = False
+    coverage_note: str = ""
+    narrative_summary: str = ""
+    findings: list[AssessedFinding] = Field(default_factory=list)
+
+
 class ReportNarrative(BaseModel):
     """LLM output for the final narrative summary."""
     narrative_summary: str = Field(
@@ -155,6 +219,10 @@ class FindingResponse(BaseModel):
     report_id: int
     category: ThreatCategory
     severity: Severity
+    criticality: Optional[Criticality] = None
+    relevance_score: Optional[int] = None
+    relevance_band: Optional[RelevanceBand] = None
+    relevance_reason: Optional[str] = None
     confidence: int
     title: str
     description: str
@@ -200,6 +268,8 @@ class ReportSummaryResponse(BaseModel):
     queries_generated_count: Optional[int]
     onion_pages_scraped_count: Optional[int]
     narrative_summary: Optional[str]
+    clean: Optional[bool] = None
+    coverage_note: Optional[str] = None
     stats: Optional[ReportStatsResponse]
     llm_model_name: Optional[str]
     scanned_device_ids: Optional[list[int]] = None

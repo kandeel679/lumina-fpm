@@ -66,6 +66,10 @@ class ThreatIntelReport(Base):
     # Markdown narrative produced by the final LLM call
     narrative_summary = Column(Text, nullable=True)
 
+    # Assessment model: clean = no finding reached relevance band medium+
+    clean = Column(Boolean, nullable=True, default=False)
+    coverage_note = Column(Text, nullable=True)
+
     # Aggregated stats: {total, by_severity, by_category}
     stats = Column(JSONB, nullable=True)
 
@@ -120,6 +124,18 @@ class ThreatIntelFinding(Base):
         Enum("critical", "high", "medium", "low", name="ti_severity"),
         nullable=False,
     )
+    # Assessment model — Criticality (intrinsic danger, incl. "info")
+    criticality = Column(
+        Enum("info", "low", "medium", "high", "critical", name="ti_criticality"),
+        nullable=True,
+    )
+    # Assessment model — Relevance to THIS firewall inventory (hybrid: LLM + code)
+    relevance_score = Column(Integer, nullable=True)
+    relevance_band = Column(
+        Enum("none", "low", "medium", "high", name="ti_relevance_band"),
+        nullable=True,
+    )
+    relevance_reason = Column(Text, nullable=True)
     confidence = Column(Integer, nullable=False, default=50)
     title = Column(String(512), nullable=False)
     description = Column(Text, nullable=True)

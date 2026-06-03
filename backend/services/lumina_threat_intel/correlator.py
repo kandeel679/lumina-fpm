@@ -163,6 +163,20 @@ def correlate_findings(
         finding["matched_device_ids"] = sorted(matched_device_ids)
         finding["correlation_match_reason"] = "; ".join(match_reasons) if match_reasons else None
 
+        # Hybrid relevance: the LLM proposed a relevance score/band against the
+        # fingerprint; here code VERIFIES it against real inventory. A confirmed
+        # rule/device match upgrades relevance to high (authoritative).
+        if matched_rule_ids or matched_device_ids:
+            finding["relevance_band"] = "high"
+            try:
+                finding["relevance_score"] = max(int(finding.get("relevance_score") or 0), 90)
+            except (TypeError, ValueError):
+                finding["relevance_score"] = 90
+            _reason = finding.get("relevance_reason") or ""
+            finding["relevance_reason"] = (
+                (_reason + "; " if _reason else "") + "confirmed match against firewall inventory"
+            )[:500]
+
     correlated_count = sum(
         1 for f in findings if f.get("matched_rule_ids") or f.get("matched_device_ids")
     )
