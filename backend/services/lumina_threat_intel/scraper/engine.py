@@ -30,6 +30,33 @@ from scrape import scrape_multiple as _robin_scrape_multiple  # noqa: E402
 from scrape import scrape_single as _robin_scrape_single      # noqa: E402
 
 
+def _lti_search(query_text: str, max_workers: int = 5) -> list[dict[str, str]]:
+    """Search LTI's curated, live dark-web engines (sources.SEARCH_ENGINES) using
+    Robin's per-endpoint fetcher. Replaces Robin's dead DEFAULT_SEARCH_ENGINES
+    without modifying Robin."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from ..sources import search_engine_urls
+
+    engines = search_engine_urls()
+    results: list[dict[str, str]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_robin_fetch, eng, query_text) for eng in engines]
+        for fut in as_completed(futures):
+            try:
+                results.extend(fut.result() or [])
+            except Exception:
+                continue
+
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for r in results:
+        link = (r.get("link") or "").rstrip("/")
+        if link and link not in seen:
+            seen.add(link)
+            unique.append(r)
+    return unique
+
+
 def search_dark_web(
     queries: list[dict[str, str]],
     max_workers: int = 5,
@@ -61,8 +88,8 @@ def search_dark_web(
         )
 
         try:
-            # Robin's get_search_results returns list of {"title", "link"}
-            results = _robin_search(query_text, max_workers=max_workers)
+            # Search LTI's curated, live engines (not Robin's dead default list)
+            results = _lti_search(query_text, max_workers=max_workers)
 
             # Cap results per query to avoid overwhelming the pipeline
             if len(results) > 50:
