@@ -1,5 +1,9 @@
 .env
 node_modules
 __pycache__
-.venv.lti_budget_state.json
+.venv
+.lti_budget_state.json
 backend/.lti_budget_state.json
+
+# Local-only engineering handoff doc for Claude — intentionally NOT committed
+CLAUDE.md

@@ -61,10 +61,17 @@ def main():
             requested_categories=categories
         )
         
-        logger.info(f"Scan Completed! Report ID: {report.id}")
-        logger.info(f"Status: {report.status}")
-        logger.info(f"Duration: {report.scan_duration_seconds} seconds")
-        logger.info(f"Narrative Summary:\n{report.narrative_summary}")
+        logger.info("=" * 64)
+        logger.info("SCAN COMPLETE — Report ID: %s", report.id)
+        logger.info("Status: %s | Duration: %ss", report.status, report.scan_duration_seconds)
+        logger.info("Model ACTUALLY used: %s", report.llm_model_name)
+        logger.info("Queries: %s | Onion pages scraped: %s",
+                    report.queries_generated_count, report.onion_pages_scraped_count)
+        logger.info("CLEAN (no medium+ relevance finding): %s", report.clean)
+        logger.info("COVERAGE NOTE: %s", report.coverage_note)
+        logger.info("STATS: %s", report.stats)
+        logger.info("NARRATIVE:\n%s", report.narrative_summary)
+        logger.info("=" * 64)
         
     except Exception as e:
         logger.error(f"Test ground failed: {e}")

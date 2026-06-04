@@ -1,0 +1,238 @@
+# Lumina Threat Intel (LTI) — Progress, Problems & Fixes
+
+**Scope:** the dark-web + clearnet threat-intelligence module at
+`backend/services/lumina_threat_intel/`, fine-tuned to Lumina FPM's firewall scope.
+**Branch:** `feature/lti-agentic-optimization`
+**Last updated:** 2026-06-04
+
+> Companion doc: **`CLAUDE.md`** (the engineering handoff / "how to work on this
+> repo efficiently from scratch"). This file is the *journey* — what we built,
+> what broke, and how/why we fixed it.
+
+---
+
+## 1. What LTI is
+
+LTI scans the dark web (via Tor) **and** authoritative clearnet feeds (CISA KEV,
+NVD) for threats, then assesses each finding against the customer's *actual*
+firewall inventory (vendors, models, firmware) and produces a report that is
+**dedicated to their system** — not generic OSINT. It reuses Robin (a proven
+dark-web OSINT tool) as a **library only** for Tor search/scrape and the
+LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
+
+---
+
+## 2. What we accomplished (the brag list)
+
+### 2.1 Killed the token/call explosion (≈50 LLM calls → ~2 per scan)
+- **Before:** keyword→query generation looped one LLM call *per keyword* (~30–50
+  calls), then Robin's generic narrative + 5 per-category "refiner" calls. This
+  bloated tokens, lost focus, and instantly exhausted Gemini's free quota.
+- **After:** **1** batched, structured query-generation call (`fast` tier) +
+  **1** consolidated, firewall-scoped Findings call (`strong` tier). Result
+  filtering moved to deterministic code (0 LLM calls).
+
+### 2.2 A firewall-scoped Findings prompt (the centerpiece)
+- `prompts/findings.py :: build_findings_prompt(...)` injects the customer's
+  firewall fingerprint (vendors/models/firmware) and asks the model to reason
+  **relevance natively** and emit a single strict-JSON object
+  (`AssessedFindingsOutput`). Verified to produce scoped narratives that name the
+  customer's exact firmware versions.
+
+### 2.3 Two-axis assessment model
+- **Criticality:** `info | low | medium | high | critical`.
+- **Relevance (hybrid):** the LLM proposes a 0–100 score + band
+  (`none | low | medium | high`); then `correlator.py` **verifies** against the
+  real DB inventory and upgrades to `high` on a confirmed rule/device match.
+- **Clean** = no finding reached `medium`+ relevance ("this FW is clean").
+- **`info` findings** appear in the report narrative but are **not persisted** as
+  rows (assessment-model decision).
+- Schema + DB columns: `criticality`, `relevance_score`, `relevance_band`,
+  `relevance_reason` on findings; `clean`, `coverage_note` on reports.
+
+### 2.4 A reliable clearnet intelligence backbone (free, deterministic)
+- `clearnet_intel.py`: **CISA KEV** (actively-exploited) + **NVD** (recent CVEs,
+  CVSS-scored) connectors, scoped to the customer's firewall *products*.
+- **No LLM, no Tor, no cost, no content-blocking** — works even when Tor or the
+  LLM gateway is flaky. Verified: **62 real, scoped CVE findings** with correct
+  criticality, tags (`cisa-kev`, `actively-exploited`, `ransomware`), and
+  dedup/diff metadata.
+
+### 2.5 Live dark-web source registry
+- `sources.py`: 8 live `.onion` search engines, 11 curated sources, 9 clearnet
+  feeds. `scraper/engine.py` rewired to use LTI's curated live engines (Robin's
+  default engine list was dead) **without modifying Robin**.
+
+### 2.6 Tiered, budget-aware, **credential-aware** model router
+- `model_router.py`: tiers `fast | strong | premium`; soft budget cap ($20)
+  that downgrades to the cheapest model + warns; multi-provider
+  (`gemini*`, `deepseek/*`, `openrouter/*`, `opencode/*`, `agentrouter/*`).
+- **Credential-aware defaults:** picks the provider whose key is present
+  (`DEEPSEEK_API_KEY` → DeepSeek; else `GOOGLE_API_KEY` → Gemini; AgentRouter only
+  as explicit last resort). A fresh checkout "just works" with the keys in `.env`.
+
+### 2.7 Dev-ops hardening
+- CRLF→LF entrypoint fix + `.gitattributes`; Docker DNS workaround; **celery
+  worker auto-reload** via `watchmedo`; in-pipeline diagnostics + a build marker
+  so stale-code runs are instantly visible.
+
+### 2.8 Verified end-to-end
+- Full pipeline runs on Gemini: scoped narrative, 1-call query gen, Tor scrape,
+  consolidated findings, clearnet merge, correlation, diff, persistence.
+
+---
+
+## 3. Problems & Fixes (root cause → fix → why → outcome)
+
+### P1 — `entrypoint.sh: not found` (containers exit 127)
+- **Symptom:** `api`/`robin` containers failed with `exec ./entrypoint.sh: not found`.
+- **Root cause:** the file had Windows CRLF line endings; the Linux loader read
+  `#!/bin/sh\r` and couldn't find the interpreter.
+- **Fix:** `sed -i 's/\r$//' backend/entrypoint.sh` + a `.gitattributes` rule
+  (`*.sh text eol=lf`) so Windows checkouts never reintroduce CRLF.
+- **Why:** `.gitattributes` fixes the class of bug at the source, not just the
+  instance.
+- **Outcome:** containers start reliably on Windows and Linux.
+
+### P2 — Gemini free-tier rate limits (429) blocked scans
+- **Symptom:** scans failed after a few calls (`5/min`, then `20/day` exhausted).
+- **Root cause:** the old pipeline made ~50 calls/scan.
+- **Fix:** collapsed to ~2 calls/scan (see §2.1).
+- **Why:** the cheapest, most robust rate-limit fix is *fewer calls*, not paid tiers.
+- **Outcome:** a full scan fits comfortably inside the free quota.
+
+### P3 — Docker Desktop DNS drops (name resolution `Errno -2/-3`)
+- **Symptom:** intermittent DNS failures inside containers; `resolv.conf` lost its
+  nameserver. `down && up` didn't help.
+- **Root cause:** Docker Desktop's embedded DNS forwarder dropping on Windows.
+- **Fix:** pinned `dns: [8.8.8.8, 1.1.1.1]` on `api` and `celery_worker` in
+  `docker-compose.yml`.
+- **Outcome:** stable outbound resolution (NVD/KEV/Tor bootstrap).
+
+### P4 — Findings call returned empty / unparseable JSON (the red herring)
+- **Symptom:** `Expecting value: line 1 column 1 (char 0)` — empty LLM response
+  on real dark-web content.
+- **Wrong theory #1:** "Gemini is safety-blocking the content." Built
+  `safety_settings = BLOCK_NONE`. A probe showed a small harmful prompt returned
+  fine → safety wasn't the blocker.
+- **Actual root cause(s):** (a) a **heavy, self-contradicting prompt** — the
+  shared preamble forbade "generating exploit/credential content" while the task
+  *required extracting* it; (b) feeding **raw scraped text** through restrictive
+  gateways. The user's key insight: **Robin processed dark-web content with the
+  same Gemini key**, so the model was never the problem — our prompt + input were.
+- **Fix:** a **moderation-safe "clean digest"** corpus mode (defanged
+  IOCs/metadata) as the default, with an `excerpts` mode (real truncated text) for
+  permissive backends, toggled by `LTI_CORPUS_MODE`.
+- **Outcome:** Gemini reliably returns a scoped narrative + structured findings.
+
+### P5 — AgentRouter unusable as a backend (`401 unauthorized_client`)
+- **Symptom:** every API call to AgentRouter returned `401 unauthorized_client` —
+  even with a fresh key, the Anthropic-style endpoint, a Claude model, and a benign
+  prompt.
+- **Root cause:** AgentRouter authorizes only the **Claude-Code / Codex CLIs**, not
+  arbitrary backend API clients.
+- **Fix:** stopped treating AgentRouter as a usable default; kept it reachable via
+  explicit `agentrouter/` ids only. We **do not spoof** the Claude Code client.
+- **Outcome:** routing no longer depends on a dead gateway (see P9).
+
+### P6 — NVD connector pulled ancient (2012) CVEs
+- **Symptom:** "recent CVEs" feed returned decade-old entries.
+- **Root cause:** queried `lastModStartDate`, which catches NVD *re-enrichment* of
+  old CVEs.
+- **Fix:** switched to `pubStartDate`/`pubEndDate` over the last 120 days.
+- **Outcome:** genuinely recent, relevant CVEs.
+
+### P7 — CISA KEV over-matched (FortiClient EMS, Catalyst SD-WAN, etc.)
+- **Symptom:** 133 "matches" including products the customer doesn't run.
+- **Root cause:** matching on bare vendor names ("cisco", "fortinet").
+- **Fix:** `_VENDOR_MATCH` uses firewall-**product** tokens (`fortios`/`fortigate`,
+  `pan-os`/`globalprotect`, `adaptive security appliance`/`secure firewall`).
+- **Outcome:** 40 relevant KEV findings (62 total with NVD), no vendor noise.
+
+### P8 — `clean` / `coverage_note` persisted as `null` (stale worker)
+- **Symptom:** a successful scan saved a rich, scoped narrative but `clean: null`
+  and `coverage_note: null` — impossible given current code (the narrative and
+  `coverage_note` are set together; `clean` is computed unconditionally).
+- **Root cause:** the scan runs in **Celery**, and `celery_worker` had **no
+  `--reload`**. The bind-mounted code on disk was current, but the worker kept
+  **stale code in memory** from its last start. (`api` reloads; the worker didn't.)
+- **Fix:** ran the worker under **`watchmedo auto-restart`** (added `watchdog`),
+  so any `.py` change restarts the worker. Also added a **build marker**
+  (`build=assessment-v2`) and an **`Assessment:` diagnostic** line so a stale run
+  is obvious in logs, plus a guaranteed non-null `coverage_note`.
+- **Why:** fixes the *class* of bug (silent stale worker) instead of the instance,
+  and makes future regressions self-diagnosing.
+- **Outcome:** `clean`/`coverage_note` always populate; the worker can't go stale.
+
+### P9 — Default model chain pointed at the dead gateway → total LLM failure
+- **Symptom:** a fresh checkout with only the Gemini key failed **every** LLM call
+  (`fast` chain → `agentrouter/deepseek-v4-flash` → 401), so query-gen produced 0
+  queries and only clearnet findings survived.
+- **Root cause:** `_DEFAULT_CHAINS` hard-coded AgentRouter (chosen when we believed
+  its $150 credits worked; it doesn't for APIs — see P5).
+- **Fix:** **credential-aware defaults** (`_provider_default_chains()`):
+  `DEEPSEEK_API_KEY` → DeepSeek; else `GOOGLE_API_KEY` → Gemini; AgentRouter only
+  if it's the sole credential. Per-tier `LTI_CHAIN_*` env overrides still win.
+- **Outcome:** the pipeline works out of the box with whatever key is in `.env`;
+  no manual `LTI_CHAIN_*` override needed.
+
+### P10 — "Gemini key is broken" → actually a key-format/rotation issue
+- **Symptom:** Gemini returned `401 UNAUTHENTICATED … ACCESS_TOKEN_TYPE_UNSUPPORTED`.
+- **Investigation:** the key was `AQ.A…` / 53 chars. We initially flagged this as
+  "not an `AIza…` API key." **Empirically, a fresh `AQ.Ab8…` token works** — so
+  the format is valid (a newer Google credential), but the *specific* old token had
+  **expired/been revoked** (these OAuth-style tokens rotate). A new `AQ.Ab8…` token
+  returned `OK`.
+- **Fix:** swapped the working token into `.env` (`GOOGLE_API_KEY` +
+  `LTI_LLM_API_KEY`).
+- **Lesson:** if Gemini suddenly 401s with `ACCESS_TOKEN_TYPE_UNSUPPORTED`, the
+  token likely **expired** — refresh it, or use a permanent `AIza…` key for stability.
+- **Outcome:** Gemini calls succeed; verified end-to-end.
+
+### P11 — `correlated_rules: 0` (clearnet CVEs never upgrade to `high`)
+- **Symptom:** all 62 clearnet findings stayed at `medium`; none correlated to a
+  rule/device.
+- **Root cause:** correlation does a **literal substring** match of the device's
+  exact firmware (e.g. `7.4.3`) against the CVE text, but NVD/KEV describe affected
+  **ranges** ("FortiOS 7.4.0 through 7.4.2") — so the exact patch string rarely
+  appears.
+- **Status / planned fix:** version-aware relevance using CPE
+  `versionStartIncluding`/`versionEndExcluding` from NVD (range containment), so a
+  CVE that covers the customer's installed version upgrades to `high`. *(Open.)*
+- **Interim outcome:** correctly conservative — vendor-present CVEs sit at `medium`
+  until a real version match is proven.
+
+---
+
+## 4. Before / after
+
+| Dimension | Before | After |
+|---|---|---|
+| LLM calls / scan | ~30–50 | ~2 |
+| Findings relevance | generic OSINT | scoped to the customer's FW inventory |
+| Assessment | severity only | criticality + hybrid relevance + `clean` |
+| Reliability when Tor/LLM flaky | scan fails | 62 free clearnet CVEs still land |
+| Model backend | single, hard-coded, dead (AgentRouter) | credential-aware multi-provider + budget cap |
+| Worker code freshness | silently stale | auto-reload (`watchmedo`) + build marker |
+| Cost spent (of $20 cap) | — | **$0** |
+
+---
+
+## 5. Current status (2026-06-04)
+
+- ✅ Pipeline runs end-to-end on Gemini (working `AQ.Ab8…` token in `.env`).
+  **Verified run — Report 4 (2026-06-04, 210s, $0.00):** routing picked Gemini
+  (`fast`=gemini-2.5-flash-lite for query gen → 8 queries in **1** call;
+  `strong`=gemini-2.5-flash for Findings); `Model ACTUALLY used: gemini-2.5-flash`;
+  4 onion pages scraped; 62 clearnet findings; `clean=False`; **LLM-authored
+  `coverage_note`** ("…No specific CVEs, IPs, domains, or credential leaks relevant
+  to the customer's firewall inventory were found."); scoped narrative naming the
+  exact firmware versions. darkweb findings=0 (source-quality limit, not a bug).
+- ✅ Assessment model persists correctly (criticality/relevance/tags/hash/diff).
+- ✅ Clearnet backbone: 62 scoped CVEs, $0.
+- ✅ Worker auto-reload + diagnostics live.
+- ⏳ **Open:** (a) make `clean` achievable by lowering NVD baseline to `low` (keep
+  KEV at `medium`); (b) version-aware correlation (P11); (c) dark-web **source
+  quality** — the `.onion` engines return generic pages, so dark-web findings are
+  often 0 even on a good run.
+- 💡 Backups wired but unused: DeepSeek direct (set `DEEPSEEK_API_KEY` → auto-preferred).
