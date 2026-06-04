@@ -14,6 +14,26 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _dedup_key(url: str) -> str:
+    """Canonical key for de-duplicating result URLs.
+
+    Strips scheme, query string, fragment, and trailing slash so that the same
+    page reached via different sort/pagination params (e.g. a directory listing
+    served as ``?C=S&O=A`` / ``?C=N&O=D`` / …) collapses to ONE entry instead of
+    flooding the corpus with identical content. Host is lowercased.
+    """
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url.strip())
+    except Exception:
+        return url.strip().rstrip("/")
+    host = parts.netloc.lower()
+    path = parts.path.rstrip("/")
+    return f"{host}{path}" or url.strip().rstrip("/")
+
+
 # ── Robin import path setup ──
 _robin_dir = os.path.join(
     os.path.dirname(__file__), os.pardir, os.pardir, "robin",
@@ -50,9 +70,12 @@ def _lti_search(query_text: str, max_workers: int = 5) -> list[dict[str, str]]:
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
     for r in results:
-        link = (r.get("link") or "").rstrip("/")
-        if link and link not in seen:
-            seen.add(link)
+        link = (r.get("link") or "").strip()
+        if not link:
+            continue
+        key = _dedup_key(link)
+        if key not in seen:
+            seen.add(key)
             unique.append(r)
     return unique
 
@@ -108,13 +131,16 @@ def search_dark_web(
                 query_text[:60], str(e)[:150],
             )
 
-    # Deduplicate by link
+    # Deduplicate by canonical key (ignores query/sort params + trailing slash)
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
     for r in all_results:
-        link = r.get("link", "").rstrip("/")
-        if link and link not in seen:
-            seen.add(link)
+        link = (r.get("link") or "").strip()
+        if not link:
+            continue
+        key = _dedup_key(link)
+        if key not in seen:
+            seen.add(key)
             unique.append(r)
 
     logger.info(

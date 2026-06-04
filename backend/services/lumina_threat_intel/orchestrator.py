@@ -329,6 +329,65 @@ def _filter_results_in_code(
     return ranked[:top_n]
 
 
+# Generic vendor/product synonyms used to recognise firewall-relevant content.
+# Derived from the customer's vendors so a page is kept only if it actually
+# mentions one of THEIR products / firmware / CVEs / domains — not just generic
+# "security" chatter (conference archives, search-engine homepages, etc.).
+_VENDOR_PRODUCT_SYNONYMS = {
+    "palo alto": ["palo alto", "pan-os", "panos", "globalprotect"],
+    "paloalto": ["palo alto", "pan-os", "panos", "globalprotect"],
+    "fortinet": ["fortinet", "fortios", "fortigate", "fortiproxy"],
+    "cisco": ["cisco", "asa", "adaptive security", "firepower", "ftd"],
+}
+
+
+def _relevance_terms(keywords: dict[str, Any]) -> set[str]:
+    """Focused vocabulary of THIS customer's firewall identifiers.
+
+    Intentionally specific (firmware versions, CVE ids, org domains, vendor
+    PRODUCT names) and free of generic words like "exploit"/"security"/"firewall"
+    so it doesn't match unrelated OSINT noise.
+    """
+    terms: set[str] = set()
+    for fw in keywords.get("firmwares", []) or []:
+        fw = (fw or "").strip().lower()
+        if fw:
+            terms.add(fw)
+    for cve in keywords.get("cves", []) or []:
+        cve = (cve or "").strip().lower()
+        if cve:
+            terms.add(cve)
+    for dom in keywords.get("org_domains", []) or []:
+        dom = (dom or "").strip().lower()
+        if dom:
+            terms.add(dom)
+    joined = " ".join(keywords.get("vendors_models", []) or []).lower()
+    for key, products in _VENDOR_PRODUCT_SYNONYMS.items():
+        if key in joined or any(p in joined for p in products):
+            terms.update(products)
+    return terms
+
+
+def _filter_scraped_by_relevance(
+    scrape_data: list[dict[str, Any]],
+    keywords: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Drop scraped pages that mention NONE of the customer's firewall
+    identifiers. Removes search-engine landing pages, hosting ads, conference /
+    podcast archives, etc. that the dark-web engines return as noise. Pure code,
+    0 LLM cost. If no relevance terms exist, returns the input unchanged.
+    """
+    terms = _relevance_terms(keywords)
+    if not terms:
+        return scrape_data
+    kept: list[dict[str, Any]] = []
+    for sd in scrape_data:
+        haystack = ((sd.get("text") or "") + " " + (sd.get("title") or "")).lower()
+        if any(t in haystack for t in terms):
+            kept.append(sd)
+    return kept
+
+
 def _build_corpus(
     scrape_data: list[dict[str, Any]],
     max_pages: int = 25,
@@ -563,6 +622,18 @@ def run_scan(
             sse_publisher.emit(report.id, "scraping_complete", {
                 "pages_scraped": len(scrape_data),
             })
+
+            # ── Step 5b: relevance filter (no LLM) ──
+            # Keep only pages that actually mention the customer's firewall
+            # products / firmware / CVEs / domains. Raw scrapes above are kept
+            # for audit; this trims the noise (search-engine homepages, conference
+            # archives) before it reaches the Findings corpus.
+            _before_rel = len(scrape_data)
+            scrape_data = _filter_scraped_by_relevance(scrape_data, keywords)
+            logger.info(
+                "Step 5b: relevance filter %d -> %d pages (dropped non-firewall noise)",
+                _before_rel, len(scrape_data),
+            )
 
             # ── Step 6+7: ONE consolidated Findings call ──
             # Replaces Robin's generic narrative + the 5 per-category refiners

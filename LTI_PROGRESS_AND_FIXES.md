@@ -225,6 +225,38 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - **Lesson:** when the DB has a value but the API shows `null`, suspect the
   endpoint's response mapping (forgotten field) before suspecting the pipeline.
 
+### P13 — 16 onion pages scraped, 0 dark-web findings (noise, not a bug)
+- **Symptom:** a scan scraped 16 onion pages but produced 0 dark-web findings;
+  looked like the assessment was "missing" threats.
+- **Investigation (Report 8 raw scrapes):** all 16 pages were **search-engine
+  landing pages** (Ahmia, OnionLand, I2P Search), a **hosting ad**, and
+  **conference / podcast archives** (InfoCon/RSAC `.mp4` listings, DEF CON speaker
+  pages, CyberWire/Security Weekly). Zero CVEs/IPs/domains/creds, nothing about the
+  customer's firewalls. The Findings LLM correctly returned 0 — **garbage in**.
+- **Three root causes:** (a) the curated `.onion` search engines mostly return
+  generic/self-referential results, not market/forum threat content; (b) **Step 4
+  did nothing useful** (`16 -> 16`) — it ranks but never drops zero-relevance pages;
+  (c) **weak dedup** — the same RSAC directory under different sort params
+  (`?C=S&O=A`, `?C=N&O=D`, …) counted as 4 "unique" pages.
+- **Fixes shipped:**
+  - **URL-normalized dedup** (`scraper/engine.py::_dedup_key`): strip
+    scheme/query/fragment/trailing-slash so sort-param duplicates collapse to one.
+    Verified: 3 RSAC variants → 1.
+  - **Step 5b relevance filter** (`orchestrator.py::_filter_scraped_by_relevance`
+    + `_relevance_terms`): after scraping (raw scrapes still persisted for audit),
+    drop any page that mentions **none** of the customer's firewall identifiers
+    (firmware versions, CVE ids, org domains, vendor PRODUCT synonyms like
+    `pan-os`/`fortios`/`asa`). Pure code, 0 LLM cost.
+- **Verified (Report 6):** `Dark web search: 4 unique results from 32 total`;
+  `Step 5b: relevance filter 4 -> 0 pages (dropped non-firewall noise)`;
+  `Assessment: darkweb=0 clearnet=62 total=62 clean=False`. The LLM is no longer fed
+  noise; clearnet backbone unaffected.
+- **Net:** dark-web=0 is now an **honest, clean** result instead of "fed 16 junk
+  pages." A genuinely relevant page would pass the filter and reach the LLM.
+- **Open (unchanged):** the deeper issue is **source quality** — the `.onion`
+  engines need curating toward real firewall-relevant markets/forums so the filter
+  has something to keep.
+
 ---
 
 ## 4. Before / after
