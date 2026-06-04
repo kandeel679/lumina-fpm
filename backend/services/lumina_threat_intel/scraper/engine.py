@@ -55,9 +55,9 @@ def _lti_search(query_text: str, max_workers: int = 5) -> list[dict[str, str]]:
     Robin's per-endpoint fetcher. Replaces Robin's dead DEFAULT_SEARCH_ENGINES
     without modifying Robin."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from ..sources import search_engine_urls
+    from ..sources import search_query_urls, is_noise_result
 
-    engines = search_engine_urls()
+    engines = search_query_urls()
     results: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = [ex.submit(_robin_fetch, eng, query_text) for eng in engines]
@@ -69,14 +69,23 @@ def _lti_search(query_text: str, max_workers: int = 5) -> list[dict[str, str]]:
 
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
+    dropped_noise = 0
     for r in results:
         link = (r.get("link") or "").strip()
         if not link:
+            continue
+        # Drop self-referential engine landing pages + conference/marketing noise
+        # at the source, so we never waste a Tor scrape on it (complements the
+        # content-level Step 5b relevance filter in the orchestrator).
+        if is_noise_result(link, r.get("title", "")):
+            dropped_noise += 1
             continue
         key = _dedup_key(link)
         if key not in seen:
             seen.add(key)
             unique.append(r)
+    if dropped_noise:
+        logger.info("Search: dropped %d noise/self-referential results", dropped_noise)
     return unique
 
 

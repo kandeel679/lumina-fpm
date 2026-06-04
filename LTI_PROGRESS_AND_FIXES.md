@@ -253,7 +253,7 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
   noise; clearnet backbone unaffected.
 - **Net:** dark-web=0 is now an **honest, clean** result instead of "fed 16 junk
   pages." A genuinely relevant page would pass the filter and reach the LLM.
-- **Open (unchanged):** the deeper issue is **source quality** — the `.onion`
+- **Open → addressed in P15:** the deeper issue is **source quality** — the `.onion`
   engines need curating toward real firewall-relevant markets/forums so the filter
   has something to keep.
 
@@ -289,6 +289,36 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - **Caveat:** comparison is numeric-tuple, padded to 4 components; non-numeric build
   tags (`_mr10`, `_beta`) are dropped — fine for modern firewall firmware, approximate
   for ancient FortiOS strings.
+
+### P15 — Dark-web source curation: query firewall-relevant sources, drop noise at the source
+- **Context (follow-on to P13):** the pipeline only queried the 8 generic Group-A
+  search engines and **never used** the curated Group-B sources. Worse, those engines
+  returned mostly **self-referential landing pages** (a result linking back into the
+  engine's own `.onion`) and **conference/podcast archives** — exactly the junk P13
+  documented. The Step 5b content filter then (correctly) dropped everything → 0
+  dark-web findings.
+- **Fix — widen + curate the rotation (`sources.py`):**
+  - `search_query_urls()` = live generic engines **+** curated sources that expose a
+    `{query}` endpoint (`searchable_source_urls()`; currently the Recon market search,
+    `access=search`, `live=yes`). Discovery now also hits a firewall-relevant market.
+  - `is_noise_result(url, title)` drops, **before scraping**: (a) any result whose host
+    is one of our own discovery engines (`SEARCH_ENGINE_HOSTS` — the landing-page/cached
+    chrome), and (b) `RESULT_DENY_SUBSTRINGS` matches (infocon/defcon/rsac/cyberwire/
+    securityweekly/podcast/conference/speaker/webinar/advertising/hosting/wiki/etc.).
+- **Fix — apply at search time (`scraper/engine.py`):** `_lti_search()` now calls
+  `search_query_urls()` and skips `is_noise_result()` links during dedup, logging
+  `Search: dropped N noise/self-referential results`. This saves Tor scrapes (cheaper
+  than the orchestrator's post-scrape Step 5b) and complements — does not replace — it.
+- **Verified (unit, no Tor):** 8 generic + 1 curated = 9 query endpoints; self-referential
+  Ahmia landing → dropped; DEF CON / InfoCon archives → dropped; a forum thread titled
+  "FortiOS 7.4 RCE for sale" → **kept**. So a genuinely relevant page now survives to
+  the LLM while chrome/archives are filtered at the source.
+- **Net:** the funnel is now query firewall-relevant sources → drop self-ref/archive
+  noise at search → Step 5b content relevance → LLM. Dark-web yield still depends on
+  what those `.onion` sources actually host, but the plumbing no longer guarantees zero.
+- **Still open:** Group-B *browse-only* DLS/forum sources (no `{query}`) remain
+  metadata-only and unscraped by design (legal/honeypot risk per the safety rules);
+  adding read-only listing-page monitoring for them is a future, carefully-scoped step.
 
 ---
 

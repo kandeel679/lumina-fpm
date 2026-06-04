@@ -92,3 +92,69 @@ CLEARNET_FEEDS: dict[str, dict] = {
 def search_engine_urls() -> list[str]:
     """Live group-A search engine URL templates (with {query})."""
     return [e["url"] for e in SEARCH_ENGINES if e.get("believed_live")]
+
+
+def _host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(url).netloc.lower()
+    except Exception:
+        return ""
+
+
+# Onion hosts of our own discovery engines. A search engine frequently returns
+# links back into its OWN site (landing page, cached copy, /search? variants);
+# those are navigation chrome, not threat intel, and were the bulk of the P13
+# noise. We drop any result whose host is one of these.
+SEARCH_ENGINE_HOSTS: set[str] = {_host_of(e["url"]) for e in SEARCH_ENGINES}
+
+
+# Curated direct sources that expose a {query} search endpoint (access == "search").
+# Adding these to the rotation points discovery at firewall-relevant markets/forums
+# instead of only the generic engines.
+def searchable_source_urls() -> list[str]:
+    return [
+        s["url"]
+        for s in CURATED_ONION_SOURCES
+        if s.get("access") == "search"
+        and "{query}" in s.get("url", "")
+        and str(s.get("live", "")).lower() in ("yes", "true")
+    ]
+
+
+def search_query_urls() -> list[str]:
+    """All endpoints discovery should query: live generic engines PLUS curated,
+    firewall-relevant searchable sources. Self-referential/landing-page noise is
+    filtered out of the *results* by is_noise_result()."""
+    urls = search_engine_urls() + searchable_source_urls()
+    # de-dup while preserving order
+    seen: set[str] = set()
+    out: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+# Result URLs/titles that are never firewall threat intel: conference/podcast
+# archives, marketing, and generic directory chrome. Seen polluting real scans
+# (InfoCon/RSAC media listings, DEF CON speaker pages, CyberWire/Security Weekly).
+# Matched as case-insensitive substrings against host + path + title.
+RESULT_DENY_SUBSTRINGS: tuple[str, ...] = (
+    "infocon", "def con", "defcon", "def-con", "rsaconf", "rsac ",
+    "cyberwire", "security weekly", "securityweekly", "podcast",
+    "conference", "speaker", "webinar", "advertis", "hosting plan",
+    "buy hosting", "directory of", "link list", "wiki",
+)
+
+
+def is_noise_result(url: str, title: str = "") -> bool:
+    """True if a search result is navigation chrome or non-intel content that
+    should not be scraped. Drops (a) links back into a discovery engine's own
+    site, and (b) conference/podcast/marketing pages (RESULT_DENY_SUBSTRINGS)."""
+    host = _host_of(url)
+    if host and host in SEARCH_ENGINE_HOSTS:
+        return True
+    hay = f"{host} {url} {title}".lower()
+    return any(bad in hay for bad in RESULT_DENY_SUBSTRINGS)
