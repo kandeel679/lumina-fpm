@@ -46,15 +46,68 @@ MODEL_CATALOG: dict[str, dict] = {
     "agentrouter/glm-5.1": {"tier": "strong", "in": 0.50, "out": 2.00},
     "agentrouter/claude-haiku-4-5-20251001": {"tier": "strong", "in": 1.00, "out": 5.00},
     "agentrouter/claude-opus-4-6": {"tier": "premium", "in": 5.00, "out": 25.00},
+    # DeepSeek direct API (api.deepseek.com) — permissive backend, cheap (approx).
+    "deepseek/deepseek-chat": {"tier": "strong", "in": 0.27, "out": 1.10},
+    "deepseek/deepseek-reasoner": {"tier": "premium", "in": 0.55, "out": 2.19},
+    # Gemini — free tier; tracked at $0 (rate-limited, not billed).
+    "gemini-2.5-flash-lite": {"tier": "fast", "in": 0.0, "out": 0.0},
+    "gemini-2.5-flash": {"tier": "strong", "in": 0.0, "out": 0.0},
+    "gemini-2.5-pro": {"tier": "premium", "in": 0.0, "out": 0.0},
 }
 
-_CHEAPEST = "agentrouter/deepseek-v4-flash"
+# Last model id that successfully produced a completion (for accurate report
+# metadata — the configured ROBIN_MODEL env is NOT necessarily what ran).
+_LAST_MODEL_USED: str | None = None
 
-_DEFAULT_CHAINS = {
+
+def last_model_used() -> str | None:
+    """Return the model id that last produced a successful completion, if any."""
+    return _LAST_MODEL_USED
+
+
+# Legacy AgentRouter chains. NOTE: AgentRouter rejects backend API calls with
+# HTTP 401 ("unauthorized_client" — it authorizes only the Claude-Code/Codex
+# CLIs), so these are NOT used by default; kept for explicit opt-in only.
+_AGENTROUTER_CHAINS = {
     "fast": ["agentrouter/deepseek-v4-flash"],
     "strong": ["agentrouter/deepseek-v4-pro", "agentrouter/claude-haiku-4-5-20251001"],
     "premium": ["agentrouter/claude-opus-4-6", "agentrouter/claude-haiku-4-5-20251001"],
 }
+
+# DeepSeek-direct chains (used when DEEPSEEK_API_KEY is present).
+_DEEPSEEK_CHAINS = {
+    "fast": ["deepseek/deepseek-chat"],
+    "strong": ["deepseek/deepseek-chat"],
+    "premium": ["deepseek/deepseek-reasoner", "deepseek/deepseek-chat"],
+}
+
+# Gemini chains (free tier; used when GOOGLE_API_KEY is present). fast=flash-lite
+# vs strong=flash spreads the ~2 calls/scan across separate free quotas.
+_GEMINI_CHAINS = {
+    "fast": ["gemini-2.5-flash-lite"],
+    "strong": ["gemini-2.5-flash"],
+    "premium": ["gemini-2.5-pro", "gemini-2.5-flash"],
+}
+
+
+def _provider_default_chains() -> dict[str, list[str]]:
+    """Pick default chains from whichever provider credentials are present.
+
+    Preference: DeepSeek direct (cheap, permissive) > Gemini (free, works today)
+    > AgentRouter (legacy, 401s on API). This makes a fresh checkout work end to
+    end with only the credentials in .env — no LTI_CHAIN_* override required.
+    Per-tier overrides via LTI_CHAIN_FAST/STRONG/PREMIUM always win.
+    """
+    if os.getenv("DEEPSEEK_API_KEY"):
+        return _DEEPSEEK_CHAINS
+    if os.getenv("GOOGLE_API_KEY") or os.getenv("LTI_LLM_API_KEY"):
+        return _GEMINI_CHAINS
+    return _AGENTROUTER_CHAINS
+
+
+def _cheapest_model() -> str:
+    """Cheapest model for the active provider (the budget-downgrade target)."""
+    return _provider_default_chains()["fast"][0]
 
 
 # ── Budget state (estimated spend) ──────────────────────────────────────────
@@ -183,22 +236,24 @@ def create_llm(model_id: str):
 def _chain_for(tier: str) -> list[str]:
     env = os.getenv(f"LTI_CHAIN_{tier.upper()}", "")
     ids = [m.strip() for m in env.split(",") if m.strip()]
-    return ids or _DEFAULT_CHAINS.get(tier, _DEFAULT_CHAINS["strong"])
+    defaults = _provider_default_chains()
+    return ids or defaults.get(tier, defaults["strong"])
 
 
 def select_chain(tier: str) -> list[str]:
     """Return the model chain for a tier, downgraded to cheapest if over budget."""
     chain = list(_chain_for(tier))
+    cheapest = _cheapest_model()
     spent = _read_spend()
     if spent >= BUDGET_USD * BUDGET_DOWNGRADE_AT:
         logger.warning(
             "Budget soft-cap: $%.4f/$%.2f spent (>=%.0f%%) -> downgrading '%s' tier to cheapest (%s)",
-            spent, BUDGET_USD, BUDGET_DOWNGRADE_AT * 100, tier, _CHEAPEST,
+            spent, BUDGET_USD, BUDGET_DOWNGRADE_AT * 100, tier, cheapest,
         )
-        return [_CHEAPEST]
+        return [cheapest]
     # Always keep the cheapest as a final fallback
-    if _CHEAPEST not in chain:
-        chain.append(_CHEAPEST)
+    if cheapest not in chain:
+        chain.append(cheapest)
     return chain
 
 
@@ -208,6 +263,7 @@ def invoke_with_fallback(prompt: str, tier: str = "strong") -> tuple[str, str]:
     Records estimated spend on success. Empty output (e.g. a content block) is
     treated as failure so the chain advances. Returns (text, model_id_used).
     """
+    global _LAST_MODEL_USED
     last_err = "no models configured"
     for mid in select_chain(tier):
         try:
@@ -221,6 +277,7 @@ def invoke_with_fallback(prompt: str, tier: str = "strong") -> tuple[str, str]:
                     "LLM tier=%s model=%s ~$%.5f (cumulative ~$%.4f/$%.2f)",
                     tier, mid, cost, total, BUDGET_USD,
                 )
+                _LAST_MODEL_USED = mid
                 return text, mid
             last_err = f"empty response from '{mid}'"
             logger.warning(last_err)
