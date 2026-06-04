@@ -6,6 +6,7 @@ psycopg2-binary
 python-dotenv
 celery[redis]
 redis
+watchdog  # dev: auto-restart celery worker on code changes (watchmedo)
 
 beautifulsoup4
 pysocks

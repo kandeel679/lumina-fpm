@@ -92,7 +92,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A celery_app.celery worker --loglevel=info
+    # Auto-restart the worker when any .py under /app changes (the worker has no
+    # native --reload). Without this, the bind-mounted code updates on disk but
+    # the running worker keeps STALE code in memory — the cause of null
+    # clean/coverage_note in early scans. Requires `watchdog` (in requirements);
+    # rebuild once: `docker compose up -d --build celery_worker`.
+    command:
+      - watchmedo
+      - auto-restart
+      - --directory=/app
+      - --pattern=*.py
+      - --recursive
+      - --ignore-patterns=*/.*;*/__pycache__/*
+      - --
+      - celery
+      - -A
+      - celery_app.celery
+      - worker
+      - --loglevel=info
     restart: unless-stopped
 
   # ---------------------------------------------

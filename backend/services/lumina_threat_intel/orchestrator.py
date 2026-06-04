@@ -449,6 +449,11 @@ def run_scan(
     all_findings: list[dict[str, Any]] = []
 
     try:
+        # Build marker — appears in celery logs ONLY when the worker has loaded
+        # THIS orchestrator. If a scan's logs lack this line, celery_worker is
+        # running STALE code (the worker has no --reload): restart it.
+        logger.info("LTI orchestrator build=assessment-v2 "
+                    "(clean + coverage_note + router-model-report)")
         # ── Initialize Robin's LLM ──
         logger.info("Initializing Robin LLM engine")
         robin_model = get_robin_model_name()
@@ -614,13 +619,16 @@ def run_scan(
         # ── Clearnet seed findings (deterministic, no LLM / no Tor) ──
         # Authoritative CVE/KEV data scoped to the customer's firewall vendors;
         # reliable even when Tor is flaky, and free against the LLM budget.
+        darkweb_count = len(all_findings)
+        clearnet_count = 0
         try:
             from .clearnet_intel import fetch_clearnet_findings
             clearnet_findings = fetch_clearnet_findings(db, device_ids=device_ids)
             if clearnet_findings:
+                clearnet_count = len(clearnet_findings)
                 all_findings.extend(clearnet_findings)
-                logger.info("Merged %d clearnet (CISA KEV) findings", len(clearnet_findings))
-                sse_publisher.emit(report.id, "clearnet_merged", {"count": len(clearnet_findings)})
+                logger.info("Merged %d clearnet (CISA KEV + NVD) findings", clearnet_count)
+                sse_publisher.emit(report.id, "clearnet_merged", {"count": clearnet_count})
         except Exception as e:
             logger.error("Clearnet intel failed: %s", str(e))
             _log_error(report, "clearnet", str(e))
@@ -637,6 +645,36 @@ def run_scan(
         # band medium or high (computed AFTER the correlator's hybrid adjustment).
         report.clean = not any(
             f.get("relevance_band") in ("medium", "high") for f in all_findings
+        )
+
+        # Guarantee a non-null coverage_note (the "this FW is clean — here's what
+        # we checked" UX). Prefer the LLM's note; else synthesize a deterministic
+        # summary of what was actually searched / ruled out.
+        if not (report.coverage_note or "").strip():
+            raised = sum(
+                1 for f in all_findings
+                if f.get("relevance_band") in ("medium", "high")
+            )
+            report.coverage_note = (
+                f"Searched {report.queries_generated_count or 0} dark-web queries; "
+                f"scraped {report.onion_pages_scraped_count or 0} onion pages; "
+                f"cross-checked clearnet feeds (CISA KEV, NVD) scoped to the "
+                f"customer's firewall vendors. "
+                + (
+                    "No item reached medium+ relevance to the monitored firewalls."
+                    if report.clean
+                    else f"{raised} item(s) reached medium+ relevance — see findings."
+                )
+            )
+
+        # Diagnostics (visible in celery logs): per-source counts and the
+        # relevance-band distribution that drove `clean`.
+        from collections import Counter
+        _bands = Counter(f.get("relevance_band") for f in all_findings)
+        logger.info(
+            "Assessment: darkweb=%d clearnet=%d total=%d clean=%s bands=%s",
+            darkweb_count, clearnet_count, len(all_findings),
+            report.clean, dict(_bands),
         )
 
         # ── Step 10: Diff ──
@@ -692,7 +730,13 @@ def run_scan(
         # Finalize report
         report.stats = _compute_stats(all_findings)
         report.status = "completed" if not had_partial_failures else "partial"
-        report.llm_model_name = f"robin/{robin_model}"
+        # Report the model the router ACTUALLY used (the configured ROBIN_MODEL
+        # env is only the legacy default and may not be what ran).
+        try:
+            from .model_router import last_model_used
+            report.llm_model_name = last_model_used() or f"robin/{robin_model}"
+        except Exception:
+            report.llm_model_name = f"robin/{robin_model}"
 
         sse_publisher.emit(report.id, "done", {"report_id": report.id})
 
