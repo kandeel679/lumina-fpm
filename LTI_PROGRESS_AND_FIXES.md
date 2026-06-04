@@ -202,6 +202,29 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - **Interim outcome:** correctly conservative — vendor-present CVEs sit at `medium`
   until a real version match is proven.
 
+### P12 — API returned `clean: null` / `coverage_note: null` on a correct scan
+- **Symptom:** a colleague's run (Report 8) finished cleanly — logs showed
+  `build=assessment-v2`, `Assessment: … clean=False bands={'medium': 40, 'low': 22}`,
+  the `coverage_note` UPDATE committed, and `test_ground` printed `CLEAN: False` +
+  the full coverage note — yet the **API JSON** for that report showed
+  `clean: null` and `coverage_note: null` (every other field was current).
+- **Root cause:** a **read-side serialization bug**, not a scan/worker bug. In
+  `api.py`, `list_reports` (`ReportSummaryResponse`) and `get_report_detail`
+  (`ReportDetailResponse`) built the response objects **without** passing
+  `clean=`/`coverage_note=`. The schema declares both as `Optional[... ] = None`,
+  so Pydantic filled the defaults → the API always emitted `null` regardless of the
+  DB. Direct ORM reads (`test_ground`) were correct because they bypass the API.
+- **Confirmation:** `SELECT id, clean, coverage_note FROM threat_intel_reports`
+  showed real values (Report 1 `t`, Reports 2–5 `f`, all with coverage notes) while
+  the endpoint returned `None` for all.
+- **Fix:** pass `clean=r.clean, coverage_note=r.coverage_note` in **both** endpoints.
+  After an `api` reload/restart the endpoint returns the true values
+  (Report 5 `clean=False` + note; Report 1 `clean=True`).
+- **Footgun noted:** the `api` container did **not** hot-reload this edit until
+  `docker compose restart api`; a stale `api` process can mask a correct fix.
+- **Lesson:** when the DB has a value but the API shows `null`, suspect the
+  endpoint's response mapping (forgotten field) before suspecting the pipeline.
+
 ---
 
 ## 4. Before / after
@@ -231,8 +254,11 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - ✅ Assessment model persists correctly (criticality/relevance/tags/hash/diff).
 - ✅ Clearnet backbone: 62 scoped CVEs, $0.
 - ✅ Worker auto-reload + diagnostics live.
-- ⏳ **Open:** (a) make `clean` achievable by lowering NVD baseline to `low` (keep
-  KEV at `medium`); (b) version-aware correlation (P11); (c) dark-web **source
+- ✅ NVD baseline lowered to `low` (KEV stays `medium`) so `clean` is achievable;
+  verified bands `{'medium': 40, 'low': 22}`.
+- ✅ API now surfaces `clean` / `coverage_note` on `GET /scans` and
+  `GET /scans/{id}` (P12); verified after `api` reload.
+- ⏳ **Open:** (a) version-aware correlation (P11); (b) dark-web **source
   quality** — the `.onion` engines return generic pages, so dark-web findings are
-  often 0 even on a good run.
+  often 0 even on a good run; (c) PSIRT connectors (Palo Alto JSON, Fortinet RSS).
 - 💡 Backups wired but unused: DeepSeek direct (set `DEEPSEEK_API_KEY` → auto-preferred).
