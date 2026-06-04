@@ -190,9 +190,14 @@ def fetch_nvd_findings(
                 "category": "exploit",
                 "criticality": crit,
                 "severity": "low" if crit == "info" else crit,
-                "relevance_score": 50,
-                "relevance_band": "medium",
-                "relevance_reason": f"NVD CVE for {urlkey.replace('_', '-')} (customer product)",
+                # NVD = recent CVE for the vendor's product, but NOT confirmed
+                # actively-exploited and NOT version-matched -> low baseline.
+                # The correlator upgrades to high on a real firmware/IOC match,
+                # so the "clean" state stays achievable (only CISA KEV at medium
+                # and version/IOC matches raise a FW above the clean threshold).
+                "relevance_score": 25,
+                "relevance_band": "low",
+                "relevance_reason": f"NVD CVE for {urlkey.replace('_', '-')} (customer product); not version-confirmed",
                 "confidence": 90,
                 "title": f"{cid}: {desc[:120]}".strip()[:512],
                 "description": desc[:1000],
