@@ -196,11 +196,11 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
   exact firmware (e.g. `7.4.3`) against the CVE text, but NVD/KEV describe affected
   **ranges** ("FortiOS 7.4.0 through 7.4.2") — so the exact patch string rarely
   appears.
-- **Status / planned fix:** version-aware relevance using CPE
+- **Status / fix:** **RESOLVED in P14** — version-aware relevance using CPE
   `versionStartIncluding`/`versionEndExcluding` from NVD (range containment), so a
-  CVE that covers the customer's installed version upgrades to `high`. *(Open.)*
-- **Interim outcome:** correctly conservative — vendor-present CVEs sit at `medium`
-  until a real version match is proven.
+  CVE that covers the customer's installed version now upgrades to `high`.
+- **Interim outcome (pre-P14):** correctly conservative — vendor-present CVEs sat at
+  `medium`/`low` until a real version match was proven.
 
 ### P12 — API returned `clean: null` / `coverage_note: null` on a correct scan
 - **Symptom:** a colleague's run (Report 8) finished cleanly — logs showed
@@ -256,6 +256,39 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - **Open (unchanged):** the deeper issue is **source quality** — the `.onion`
   engines need curating toward real firewall-relevant markets/forums so the filter
   has something to keep.
+
+### P14 — Version-aware correlation (resolves P11): CVEs covering installed firmware → `high`
+- **Goal:** make relevance reflect the customer's **exact installed firmware**, not
+  just "a CVE exists for this vendor." Previously NVD findings sat at `low` and KEV at
+  `medium` because correlation was literal-substring on the patch string (P11).
+- **Fix — capture ranges (`clearnet_intel.py`):** `_extract_affected_ranges()` parses
+  each NVD CVE's `configurations → nodes → cpeMatch`, keeping only `vulnerable: true`
+  entries whose CPE `criteria` names the **customer's product**
+  (`_NVD_PRODUCT_CPE`: `:fortinet:fortios:`, `:paloaltonetworks:pan-os:`,
+  `:cisco:adaptive_security_appliance:`/`:cisco:asa:`). It records
+  `versionStart/EndIncluding/Excluding` (or an exact CPE version) onto the finding as
+  internal hints `_affected_ranges` + `_nvd_product` (stripped at persistence; not
+  schema fields, ignored by the hash which is `category|title|iocs`).
+- **Fix — range containment (`correlator.py`):** `_version_tuple()` normalizes a
+  version to a fixed-length int tuple (`7.4.3 → (7,4,3,0)`, build suffixes dropped);
+  `_version_in_range()` tests inclusive/exclusive bounds (or exact). A new block maps
+  `_nvd_product → vendor token` (`fortios→fortinet`, etc.) so a FortiOS CVE only tests
+  Fortinet devices, then, if the device's installed firmware is inside any affected
+  range, adds the device + its rules to the match and the existing hybrid block
+  upgrades the finding to `high` (score ≥ 90) with reason "installed firmware X on
+  device N is within an affected version range for this CVE."
+- **Verified (live NVD, 120-day window):** unit checks `7.4.3 ∈ (<7.4.9)` → True,
+  `7.4.3 ∈ [7.4.0,7.4.2]` → False. Real fetch: 24 NVD findings, 9 carry ranges, **8
+  upgraded to `high`** because FortiOS `7.4.3` (devices 1,2) and PAN-OS `11.1.2`
+  (device 3) fall inside recent CVE ranges (e.g. CVE-2025-55018/64157/68686,
+  CVE-2026-0300/0257). PAN-OS `11.0.4` and Cisco ASA `9.18.3` had no matching recent
+  CVE → stay low/clean, correctly.
+- **Net:** relevance is now **version-confirmed**, not vendor-guessed. `clean` flips to
+  `False` only when a device is actually inside an affected range (or KEV/IOC match),
+  which is exactly the dedicated-to-their-system signal the product promises.
+- **Caveat:** comparison is numeric-tuple, padded to 4 components; non-numeric build
+  tags (`_mr10`, `_beta`) are dropped — fine for modern firewall firmware, approximate
+  for ancient FortiOS strings.
 
 ---
 

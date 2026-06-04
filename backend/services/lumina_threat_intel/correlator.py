@@ -22,6 +22,56 @@ from .schemas import Finding
 
 logger = logging.getLogger(__name__)
 
+# NVD url key (set on clearnet findings as `_nvd_product`) -> customer vendor-name
+# token, so a FortiOS CVE only version-matches Fortinet devices, etc.
+_NVD_PRODUCT_VENDOR = {"fortios": "fortinet", "pan_os": "palo alto", "cisco_asa": "cisco"}
+
+
+def _version_tuple(v: str, length: int = 4) -> Optional[tuple[int, ...]]:
+    """Normalize a firmware/CVE version to a fixed-length integer tuple for
+    comparison. '7.4.3' -> (7, 4, 3, 0). Non-numeric build suffixes are dropped.
+    Returns None when no numeric component is present.
+    """
+    nums = re.findall(r"\d+", v or "")
+    if not nums:
+        return None
+    t = [int(n) for n in nums[:length]]
+    t += [0] * (length - len(t))
+    return tuple(t)
+
+
+def _version_in_range(ver: str, rng: dict) -> bool:
+    """True if installed version `ver` falls inside an NVD CPE range/exact match."""
+    v = _version_tuple(ver)
+    if v is None:
+        return False
+    exact = rng.get("exact")
+    if exact:
+        ev = _version_tuple(exact)
+        return ev is not None and v == ev
+    has_bound = False
+    if rng.get("startIncl"):
+        b = _version_tuple(rng["startIncl"])
+        if b is None or v < b:
+            return False
+        has_bound = True
+    if rng.get("startExcl"):
+        b = _version_tuple(rng["startExcl"])
+        if b is None or v <= b:
+            return False
+        has_bound = True
+    if rng.get("endIncl"):
+        b = _version_tuple(rng["endIncl"])
+        if b is None or v > b:
+            return False
+        has_bound = True
+    if rng.get("endExcl"):
+        b = _version_tuple(rng["endExcl"])
+        if b is None or v >= b:
+            return False
+        has_bound = True
+    return has_bound
+
 
 def correlate_findings(
     db: Session,
@@ -138,6 +188,33 @@ def correlate_findings(
                             f"CVE {ioc_val} context references firmware '{fw_ver}' "
                             f"on device(s) {dev_ids}"
                         )
+
+        # Version-aware correlation (P14): NVD findings carry CPE version ranges.
+        # If a device's INSTALLED firmware falls inside an affected range, that's
+        # an authoritative match -> upgrade to high (handled by the block below).
+        affected_ranges = finding.get("_affected_ranges") or []
+        nvd_product = finding.get("_nvd_product")
+        if affected_ranges and nvd_product:
+            vendor_token = _NVD_PRODUCT_VENDOR.get(nvd_product, "")
+            for device in all_devices:
+                if not device.firmware_version:
+                    continue
+                vname = ((device.vendor.name if device.vendor else "") or "").lower()
+                if vendor_token and vendor_token not in vname:
+                    continue
+                if any(_version_in_range(device.firmware_version, rng) for rng in affected_ranges):
+                    matched_device_ids.add(device.device_id)
+                    device_rules = [
+                        r.rule_id
+                        for r in db.query(PolicyRule.rule_id)
+                        .filter(PolicyRule.device_id == device.device_id)
+                        .all()
+                    ]
+                    matched_rule_ids.update(device_rules)
+                    match_reasons.append(
+                        f"installed firmware {device.firmware_version} on device "
+                        f"{device.device_id} is within an affected version range for this CVE"
+                    )
 
         # Also check device firmware for general vendor-keyword matches
         finding_text = (

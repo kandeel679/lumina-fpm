@@ -27,6 +27,47 @@ NVD_LOOKBACK_DAYS = int(os.getenv("LTI_NVD_LOOKBACK_DAYS", "120"))  # NVD window
 # Customer vendor (lowercased substring) -> NVD url key in sources.CLEARNET_FEEDS
 _NVD_VENDOR_KEY = {"fortinet": "fortios", "palo alto": "pan_os", "cisco": "cisco_asa"}
 
+# NVD url key -> CPE product tokens (substring of the cpeMatch `criteria`). Used to
+# keep only the version ranges that apply to the CUSTOMER'S product, not other
+# products that may appear in the same CVE configuration (e.g. FortiProxy).
+_NVD_PRODUCT_CPE = {
+    "fortios": [":fortinet:fortios:"],
+    "pan_os": [":paloaltonetworks:pan-os:"],
+    "cisco_asa": [":cisco:adaptive_security_appliance:", ":cisco:asa:"],
+}
+
+
+def _extract_affected_ranges(cve: dict, product_cpe_tokens: list[str]) -> list[dict]:
+    """Pull CPE version ranges (versionStart/EndIncluding/Excluding or an exact
+    version) for the customer's product from an NVD CVE's `configurations`.
+
+    Only `vulnerable: true` matches whose CPE `criteria` names the customer's
+    product are kept, so the correlator can later test whether the device's
+    installed firmware actually falls inside an affected range (P11 -> high).
+    """
+    ranges: list[dict] = []
+    for cfg in cve.get("configurations", []) or []:
+        for node in cfg.get("nodes", []) or []:
+            for m in node.get("cpeMatch", []) or []:
+                if not m.get("vulnerable"):
+                    continue
+                crit = (m.get("criteria") or "").lower()
+                if product_cpe_tokens and not any(t in crit for t in product_cpe_tokens):
+                    continue
+                rng = {
+                    "startIncl": m.get("versionStartIncluding"),
+                    "startExcl": m.get("versionStartExcluding"),
+                    "endIncl": m.get("versionEndIncluding"),
+                    "endExcl": m.get("versionEndExcluding"),
+                }
+                parts = crit.split(":")
+                exact = parts[5] if len(parts) > 5 else "*"
+                if exact not in ("*", "-", ""):
+                    rng["exact"] = exact
+                if any(rng.get(k) for k in ("startIncl", "startExcl", "endIncl", "endExcl")) or "exact" in rng:
+                    ranges.append({k: v for k, v in rng.items() if v})
+    return ranges
+
 # Customer vendor name (lowercased substring) -> FIREWALL-PRODUCT match tokens.
 # Deliberately product-specific (not bare vendor names) so we don't pull
 # unrelated products (e.g. Cisco Catalyst SD-WAN, FortiClient EMS).
@@ -186,6 +227,7 @@ def fetch_nvd_findings(
                     sev = cd.get("baseSeverity")
                     break
             crit = _cvss_to_criticality(score, sev)
+            affected_ranges = _extract_affected_ranges(cve, _NVD_PRODUCT_CPE.get(urlkey, []))
             out.append({
                 "category": "exploit",
                 "criticality": crit,
@@ -209,6 +251,11 @@ def fetch_nvd_findings(
                 },
                 "recommended_actions": ["Review vendor advisory and patch affected versions"],
                 "tags": ["nvd", "cve"],
+                # Internal hints for the correlator (stripped at persistence; not a
+                # schema field). Lets version-aware correlation upgrade to high when
+                # the installed firmware is inside an affected CPE range.
+                "_affected_ranges": affected_ranges,
+                "_nvd_product": urlkey,
             })
     logger.info("NVD: %d recent CVE findings for customer products", len(out))
     return out
