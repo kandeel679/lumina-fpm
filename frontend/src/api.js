@@ -5,6 +5,75 @@
 
 import { LFPM as mockLFPM } from './data';
 
+/* Canonical vendor identity. Keeps UI vendor ids STABLE ('palo-alto',
+ * 'fortinet', 'cisco') regardless of the DB display name, and provides the
+ * correct firmware-OS prefix per vendor (PAN-OS / FortiOS / ASA). Previously
+ * the id was a slug of the name ("Palo Alto Networks" -> "palo-alto-networks"),
+ * which broke the dashboard's vendor filters (NaN risk) and mislabelled Cisco. */
+function vendorMeta(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('palo'))  return { id: 'palo-alto', abbr: 'PA', accent: '#ffb866', os: 'PAN-OS' };
+  if (n.includes('forti')) return { id: 'fortinet',  abbr: 'FT', accent: '#ff7a7a', os: 'FortiOS' };
+  if (n.includes('cisco')) return { id: 'cisco',     abbr: 'CS', accent: '#6bb4f7', os: 'ASA' };
+  return {
+    id: n.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown',
+    abbr: (name || '?').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || '??',
+    accent: '#9aa3b2', os: '',
+  };
+}
+
+/* Build a live SOC activity feed from real findings, rule anomalies and the
+ * last scan. Replaces the synthetic feed that referenced devices/CVEs not in
+ * the customer's actual inventory. Newest-first; timestamps are HH:MM:SS near
+ * "now" so the dashboard's relative-time labels read naturally. */
+function buildActivityFeed({ threats, firewalls, ruleDetails, meta }) {
+  const feed = [];
+  let offMin = 0;
+  const stamp = () => {
+    const d = new Date(Date.now() - offMin * 60000);
+    offMin += 1 + Math.floor(Math.random() * 2);
+    return d.toTimeString().slice(0, 8);
+  };
+  const fwById = new Map(firewalls.map(fw => [fw.id, fw]));
+
+  if (meta.lastScanAt) {
+    feed.push({
+      t: stamp(), kind: 'audit',
+      text: `threat-intel scan ${meta.lastScanStatus || 'completed'} · ${meta.totalFindings} findings · ${meta.correlatedRules} correlated to rules`,
+      link: { page: 'threats' },
+    });
+  }
+
+  // Correlated findings = real exposure on a real device → priority alerts
+  (threats || [])
+    .filter(t => t.correlated && t.firewallIds && t.firewallIds.length)
+    .sort((a, b) => (b.severity === 'critical') - (a.severity === 'critical'))
+    .slice(0, 5)
+    .forEach(t => {
+      const dev = fwById.get(String(t.firewallIds[0]));
+      feed.push({
+        t: stamp(), kind: 'alert',
+        sev: t.severity === 'critical' ? 'critical' : 'high',
+        text: `${t.id} affects ${dev ? dev.display : 'device ' + t.firewallIds[0]}${t.isNew ? ' · new this scan' : ''}`,
+        link: { page: 'threats', params: { cve: t.id } },
+      });
+    });
+
+  // Rule anomalies from the policy audit
+  const anomEntries = [];
+  (ruleDetails || []).forEach(d => (d.anoms || []).forEach(a => anomEntries.push({ ruleId: d.ruleId, a })));
+  anomEntries.slice(0, 4).forEach(({ ruleId, a }) => {
+    feed.push({
+      t: stamp(), kind: 'anomaly',
+      sev: a.severity_level === 'critical' ? 'critical' : 'high',
+      text: `${String(a.anomaly_type || 'anomaly').replace(/_/g, ' ')} · POL-${String(ruleId).padStart(3, '0')}`,
+      link: { page: 'audit', params: { rule: `POL-${String(ruleId).padStart(3, '0')}` } },
+    });
+  });
+
+  return feed;
+}
+
 export async function fetchLFPMData() {
   try {
     // 1. Fetch core database collections in parallel
@@ -15,23 +84,14 @@ export async function fetchLFPMData() {
       fetch('/api/v1/network-objects/').then(res => res.json()),
     ]);
 
-    // 2. Map Vendors
+    // 2. Map Vendors (stable canonical ids)
     const vendors = dbVendors.map(v => {
-      const slug = v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      let abbr = 'FT';
-      let accent = '#ff7a7a';
-      if (v.name.toLowerCase().includes('palo alto')) {
-        abbr = 'PA';
-        accent = '#ffb866';
-      } else if (v.name.toLowerCase().includes('cisco')) {
-        abbr = 'CS';
-        accent = '#6bb4f7';
-      }
+      const m = vendorMeta(v.name);
       return {
-        id: slug,
+        id: m.id,
         name: v.name,
-        abbr,
-        accent,
+        abbr: m.abbr,
+        accent: m.accent,
         db_id: v.vendor_id,
       };
     });
@@ -124,13 +184,14 @@ export async function fetchLFPMData() {
     // 5. Map Firewalls (Devices)
     const firewalls = dbDevices.map(d => {
       const v = vendors.find(vend => vend.db_id === d.vendor_id) || { id: 'unknown', name: 'Unknown', abbr: 'UNK' };
-      
-      let model = 'PA-5220';
-      if (v.name.toLowerCase().includes('fortinet')) {
+      const vm = vendorMeta(v.name);
+
+      let model = 'Firewall';
+      if (vm.id === 'fortinet') {
         model = d.hostname.includes('CORE') ? 'FortiGate 600F' : 'FortiGate 200F';
-      } else if (v.name.toLowerCase().includes('cisco')) {
-        model = 'Cisco ASA 9.18';
-      } else {
+      } else if (vm.id === 'cisco') {
+        model = 'Cisco ASA 5500-X';
+      } else if (vm.id === 'palo-alto') {
         model = d.hostname.includes('DC') ? 'PA-5220' : 'PA-820';
       }
 
@@ -148,7 +209,7 @@ export async function fetchLFPMData() {
         display: d.hostname,
         model,
         location: d.hostname.includes('HQ') ? 'HQ DC · Rack 3A' : d.hostname.includes('DC') ? 'Data Center North' : 'Branch · Alex',
-        firmware: d.firmware_version ? (v.name.toLowerCase().includes('fortinet') ? 'FortiOS ' + d.firmware_version : 'PAN-OS ' + d.firmware_version) : 'Unknown',
+        firmware: d.firmware_version ? `${vm.os} ${d.firmware_version}`.trim() : 'Unknown',
         ip: d.management_ip,
         serial: `${v.abbr}-SN-` + String(d.device_id).padStart(5, '0') + 'A',
         zone: d.hostname.includes('HQ') ? 'CORE' : d.hostname.includes('DC') ? 'DC' : 'BRANCH',
@@ -236,27 +297,72 @@ export async function fetchLFPMData() {
         };
       });
 
-    // 8. Fetch real Threat Findings
-    const threatFindings = await fetch('/api/v1/threat-intel/findings?page_size=100')
-      .then(res => res.json())
-      .catch(() => ({ items: [] }));
+    // 8. Fetch real Threat Findings + scan stats (in parallel)
+    const [threatFindings, tiStats] = await Promise.all([
+      fetch('/api/v1/threat-intel/findings?page_size=100').then(res => res.json()).catch(() => ({ items: [] })),
+      fetch('/api/v1/threat-intel/dashboard/stats').then(res => res.json()).catch(() => null),
+    ]);
+
+    const deviceById = new Map(firewalls.map(fw => [fw.id, fw]));
+
+    /* Derive the affected vendor(s) for a finding from its matched devices,
+     * falling back to product keywords in the title/description/tags. Keeps the
+     * dashboard's per-vendor CVE counts and the Threats vendor filter accurate. */
+    const deriveVendors = (f) => {
+      const fromDevices = (f.matched_device_ids || [])
+        .map(id => deviceById.get(String(id))?.vendorId)
+        .filter(Boolean);
+      if (fromDevices.length) return Array.from(new Set(fromDevices));
+      const hay = `${f.title || ''} ${f.description || ''} ${(f.tags || []).join(' ')}`.toLowerCase();
+      const vs = [];
+      if (/fortios|fortigate|fortinet/.test(hay)) vs.push('fortinet');
+      if (/pan-os|panos|palo|globalprotect/.test(hay)) vs.push('palo-alto');
+      if (/\basa\b|adaptive security|cisco/.test(hay)) vs.push('cisco');
+      return vs.length ? vs : [];
+    };
+    const isKev = (f) =>
+      /known exploited|cisa kev|\bkev\b/i.test(f.source_marketplace_or_forum || '')
+      || (f.tags || []).map(t => String(t).toLowerCase()).includes('kev');
 
     const threats = threatFindings.items && threatFindings.items.length > 0
-      ? threatFindings.items.map(f => ({
-          id: f.title.includes('CVE-') ? f.title.split(' ')[0] : `CVE-2024-${f.id}`,
-          severity: f.severity,
-          cvss: f.severity === 'critical' ? 9.8 : f.severity === 'high' ? 8.2 : 5.0,
-          title: f.title,
-          firmware: f.tags || ['PAN-OS 10.1.6'],
-          vendors: f.category ? [f.category] : ['palo-alto'],
-          firewallIds: f.matched_device_ids.map(String),
-          published: f.source_scraped_at ? f.source_scraped_at.split('T')[0] : '2024-04-12',
-          patched: f.recommended_actions && f.recommended_actions.length > 0 ? f.recommended_actions[0] : 'Third-party patch',
-          exploit: f.is_new_since_last_scan ? 'active' : 'poc',
-          kev: f.is_new_since_last_scan || false,
-          description: f.description || '',
-        }))
+      ? threatFindings.items.map(f => {
+          const matchedFw = (f.matched_device_ids || []).map(id => deviceById.get(String(id))).filter(Boolean);
+          const kev = isKev(f);
+          return {
+            id: f.title && f.title.includes('CVE-') ? f.title.split(' ')[0].replace(/[:,]$/, '') : `FND-${f.id}`,
+            severity: f.severity,
+            cvss: f.severity === 'critical' ? 9.5 : f.severity === 'high' ? 8.0 : f.severity === 'medium' ? 5.5 : 2.5,
+            title: f.title,
+            firmware: matchedFw.length ? Array.from(new Set(matchedFw.map(fw => fw.firmware))) : (f.tags || []),
+            vendors: deriveVendors(f),
+            firewallIds: (f.matched_device_ids || []).map(String),
+            published: f.source_scraped_at ? String(f.source_scraped_at).split('T')[0]
+                       : (f.created_at ? String(f.created_at).split('T')[0] : ''),
+            patched: f.recommended_actions && f.recommended_actions.length > 0 ? f.recommended_actions[0] : 'Review vendor advisory',
+            exploit: kev ? 'active' : (f.is_new_since_last_scan ? 'poc' : 'poc'),
+            kev,
+            correlated: (f.matched_device_ids || []).length > 0,
+            correlationReason: f.correlation_match_reason || '',
+            isNew: f.is_new_since_last_scan || false,
+            description: f.description || '',
+          };
+        })
       : mockLFPM.threats; // Fallback to mock threats if scan hasn't run yet
+
+    // Scan metadata (drives live KPIs + page subtitle, no fabricated numbers)
+    const meta = {
+      lastScanAt: tiStats?.last_scan_at || null,
+      lastScanStatus: tiStats?.last_scan_status || null,
+      totalScans: tiStats?.total_scans || 0,
+      totalFindings: threatFindings.total ?? (threatFindings.items?.length || 0),
+      newFindingsLastScan: tiStats?.new_findings_last_scan || 0,
+      criticalFindings: tiStats?.critical_findings_last_7d || 0,
+      highFindings: tiStats?.high_findings_last_7d || 0,
+      correlatedRules: tiStats?.correlated_rules_count || 0,
+    };
+
+    // Live activity feed derived from real findings + anomalies + last scan.
+    const liveFeed = buildActivityFeed({ threats, firewalls, ruleDetails, meta });
 
     // Consolidate into dynamic dataset matching mock data structure
     return {
@@ -265,11 +371,12 @@ export async function fetchLFPMData() {
       policies,
       conflicts: conflicts.length > 0 ? conflicts : mockLFPM.conflicts,
       threats,
+      meta,
       zones: zones.length > 0 ? zones : mockLFPM.zones,
       assets: assets.length > 0 ? assets : mockLFPM.assets,
       firmwareTimeline: mockLFPM.firmwareTimeline,
       externalNodes: mockLFPM.externalNodes,
-      activityFeed: mockLFPM.activityFeed,
+      activityFeed: liveFeed.length > 0 ? liveFeed : mockLFPM.activityFeed,
       hits24h: mockLFPM.hits24h,
       users: mockLFPM.users,
       savedSearches: mockLFPM.savedSearches,

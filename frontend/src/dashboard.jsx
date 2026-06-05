@@ -20,6 +20,12 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
   const I = window.Icons;
   const [running, setRunning] = React.useState(false);
 
+  /* Live scan metadata from the backend (null-safe; empty on the mock path). */
+  const meta = LFPM.meta || {};
+  const lastScanLabel = meta.lastScanAt
+    ? new Date(meta.lastScanAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+
   /* Activity panel: collapsible, preference persisted across refresh. */
   const [activityCollapsed, setActivityCollapsed] = React.useState(() => {
     try { return localStorage.getItem('lumina_activity_collapsed') === '1'; }
@@ -126,22 +132,27 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       { id:'redundant',  label:'redundant',  count: stats.redundant,  color:'var(--sev-medium)' },
     ].sort((a, b) => b.count - a.count);
 
-    const vendors = ['palo-alto', 'fortinet'].map(vid => {
+    /* Build vendor tiles from the vendors ACTUALLY present in the fleet
+     * (no longer hardcoded to PA/FT — Cisco now shows), and guard the average
+     * against divide-by-zero so a vendor with no rules reads 0, never NaN. */
+    const vendorIds = Array.from(new Set(LFPM.firewalls.map(f => f.vendorId).filter(Boolean)));
+    const vendors = vendorIds.map(vid => {
+      const vinfo = (LFPM.vendors || []).find(v => v.id === vid);
       const vfws = LFPM.firewalls.filter(f => f.vendorId === vid);
       const fwIds = new Set(vfws.map(f => f.id));
       const pols  = LFPM.policies.filter(p => fwIds.has(p.firewallId));
-      const avg   = Math.round(pols.reduce((a, p) => a + p.riskScore, 0) / pols.length);
+      const avg   = pols.length ? Math.round(pols.reduce((a, p) => a + p.riskScore, 0) / pols.length) : 0;
       const issues = pols.filter(p => p.status !== 'clean').length;
-      const cves  = LFPM.threats.filter(t => t.vendors.includes(vid)).length;
-      const kev   = LFPM.threats.filter(t => t.vendors.includes(vid) && t.kev).length;
+      const cves  = LFPM.threats.filter(t => (t.vendors || []).includes(vid)).length;
+      const kev   = LFPM.threats.filter(t => (t.vendors || []).includes(vid) && t.kev).length;
       return {
         id: vid,
-        label: vid === 'palo-alto' ? 'Palo Alto' : 'Fortinet',
-        abbr:  vid === 'palo-alto' ? 'PA'        : 'FT',
+        label: vinfo?.name || vid,
+        abbr:  vinfo?.abbr || vid.slice(0, 2).toUpperCase(),
         devices: vfws.length,
         avg, issues, cves, kev,
       };
-    });
+    }).sort((a, b) => b.avg - a.avg);
 
     return { trend, anomalyTypes, vendors };
   }, [stats]);
@@ -153,7 +164,8 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         <div>
           <h1 className="page-title">Overview</h1>
           <p className="page-sub">
-            Cross-vendor policy health across {stats.devices} firewalls · {stats.rules} rules · last analyzer pass 14:24 UTC
+            Cross-vendor policy health across {stats.devices} firewalls · {stats.rules} rules
+            {lastScanLabel ? ` · last threat scan ${lastScanLabel}` : ''}
           </p>
         </div>
         <div className="row gap-2" style={{ marginLeft: 'auto' }}>
@@ -175,7 +187,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         <HeroKpi
           label="avg fleet risk"
           value={stats.avgRisk}
-          sub={`${LFPM.fmt.riskLabel(stats.avgRisk)} · Δ +3 vs y'day`}
+          sub={`${LFPM.fmt.riskLabel(stats.avgRisk)} · ${stats.issues} open issues`}
           color={LFPM.fmt.riskColor(stats.avgRisk)}
           kind={stats.avgRisk >= 60 ? 'high' : 'safe'}
           onClick={() => navigate('audit', { filter:'critical' })}
@@ -202,20 +214,22 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         <HeroKpi
           label="fleet online"
           value={`${stats.online}/${stats.devices}`}
-          sub={stats.degraded > 0 ? `${stats.degraded} degraded · 1 branch on EOL fw` : 'all healthy'}
+          sub={stats.degraded > 0 ? `${stats.degraded} degraded · ${stats.online} online` : 'all healthy'}
           color={stats.degraded > 0 ? 'var(--sev-high)' : 'var(--sev-safe)'}
           kind={stats.degraded > 0 ? 'high' : 'safe'}
           onClick={() => navigate('topology')}
           cta="topology →"
         />
         <HeroKpi
-          label="rule hits · 24h"
-          value="11.4k"
-          sub="peak 16:42 · +8.2% vs y'day"
+          label="threat findings"
+          value={meta.totalFindings != null ? meta.totalFindings : LFPM.threats.length}
+          sub={meta.lastScanAt
+            ? `${meta.newFindingsLastScan || 0} new · ${meta.correlatedRules || 0} correlated`
+            : `${stats.kev} cisa-kev`}
           color="var(--accent)"
           kind="accent"
-          onClick={() => navigate('audit')}
-          cta="rules →"
+          onClick={() => navigate('threats')}
+          cta="threats →"
         />
       </div>
 
@@ -366,7 +380,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                         {fw.location} · {fw.firmware}
                       </div>
                     </td>
-                    <td className="dim">{fw.vendor.includes('Palo') ? 'palo alto' : 'fortinet'}</td>
+                    <td className="dim">{(fw.vendor || '').toLowerCase()}</td>
                     <td>
                       <span className={`stat-text ${fw.status === 'online' ? 'safe' : 'high'}`}>
                         <span className="dot" /> {fw.status}
@@ -758,6 +772,9 @@ function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
   const I = window.Icons;
   const priority = feed.filter(f => f.sev === 'critical' || f.sev === 'high');
   const rest     = feed.filter(f => !(f.sev === 'critical' || f.sev === 'high'));
+  /* Anchor relative-time to the newest entry in THIS feed (works for both the
+   * frozen mock feed and the live feed whose stamps are near real "now"). */
+  const anchor = secondsOf(feed[0]?.t);
 
   /* Collapsed → slim vertical rail with badge so priority alert
    * count stays visible at a glance. */
@@ -816,7 +833,7 @@ function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
               <span className="count">{priority.length}</span>
             </div>
             {priority.map((f, i) => (
-              <FeedRow key={`p-${i}`} entry={f} priority navigate={navigate} />
+              <FeedRow key={`p-${i}`} entry={f} priority navigate={navigate} anchor={anchor} />
             ))}
           </>
         )}
@@ -826,7 +843,7 @@ function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
           <span className="count">{rest.length}</span>
         </div>
         {rest.map((f, i) => (
-          <FeedRow key={`r-${i}`} entry={f} navigate={navigate} />
+          <FeedRow key={`r-${i}`} entry={f} navigate={navigate} anchor={anchor} />
         ))}
 
         <div style={{ padding: '14px', textAlign: 'center', fontSize: 11, color: 'var(--fg-muted)' }}>
@@ -837,7 +854,7 @@ function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
   );
 }
 
-function FeedRow({ entry, priority, navigate }) {
+function FeedRow({ entry, priority, navigate, anchor }) {
   const I = window.Icons;
   const icons = {
     sync: I.Refresh, alert: I.AlertTri, audit: I.Audit,
@@ -867,26 +884,25 @@ function FeedRow({ entry, priority, navigate }) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); }
       } : undefined}
     >
-      <span className="ts">{relTime(entry.t)}</span>
+      <span className="ts">{relTime(entry.t, anchor)}</span>
       <span className="ico"><Ico size={11} /></span>
       <span className="text">{entry.text}</span>
     </div>
   );
 }
 
-/* Relative-time formatter, anchored to the synthetic "now" of the demo.
- * The activity feed is a frozen snapshot in mock data — we anchor to the
- * most recent timestamp so labels read like "2m ago", "6m ago", etc. */
-const _DEMO_NOW = (() => {
-  const ts = LFPM.activityFeed[0]?.t || '14:32:08';
+/* Relative-time formatter anchored to the newest entry of the feed being
+ * rendered. Works for both the frozen mock feed and the live feed (whose
+ * stamps sit near real "now"). */
+function secondsOf(ts) {
+  if (!ts) return 0;
   const [h, m, s] = ts.split(':').map(Number);
-  return h * 3600 + m * 60 + s;
-})();
-function relTime(t) {
+  return h * 3600 + m * 60 + (s || 0);
+}
+function relTime(t, anchor) {
   if (!t) return '';
-  const [h, m, s] = t.split(':').map(Number);
-  const then = h * 3600 + m * 60 + s;
-  const diff = Math.max(0, _DEMO_NOW - then);
+  const base = anchor != null ? anchor : secondsOf(t);
+  const diff = Math.max(0, base - secondsOf(t));
   if (diff < 60)    return `${diff}s ago`;
   if (diff < 3600)  return `${Math.round(diff / 60)}m ago`;
   return `${Math.round(diff / 3600)}h ago`;
