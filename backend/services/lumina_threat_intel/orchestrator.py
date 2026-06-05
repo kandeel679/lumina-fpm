@@ -719,18 +719,28 @@ def run_scan(
         )
 
         # Guarantee a non-null coverage_note (the "this FW is clean — here's what
-        # we checked" UX). Prefer the LLM's note; else synthesize a deterministic
-        # summary of what was actually searched / ruled out.
-        if not (report.coverage_note or "").strip():
-            raised = sum(
-                1 for f in all_findings
-                if f.get("relevance_band") in ("medium", "high")
+        # we checked" UX). Prefer the LLM's note when it reflects the full report;
+        # else synthesize a deterministic summary (LLM only sees dark-web corpus).
+        raised = sum(
+            1 for f in all_findings
+            if f.get("relevance_band") in ("medium", "high")
+        )
+        llm_note = (report.coverage_note or "").strip()
+        llm_note_stale = (
+            clearnet_count > 0
+            and llm_note
+            and (
+                "empty" in llm_note.lower()
+                or "no threat intelligence findings" in llm_note.lower()
+                or "could not be extracted" in llm_note.lower()
             )
+        )
+        if not llm_note or llm_note_stale:
             report.coverage_note = (
                 f"Searched {report.queries_generated_count or 0} dark-web queries; "
                 f"scraped {report.onion_pages_scraped_count or 0} onion pages; "
-                f"cross-checked clearnet feeds (CISA KEV, NVD) scoped to the "
-                f"customer's firewall vendors. "
+                f"merged {clearnet_count} clearnet finding(s) from CISA KEV and NVD "
+                f"scoped to the customer's firewall vendors. "
                 + (
                     "No item reached medium+ relevance to the monitored firewalls."
                     if report.clean
