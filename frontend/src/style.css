@@ -1829,3 +1829,19 @@ a { color: inherit; text-decoration: none; }
   opacity: 0.55;
   position: relative;
 }
+
+/* ── inline loading spinner (login + threat scan) ───────────── */
+.li-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  margin-right: 6px;
+  animation: li-spin 0.7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes li-spin {
+  to { transform: rotate(360deg); }
+}
