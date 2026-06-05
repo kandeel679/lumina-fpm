@@ -18,6 +18,7 @@ const DEMO_MFA_CODE = '123456';
 function Login({ onLogin, theme, onToggleTheme }) {
   const I = window.Icons;
   const [step, setStep]         = useStateL('credentials');     // credentials | mfa | webauthn | success
+  const [pwFallback, setPwFallback] = useStateL(false);          // reveal email+password fallback form
   const [email, setEmail]       = useStateL('hamza@lumina-fpm.local');
   const [password, setPassword] = useStateL('');
   const [pwShow, setPwShow]     = useStateL(false);
@@ -31,7 +32,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
     { t:'14:31:50', kind:'info', text:'auth-gw · awaiting credentials · session pre-auth-3a91' },
     { t:'14:31:50', kind:'ok',   text:'tls · 1.3 · ecdhe-x25519 · acme org-2 · pin ok' },
     { t:'14:31:50', kind:'info', text:'source · 102.43.18.4 · CAI · cairo · score 12 (trusted)' },
-    { t:'14:31:50', kind:'info', text:'auth-gw · accepting password + totp · webauthn fallback ready' },
+    { t:'14:31:50', kind:'info', text:'auth-gw · webauthn primary · password + totp fallback ready' },
   ]);
 
   const mfaInputs = useRefL([]);
@@ -40,6 +41,15 @@ function Login({ onLogin, theme, onToggleTheme }) {
 
   const userByEmail = (em) =>
     window.LFPM.users.find(u => u.email.toLowerCase() === em.toLowerCase());
+
+  /* ── Initial form submit dispatcher ───────────────────────────── */
+  /* security key is the primary path; Enter triggers it unless the
+     password fallback form is revealed. */
+  const handlePrimarySubmit = (e) => {
+    e?.preventDefault();
+    if (pwFallback) handleCredentials(e);
+    else handleWebauthn();
+  };
 
   /* ── Submit credentials ───────────────────────────────────────── */
   const handleCredentials = async (e) => {
@@ -155,6 +165,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
   const fillAccount = (u) => {
     setEmail(u.email);
     setPassword(DEMO_PASSWORD);
+    setPwFallback(true);
     setPwErr('');
     append({ kind:'info', text:`demo · prefilled credentials for ${u.email}` });
   };
@@ -186,7 +197,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
 
           {/* ─────────── Credentials ─────────── */}
           {step === 'credentials' && (
-            <form onSubmit={handleCredentials}>
+            <form onSubmit={handlePrimarySubmit}>
               <h2 className="login-h">Sign in</h2>
               <p className="login-sub">Access to the SOC platform is restricted to authorized personnel. All sessions are recorded.</p>
 
@@ -199,65 +210,23 @@ function Login({ onLogin, theme, onToggleTheme }) {
                 autoComplete="username"
                 spellCheck={false}
                 disabled={submitting}
-                style={{ marginBottom: 14 }}
+                style={{ marginBottom: 0 }}
               />
 
-              <label htmlFor="li-pw" className="field-label">
-                <div style={{ display:'flex', justifyContent:'space-between' }}>
-                  <span>Password</span>
-                  <button
-                    type="button"
-                    style={{ color: 'var(--accent)', fontSize: 11 }}
-                    onClick={() => window.toast('Password reset', { kind:'info', sub:'Contact security@acme.local · IT-23' })}
-                  >forgot?</button>
-                </div>
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  id="li-pw"
-                  type={pwShow ? 'text' : 'password'}
-                  className="field-input field-mono"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setPwErr(''); }}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  disabled={submitting}
-                />
-                <button
-                  type="button"
-                  onClick={() => setPwShow(s => !s)}
-                  style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', color:'var(--fg-3)' }}
-                  tabIndex={-1}
-                >
-                  {pwShow ? <I.EyeOff size={14} /> : <I.Eye size={14} />}
-                </button>
-              </div>
-
-              {pwErr && (
-                <div style={{
-                  marginTop: 12, padding: '8px 10px',
-                  background: 'var(--sev-critical-bg)',
-                  border: '1px solid var(--sev-critical-bd)',
-                  borderRadius: 4, color: 'var(--sev-critical)',
-                  fontSize: 12, display:'flex', alignItems:'center', gap: 8,
-                }}>
-                  <I.AlertCirc size={13} /> {pwErr}
-                </div>
-              )}
-
+              {/* ── PRIMARY: security key ── */}
               <button
-                type="submit"
-                disabled={submitting || !email || !password}
+                type="button"
                 className="btn primary"
                 style={{
                   width:'100%', padding:'10px', justifyContent:'center',
                   marginTop: 18, fontSize: 13,
-                  opacity: (!email || !password) ? 0.6 : 1,
                 }}
+                onClick={handleWebauthn}
+                disabled={submitting}
               >
                 {submitting
                   ? <><span className="li-spinner" /> Authenticating…</>
-                  : <>continue <I.ArrowRight size={13} /></>}
+                  : <><I.Key size={14} /> Continue with security key</>}
               </button>
 
               <div style={{
@@ -269,15 +238,90 @@ function Login({ onLogin, theme, onToggleTheme }) {
                 <div style={{ flex:1, height:1, background:'var(--bd-1)' }} />
               </div>
 
-              <button
-                type="button"
-                className="btn"
-                style={{ width:'100%', padding:'9px', justifyContent:'center', fontSize: 12.5 }}
-                onClick={handleWebauthn}
-                disabled={submitting}
-              >
-                <I.Key size={13} /> continue with security key
-              </button>
+              {/* ── SECONDARY / fallback: email + password ── */}
+              {!pwFallback ? (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ width:'100%', padding:'9px', justifyContent:'center', fontSize: 12.5 }}
+                  onClick={() => { setPwFallback(true); setPwErr(''); }}
+                  disabled={submitting}
+                >
+                  <I.Lock size={13} /> Sign in with password instead
+                </button>
+              ) : (
+                <>
+                  <label htmlFor="li-pw" className="field-label">
+                    <div style={{ display:'flex', justifyContent:'space-between' }}>
+                      <span>Password</span>
+                      <button
+                        type="button"
+                        style={{ color: 'var(--accent)', fontSize: 11 }}
+                        onClick={() => window.toast('Password reset', { kind:'info', sub:'Contact security@acme.local · IT-23' })}
+                      >forgot?</button>
+                    </div>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      id="li-pw"
+                      type={pwShow ? 'text' : 'password'}
+                      className="field-input field-mono"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setPwErr(''); }}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      autoFocus
+                      disabled={submitting}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPwShow(s => !s)}
+                      style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', color:'var(--fg-3)' }}
+                      tabIndex={-1}
+                    >
+                      {pwShow ? <I.EyeOff size={14} /> : <I.Eye size={14} />}
+                    </button>
+                  </div>
+
+                  {pwErr && (
+                    <div style={{
+                      marginTop: 12, padding: '8px 10px',
+                      background: 'var(--sev-critical-bg)',
+                      border: '1px solid var(--sev-critical-bd)',
+                      borderRadius: 4, color: 'var(--sev-critical)',
+                      fontSize: 12, display:'flex', alignItems:'center', gap: 8,
+                    }}>
+                      <I.AlertCirc size={13} /> {pwErr}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitting || !email || !password}
+                    className="btn"
+                    style={{
+                      width:'100%', padding:'9px', justifyContent:'center',
+                      marginTop: 14, fontSize: 12.5,
+                      opacity: (!email || !password) ? 0.6 : 1,
+                    }}
+                  >
+                    {submitting
+                      ? <><span className="li-spinner" /> Authenticating…</>
+                      : <>continue with password <I.ArrowRight size={13} /></>}
+                  </button>
+
+                  <div style={{ marginTop: 12, textAlign:'center' }}>
+                    <button
+                      type="button"
+                      style={{ color: 'var(--accent)', fontSize: 11.5 }}
+                      onClick={() => { setPwFallback(false); setPwErr(''); }}
+                      disabled={submitting}
+                    >
+                      use security key instead
+                    </button>
+                  </div>
+                </>
+              )}
 
               <div style={{
                 marginTop: 22, padding: '10px 12px',
