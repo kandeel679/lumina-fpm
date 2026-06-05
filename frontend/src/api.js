@@ -321,13 +321,22 @@ export async function fetchLFPMData() {
       return vs.length ? vs : [];
     };
     const isKev = (f) =>
-      /known exploited|cisa kev|\bkev\b/i.test(f.source_marketplace_or_forum || '')
+      f.source_marketplace_or_forum === 'CISA Known Exploited Vulnerabilities'
+      || /known exploited|cisa kev|\bkev\b/i.test(f.source_marketplace_or_forum || '')
       || (f.tags || []).map(t => String(t).toLowerCase()).includes('kev');
+
+    const sourceLane = (f) => {
+      const sourceMarketplace = f.source_marketplace_or_forum || '';
+      const isDarkweb = !!(f.source_onion_url || f.source_search_engine);
+      const isClearnet = !isDarkweb;
+      return { sourceMarketplace, isClearnet, isDarkweb };
+    };
 
     const threats = threatFindings.items && threatFindings.items.length > 0
       ? threatFindings.items.map(f => {
           const matchedFw = (f.matched_device_ids || []).map(id => deviceById.get(String(id))).filter(Boolean);
           const kev = isKev(f);
+          const lane = sourceLane(f);
           return {
             id: f.title && f.title.includes('CVE-') ? f.title.split(' ')[0].replace(/[:,]$/, '') : `FND-${f.id}`,
             severity: f.severity,
@@ -348,6 +357,9 @@ export async function fetchLFPMData() {
             relevanceReason: f.relevance_reason || '',
             isNew: f.is_new_since_last_scan || false,
             description: f.description || '',
+            sourceMarketplace: lane.sourceMarketplace,
+            isClearnet: lane.isClearnet,
+            isDarkweb: lane.isDarkweb,
           };
         })
       : mockLFPM.threats; // Fallback to mock threats if scan hasn't run yet
@@ -402,4 +414,68 @@ export async function triggerDeviceAnalysis(deviceId) {
   const res = await fetch(`/api/v1/rules/device/${deviceId}/analyze`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// Threat Intel — scans, reports, SSE progress
+export async function fetchThreatReports(page = 1, status) {
+  const params = new URLSearchParams({ page: String(page), page_size: '20' });
+  if (status) params.set('status', status);
+  const res = await fetch(`/api/v1/threat-intel/scans?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchThreatReportDetail(id) {
+  const res = await fetch(`/api/v1/threat-intel/scans/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function triggerThreatScan(categories, deviceIds) {
+  const body = { trigger_type: 'manual' };
+  if (categories?.length) body.categories = categories;
+  if (deviceIds?.length) body.device_ids = deviceIds.map(Number);
+  const res = await fetch('/api/v1/threat-intel/scans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** Subscribe to scan progress via SSE. Returns an unsubscribe function. */
+export function subscribeThreatScanProgress(reportId, onEvent) {
+  const es = new EventSource(`/api/v1/threat-intel/scans/${reportId}/stream`);
+  let closed = false;
+
+  const close = () => {
+    if (!closed) {
+      closed = true;
+      es.close();
+    }
+  };
+
+  const handleData = (eventType, event) => {
+    try {
+      const data = JSON.parse(event.data || '{}');
+      onEvent({ type: eventType, data });
+      const st = (data.status || eventType || '').toUpperCase();
+      if (st === 'SUCCESS' || st === 'FAILED' || eventType === 'done') close();
+    } catch (e) {
+      console.warn('SSE parse error', e);
+    }
+  };
+
+  es.onmessage = (e) => handleData('message', e);
+  ['running', 'SUCCESS', 'FAILED', 'progress', 'done'].forEach(t => {
+    es.addEventListener(t, (e) => handleData(t, e));
+  });
+
+  es.onerror = () => {
+    onEvent({ type: 'error', data: {} });
+    close();
+  };
+
+  return close;
 }

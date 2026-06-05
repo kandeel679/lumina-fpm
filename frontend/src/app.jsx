@@ -291,7 +291,7 @@ export default function App() {
         {page === 'dashboard' && <Dashboard            user={user} openInspector={openInspector} goTo={goTo} timeRange={timeRange} onTimeRange={setTimeRange} refreshData={refreshLFPMData} />}
         {page === 'audit'     && <PolicyAudit          user={user} openInspector={openInspector} goTo={goTo} intent={intent} selectedRuleId={inspector?.kind === 'rule' ? inspector.data.id : null} refreshData={refreshLFPMData} />}
         {page === 'topology'  && <Topology             user={user} openInspector={openInspector} goTo={goTo} intent={intent} />}
-        {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} />}
+        {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} refreshData={refreshLFPMData} />}
         {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshLFPMData} />}
       </main>
       <div className="shell-status">
