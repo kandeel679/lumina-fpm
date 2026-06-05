@@ -43,6 +43,8 @@ Seeded inventory: 2× FortiOS 7.4.3, 2× PAN-OS 11.1.2 / 11.0.4, 1× Cisco ASA 9
 
 Run a fresh scan from the UI: **Threat Intelligence → Run threat scan** (SSE progress bar, ~2 LLM calls).
 
+**Demo tip:** On older reports, `narrative_summary` may describe an empty dark-web corpus even when clearnet landed dozens of CVEs — lead with **stats**, **clean**, and the **findings table**, not the narrative alone. New scans synthesize `coverage_note` after clearnet merge.
+
 ---
 
 ## Demo URLs
