@@ -343,6 +343,9 @@ export async function fetchLFPMData() {
             kev,
             correlated: (f.matched_device_ids || []).length > 0,
             correlationReason: f.correlation_match_reason || '',
+            relevanceBand: f.relevance_band || null,
+            relevanceScore: f.relevance_score != null ? f.relevance_score : null,
+            relevanceReason: f.relevance_reason || '',
             isNew: f.is_new_since_last_scan || false,
             description: f.description || '',
           };

@@ -206,10 +206,24 @@ function ThreatIntelligence({ openInspector, intent, goTo }) {
                         {t.cvss.toFixed(1)}
                       </div>
                     </td>
-                    <td className="truncate" style={{ maxWidth: 320 }}>
-                      <span style={{ color:'var(--fg-1)' }}>{t.title}</span>
+                    <td className="truncate" style={{ maxWidth: 340 }}>
+                      <div className="row gap-2" style={{ alignItems: 'center' }}>
+                        <span className="truncate" style={{ color:'var(--fg-1)', maxWidth: 240 }}>{t.title}</span>
+                        {t.relevanceBand === 'high' && (
+                          <span className="chip accent" style={{ fontSize: 9.5 }}
+                                title={t.relevanceReason || 'matches your firewall inventory'}>
+                            relevant{t.relevanceScore != null ? ` ${t.relevanceScore}` : ''}
+                          </span>
+                        )}
+                        {t.relevanceBand === 'medium' && (
+                          <span className="chip" style={{ fontSize: 9.5 }}
+                                title={t.relevanceReason || 'possible relevance to your inventory'}>
+                            rel: med
+                          </span>
+                        )}
+                      </div>
                       <div className="dim" style={{ fontSize: 10.5, marginTop: 1 }}>
-                        {t.firmware.join(' · ')}
+                        {(t.firmware || []).join(' · ')}
                       </div>
                     </td>
                     <td>

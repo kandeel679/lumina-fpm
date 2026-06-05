@@ -320,6 +320,32 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
   metadata-only and unscraped by design (legal/honeypot risk per the safety rules);
   adding read-only listing-page monitoring for them is a future, carefully-scoped step.
 
+### P16 — Frontend: dashboard correctness + live panels + relevance surfaced
+- **Context:** wiring the React UI to the live backend for a demo exposed several
+  read-side gaps (mirrors P12 — the data was correct in the DB but not surfaced).
+- **Dashboard bugs:** (a) Vendor Risk showed `Palo Alto NaN` — the UI vendor id was a
+  slug of the DB name (`palo-alto-networks`) that never matched the expected
+  `palo-alto`, so the average divided by zero; fixed with a canonical `vendorMeta()`
+  and a divide-by-zero guard, and the panel is now built from the vendors actually in
+  the fleet (Cisco now appears). (b) The Cisco ASA was mislabelled vendor `fortinet` /
+  firmware `PAN-OS 9.18.3`; firmware OS prefix + model are now per-vendor and the fleet
+  table prints the real vendor name.
+- **Mock → live panels:** the activity feed / priority alerts now derive from real
+  correlated findings (e.g. CVE-2025-53844 on FG-HQ-EDGE-01), rule anomalies, and the
+  last-scan summary; the fabricated "rule hits 11.4k" KPI is replaced by a real
+  "threat findings" metric from `/threat-intel/dashboard/stats`; the subtitle shows the
+  real last-scan time.
+- **Relevance surfaced (read-side fix):** `/threat-intel/findings` and the finding
+  detail endpoint declared `relevance_band`/`relevance_score`/`criticality` in
+  `FindingResponse` but never populated them (always `null`, exactly the P12 pattern).
+  Now populated from the ORM. The Threats table shows a **`relevant <score>`** badge on
+  high-relevance findings and `rel: med` on medium, making the version-aware P14 signal
+  visible (CVE-2025-53844 → `relevant 90`, affected FG-HQ-EDGE-01/CORE-01).
+- **Verified (browser):** no NaN; Cisco correct; live activity referencing real
+  devices/CVEs; relevance badges render on ~85/100 fetched findings.
+- **Footgun reconfirmed:** the `api` container needed `docker compose restart api` to
+  pick up the endpoint change (`--reload` didn't, as in P12).
+
 ---
 
 ## 4. Before / after

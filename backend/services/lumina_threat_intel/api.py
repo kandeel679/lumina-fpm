@@ -448,6 +448,9 @@ def list_findings(
         iocs = db.query(ThreatIntelIOC).filter(ThreatIntelIOC.finding_id == f.id).all()
         items.append(FindingResponse(
             id=f.id, report_id=f.report_id, category=f.category,
+            criticality=f.criticality,
+            relevance_score=f.relevance_score, relevance_band=f.relevance_band,
+            relevance_reason=f.relevance_reason,
             severity=f.severity, confidence=f.confidence, title=f.title,
             description=f.description or "", recommended_actions=f.recommended_actions or [],
             tags=f.tags or [], source_onion_url=f.source_onion_url,
@@ -480,6 +483,9 @@ def get_finding_detail(finding_id: int, db: Session = Depends(get_session)):
     iocs = db.query(ThreatIntelIOC).filter(ThreatIntelIOC.finding_id == f.id).all()
     return FindingResponse(
         id=f.id, report_id=f.report_id, category=f.category,
+        criticality=f.criticality,
+        relevance_score=f.relevance_score, relevance_band=f.relevance_band,
+        relevance_reason=f.relevance_reason,
         severity=f.severity, confidence=f.confidence, title=f.title,
         description=f.description or "", recommended_actions=f.recommended_actions or [],
         tags=f.tags or [], source_onion_url=f.source_onion_url,
