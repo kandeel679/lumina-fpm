@@ -3,7 +3,7 @@
 **Scope:** the dark-web + clearnet threat-intelligence module at
 `backend/services/lumina_threat_intel/`, fine-tuned to Lumina FPM's firewall scope.
 **Branch:** `feature/lti-agentic-optimization`
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-11
 
 > Companion doc: **`CLAUDE.md`** (the engineering handoff / "how to work on this
 > repo efficiently from scratch"). This file is the *journey* — what we built,
@@ -346,6 +346,51 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 - **Footgun reconfirmed:** the `api` container needed `docker compose restart api` to
   pick up the endpoint change (`--reload` didn't, as in P12).
 
+### P17 — Startup-grade hardening: PSIRT + EPSS + leak-site aggregator, report-quality fixes
+- **Context:** a full-cycle test on an enriched "real enterprise" inventory (org
+  domains, public NAT IP, rule-object mappings — `backend/seed_test_cycle.py`)
+  exposed several quality gaps; all fixed in one hardening pass.
+- **Prompt overhaul:** `SHARED_PREAMBLE` split into `CORE_PREAMBLE` +
+  `DATA_HANDLING_BLOCK` (query generator no longer gets corpus rules it can't use,
+  + a 12-query cap); the confidence rubric is now actually inlined in the Findings
+  prompt; `coverage_note` required on EVERY scan; narrative restructured (BOTTOM
+  LINE / IMPACT BY DEVICE / PRIORITISED NEXT STEPS / SCOPE, 300–450 words);
+  `recommended_actions` follow `"[IMMEDIATE|24H|SCHEDULED] <action> (target: X)"`
+  everywhere (LLM + all deterministic connectors; KEV due-date drives the prefix).
+- **New connectors (all free, $0 LLM):**
+  - **EPSS** (`api.first.org`) — one batched call tags every CVE with its real-world
+    exploitation probability (`epss:0.93`, `likely-exploited` ≥ 0.5).
+  - **Ransomware.live** (`darkweb_aggregators.py`) — REAL dark-web-sourced data
+    (~80 `.onion` leak sites) without touching Tor: checks the customer's org
+    domains against leak-site victims. Full-domain hit → confirmed `high`/95;
+    name-only similarity → explicit `possible-match` at `medium`/50 with a
+    `[24H] Verify…` action (live-validated against an actual 2023 Akira victim
+    "Novatech Engineering Consultants" ≠ demo tenant novatech.com). API quirks
+    handled: search by org-name label (victims are listed by company name), 404 =
+    zero hits, 1-req/min rate limit respected by deduping labels.
+  - **Palo Alto PSIRT** (`security.paloaltonetworks.com/json`) — queried PER
+    INSTALLED PAN-OS VERSION; the vendor filters by exact version, so every
+    advisory is vendor-confirmed → relevance `high`/90 + the fixed version in the
+    action target. Verified: 20 advisories for PAN-OS 11.1.2/11.0.4.
+  - **Fortinet PSIRT** (`fortiguard.com/rss/ir.xml`) — product-filtered IR
+    advisories at conservative `low` (not version-filtered). Verified: 7 items.
+  - Merge/dedup priority: KEV > PAN PSIRT > Fortinet PSIRT > NVD (by CVE).
+- **Correlator fixes:** (a) `possible-match` findings are EXEMPT from the hybrid
+  upgrade — matching the customer's own org-domain IOC against their own network
+  objects is circular and was inflating an unverified leak-site similarity to
+  `high`/90; (b) a confirmed inventory match now also escalates `[SCHEDULED]`
+  actions to `[24H]`.
+- **Whole-report BOTTOM LINE:** the deterministic connectors now run BEFORE the
+  Findings LLM call and a trusted "PARALLEL CHANNELS" summary is injected into the
+  prompt, so the narrative no longer says "no threats" while 40+ clearnet findings
+  sit in the same report (the contradiction the full-cycle test caught).
+- **Keyword extractor:** public `ip-netmask` values moved from `org_domains` to a
+  new `org_ips` field (a bare IP was polluting prompts/queries as a "domain");
+  `cves[]` is now actually populated (CVE regex over rule-anomaly descriptions —
+  the docstring promised it but the code never did it).
+- **Tests:** 49/49 passing (incl. the long-broken `test_succeeds_on_second_attempt`
+  mock that didn't accept `tier=`).
+
 ---
 
 ## 4. Before / after
@@ -362,24 +407,41 @@ LangChain LLM layer; all LTI logic lives in `lumina_threat_intel/`.
 
 ---
 
-## 5. Current status (2026-06-04)
+## 5. Current status (2026-06-11)
 
-- ✅ Pipeline runs end-to-end on Gemini (working `AQ.Ab8…` token in `.env`).
-  **Verified run — Report 4 (2026-06-04, 210s, $0.00):** routing picked Gemini
-  (`fast`=gemini-2.5-flash-lite for query gen → 8 queries in **1** call;
-  `strong`=gemini-2.5-flash for Findings); `Model ACTUALLY used: gemini-2.5-flash`;
-  4 onion pages scraped; 62 clearnet findings; `clean=False`; **LLM-authored
-  `coverage_note`** ("…No specific CVEs, IPs, domains, or credential leaks relevant
-  to the customer's firewall inventory were found."); scoped narrative naming the
-  exact firmware versions. darkweb findings=0 (source-quality limit, not a bug).
-- ✅ Assessment model persists correctly (criticality/relevance/tags/hash/diff).
-- ✅ Clearnet backbone: 62 scoped CVEs, $0.
-- ✅ Worker auto-reload + diagnostics live.
-- ✅ NVD baseline lowered to `low` (KEV stays `medium`) so `clean` is achievable;
-  verified bands `{'medium': 40, 'low': 22}`.
-- ✅ API now surfaces `clean` / `coverage_note` on `GET /scans` and
-  `GET /scans/{id}` (P12); verified after `api` reload.
-- ⏳ **Open:** (a) version-aware correlation (P11); (b) dark-web **source
-  quality** — the `.onion` engines return generic pages, so dark-web findings are
-  often 0 even on a good run; (c) PSIRT connectors (Palo Alto JSON, Fortinet RSS).
-- 💡 Backups wired but unused: DeepSeek direct (set `DEEPSEEK_API_KEY` → auto-preferred).
+### ✅ Fully working (verified end-to-end)
+
+- **Pipeline runs end-to-end on Gemini.** Verified run — Report 4 (2026-06-04, 210s,
+  $0.00): credential-aware routing picked Gemini (`fast`=gemini-2.5-flash-lite for 1-call
+  query gen → 8 queries; `strong`=gemini-2.5-flash for Findings); `clean=False`;
+  LLM-authored `coverage_note`; scoped narrative naming exact firmware versions.
+- **Assessment model** — criticality / relevance / tags / hash / diff persist correctly.
+- **Clearnet backbone** — CISA KEV + NVD: 62 scoped CVEs, $0, no Tor/LLM required.
+- **Version-aware correlation (P14)** — CVEs whose CPE range covers the installed firmware
+  upgrade to `high`. Verified: FortiOS 7.4.3 + PAN-OS 11.1.2 → 8 NVD findings upgraded;
+  PAN-OS 11.0.4 + Cisco ASA 9.18.3 had no matching range → correctly stay low/clean.
+- **NVD baseline = `low` (25)** — KEV stays `medium` (60); `clean` is achievable; verified
+  bands `{'medium': 40, 'low': 22}`.
+- **Dark-web source curation (P15)** — `is_noise_result()` drops engine landing pages +
+  conference/podcast archives at search time; `search_query_urls()` adds curated
+  searchable `.onion` sources; Step 5b content filter as final gate. A genuinely relevant
+  page now survives to the LLM; dark-web=0 is an honest result, not a bug.
+- **Worker auto-reload** (`watchmedo`) + build marker `build=assessment-v2` + Assessment
+  diagnostic log — stale-code runs are instantly diagnosable.
+- **API surfaces all fields** — `clean` / `coverage_note` / `relevance_band` /
+  `relevance_score` / `criticality` on all report and finding endpoints (P12, P16).
+- **Frontend live panels (P16)** — dashboard derives from real correlated findings; Vendor
+  Risk correct (Cisco present, no NaN); relevance badges render on findings.
+- **Cost spent: $0** of $20 cap.
+
+### ⏳ Open (remaining work to reach the promise)
+
+1. **PSIRT connectors** — Palo Alto JSON + Fortinet RSS (no auth required, free). Would
+   add vendor-sourced advisory data alongside KEV/NVD. Cisco PSIRT needs user's API creds.
+2. **DeepSeek backup** — set `DEEPSEEK_API_KEY` and the router auto-prefers it (cheaper,
+   permissive). Not yet tested; wiring is ready.
+3. **Group-B browse-only dark-web sources** — DLS/forum `.onion` sites with no `{query}`
+   param remain metadata-only by design (legal/honeypot risk); read-only listing-page
+   monitoring is a future, carefully-scoped step.
+4. **Gemini key stability** — the `AQ.Ab8…` OAuth-style token can expire/rotate. Swap to
+   a permanent `AIza…` API key for production stability.
