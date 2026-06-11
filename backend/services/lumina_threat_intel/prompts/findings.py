@@ -10,7 +10,7 @@ Replaces the per-category refiners AND the generic Robin narrative (6 calls -> 1
 """
 from __future__ import annotations
 
-from .shared import SHARED_PREAMBLE
+from .shared import ACTION_FORMAT_GUIDANCE, SHARED_PREAMBLE
 
 CONSOLIDATED_FINDINGS_PROMPT = SHARED_PREAMBLE + """
 
@@ -20,6 +20,10 @@ categories: {categories}. Assess each finding on two independent axes.
 
 CUSTOMER FIREWALL FINGERPRINT (trusted — judge relevance against this):
 {firewall_context_json}
+
+PARALLEL CHANNELS (trusted summary — already collected by deterministic
+connectors and merged into the same report your narrative fronts):
+{external_context}
 
 Reason about whether each finding actually pertains to the customer's vendors,
 models, firmware versions, or domains above. Strongly prefer findings that
@@ -44,17 +48,38 @@ RELEVANCE (fit to THIS inventory; score 0-100 and band it). Reason briefly:
   Put the 1-2 deciding facts in relevance_reason
   (e.g. "FortiOS 7.4.3 matches device FG-HQ-CORE-01").
 
-CONFIDENCE (0-100): how strongly the data supports the finding (specific IOCs,
-reputable source, corroboration raise it; vague/hype/scam patterns lower it).
+CONFIDENCE (integer 0-100) — compute it with this rubric, applied strictly:
+  Start at 50.
+  +25  source is a known reputable forum/marketplace or ransomware leak site
+  +20  finding contains a specific concrete IOC (CVE, hash, IP, exact domain/email)
+  +15  multiple unrelated parts of the data corroborate the same IOC or claim
+  +10  technical proof present (PoC details, breach sample format)
+  -20  language is vague, hype-only, or marketing-style ("massive 0day soon", "DM for info")
+  -25  post matches scam/ripper patterns (too good to be true, urgency manipulation)
+  -10  post is older than 6 months and unverified
+  Clamp to [0, 100].
 
 OUTPUT REQUIREMENTS — return JSON matching this schema:
 {{
   "clean": true|false,        // true if NO finding reaches relevance band medium or high
-  "coverage_note": "string",  // if clean: what was searched and ruled out (for the report)
-  "narrative_summary": "string — concise (<=250 words) summary FOR A FIREWALL
-     ADMINISTRATOR: what was found that affects THEIR specific devices/firmware
-     and what to prioritise. Reference vendors/firmware from the fingerprint by
-     name. If clean, say so plainly.",
+  "coverage_note": "string",  // ALWAYS REQUIRED (clean or not), 2-4 sentences:
+     // (1) what was searched (categories, vendor/firmware scope from the fingerprint),
+     // (2) what was ruled out and why, (3) what — if anything — reached medium+
+     // relevance. Written for the report reader; never leave it empty.
+  "narrative_summary": "string — a 300-450 word report FOR A FIREWALL
+     ADMINISTRATOR, structured as (within the single string):
+     (1) BOTTOM LINE: one sentence on the WHOLE report — combine what the
+         dark-web corpus shows with the PARALLEL CHANNELS summary above. Do
+         NOT say the estate is unaffected if the parallel channels report
+         confirmed or medium+ findings.
+     (2) IMPACT BY DEVICE: for each affected device, name the exact device/
+         vendor/firmware from the fingerprint and what the finding means for it.
+         If none affected, state which vendors/firmware were checked and cleared.
+     (3) PRIORITISED NEXT STEPS: what to do first, second, third.
+     (4) SCOPE: note that this narrative covers the dark-web corpus below;
+         clearnet CVE/advisory findings are reported separately.
+     Plain professional prose, no markdown headers. If clean, say so plainly —
+     do not pad with hypotheticals.",
   "findings": [
     {{
       "category": "exploit|credential|c2|ransomware|iab",
@@ -85,12 +110,12 @@ RULES:
   If unsure, omit it. Do NOT invent CVEs, IPs, domains, hashes, or versions.
 - source.raw_excerpt MUST be <=500 chars copied verbatim from the data.
 - Use the [SOURCE_URL: ...] and [PAGE_TITLE: ...] labels to fill source fields.
-- recommended_actions: short, firewall-actionable imperatives
-  (e.g. "Upgrade FortiOS to 7.4.7", "Block 1.2.3.4 inbound", "Rotate admin creds").
 - Include `info`/`low`-relevance findings if genuinely present, but set `clean`
   to true when NONE reach medium+ relevance.
 - If the data yields nothing concrete at all, return clean=true, findings=[],
-  with a coverage_note explaining what was checked.
+  and still write the full coverage_note and narrative_summary.
+
+""" + ACTION_FORMAT_GUIDANCE + """
 
 <UNTRUSTED_SCRAPED_DATA>
 {scraped_text}
@@ -102,10 +127,17 @@ def build_findings_prompt(
     firewall_context_json: str,
     requested_categories: list[str],
     scraped_text: str,
+    external_context: str = "(none)",
 ) -> str:
-    """Build the consolidated Findings + assessment prompt for a single call."""
+    """Build the consolidated Findings + assessment prompt for a single call.
+
+    ``external_context`` is a short trusted summary of what the deterministic
+    connectors (CISA KEV / NVD / leak-site aggregator) already found, so the
+    narrative's BOTTOM LINE speaks for the whole report, not just the corpus.
+    """
     return CONSOLIDATED_FINDINGS_PROMPT.format(
         categories=", ".join(requested_categories),
         firewall_context_json=firewall_context_json,
         scraped_text=scraped_text,
+        external_context=external_context or "(none)",
     )

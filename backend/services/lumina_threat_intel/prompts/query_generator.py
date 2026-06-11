@@ -1,9 +1,11 @@
 """Query generator prompt — converts firewall keywords into dark-web search queries."""
 from __future__ import annotations
 
-from .shared import SHARED_PREAMBLE
+from .shared import CORE_PREAMBLE
 
-QUERY_GENERATOR_PROMPT = SHARED_PREAMBLE + """\
+# Uses CORE_PREAMBLE only: there is no scraped-data corpus in this prompt, so
+# the IOC-grounding / injection-resistance rules would be noise to a fast-tier model.
+QUERY_GENERATOR_PROMPT = CORE_PREAMBLE + """\
 
 TASK: Convert the customer's firewall keywords into dark-web search queries.
 
@@ -12,7 +14,8 @@ INPUT FORMAT (JSON):
   "firmwares": [...],          // e.g. ["PAN-OS 10.2.3", "FortiOS 7.4.1"]
   "vendors_models": [...],     // e.g. ["Palo Alto PA-3220"]
   "cves": [...],               // e.g. ["CVE-2024-3400"]
-  "org_domains": [...]         // e.g. ["acme-corp.com"]
+  "org_domains": [...],        // e.g. ["acme-corp.com"]
+  "org_ips": [...]             // public IPs of the org's firewalls (use for c2 queries only)
 }}
 
 RULES FOR QUERY GENERATION:
@@ -26,7 +29,8 @@ RULES FOR QUERY GENERATION:
   * iab           — initial-access-broker listings selling access to firewalls
                     of the given vendor/model
 
-- MULTIPLE queries per category are encouraged when justified by the inputs.
+- MULTIPLE queries per category are encouraged when justified by the inputs,
+  but generate AT MOST 12 queries total — pick the highest-yield ones.
 - Each query is <= 120 characters, plain text, no quotes, no operators.
 - Do NOT invent CVE numbers, domain names, or model numbers not present in
   the input. You MAY add common synonyms (e.g., "PAN-OS" -> also try

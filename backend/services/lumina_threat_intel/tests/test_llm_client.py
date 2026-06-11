@@ -75,7 +75,7 @@ class TestCallLlmStructured:
     def test_succeeds_on_second_attempt(self):
         call_count = {"n": 0}
 
-        def flaky(_prompt):
+        def flaky(_prompt, **_kwargs):  # accepts tier= like the real _call_llm_raw
             call_count["n"] += 1
             if call_count["n"] == 1:
                 return "bad json"

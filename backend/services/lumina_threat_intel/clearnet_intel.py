@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 from typing import Any, Optional
 
 import requests
@@ -121,6 +122,12 @@ def fetch_kev_findings(
         ransom = (v.get("knownRansomwareCampaignUse", "") or "").strip().lower() == "known"
         vendor_product = f"{v.get('vendorProject', '')} {v.get('product', '')}".strip()
         required = v.get("requiredAction", "Patch per vendor advisory")
+        # Urgency prefix (shared action format): ransomware use or a CISA
+        # remediation due date that has already passed -> IMMEDIATE; otherwise
+        # 24H (KEV is actively exploited by definition).
+        due = (v.get("dueDate") or "").strip()
+        overdue = bool(due) and due <= datetime.date.today().isoformat()
+        urgency = "IMMEDIATE" if (ransom or overdue) else "24H"
 
         findings.append({
             "category": "exploit",
@@ -148,7 +155,9 @@ def fetch_kev_findings(
                 "marketplace_or_forum": "CISA Known Exploited Vulnerabilities",
             },
             "recommended_actions": (
-                [required] + (["Activate ransomware IR readiness / verify backups"] if ransom else [])
+                [f"[{urgency}] {required} (target: {cve or vendor_product})"]
+                + (["[IMMEDIATE] Activate ransomware IR readiness / verify backups "
+                    f"(target: {vendor_product})"] if ransom else [])
             ),
             "tags": ["cisa-kev", "actively-exploited"] + (["ransomware"] if ransom else []),
         })
@@ -249,7 +258,9 @@ def fetch_nvd_findings(
                     "raw_excerpt": desc[:500], "page_title": "NVD",
                     "marketplace_or_forum": "NVD (NIST)",
                 },
-                "recommended_actions": ["Review vendor advisory and patch affected versions"],
+                "recommended_actions": [
+                    f"[SCHEDULED] Review vendor advisory and patch affected versions (target: {cid})"
+                ],
                 "tags": ["nvd", "cve"],
                 # Internal hints for the correlator (stripped at persistence; not a
                 # schema field). Lets version-aware correlation upgrade to high when
@@ -259,6 +270,213 @@ def fetch_nvd_findings(
             })
     logger.info("NVD: %d recent CVE findings for customer products", len(out))
     return out
+
+
+PAN_PSIRT_API = "https://security.paloaltonetworks.com/json"
+FORTINET_PSIRT_RSS = "https://www.fortiguard.com/rss/ir.xml"
+_PSIRT_HEADERS = {"User-Agent": "Mozilla/5.0 (LuminaFPM-LTI)"}
+_CVE_ID_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
+
+
+def _psirt_urgency(criticality: str) -> str:
+    return {"critical": "IMMEDIATE", "high": "24H"}.get(criticality, "SCHEDULED")
+
+
+def fetch_paloalto_psirt_findings(
+    db: Session,
+    device_ids: Optional[list[int]] = None,
+    timeout: int = 25,
+    per_version_cap: int = 10,
+) -> list[dict[str, Any]]:
+    """Palo Alto PSIRT advisories, queried PER INSTALLED PAN-OS VERSION.
+
+    The vendor API filters by exact version (?product=PAN-OS&version=PAN-OS X),
+    so every advisory returned is VENDOR-CONFIRMED to affect the installed
+    firmware -> relevance high without any local range math. Free, no auth.
+    """
+    q = db.query(FirewallDevice)
+    if device_ids:
+        q = q.filter(FirewallDevice.device_id.in_(device_ids))
+    versions: set[str] = set()
+    for d in q.all():
+        vname = ((d.vendor.name if d.vendor else "") or "").lower()
+        if "palo alto" in vname and d.firmware_version:
+            versions.add(d.firmware_version.strip())
+    out: list[dict[str, Any]] = []
+    for ver in sorted(versions):
+        try:
+            r = requests.get(
+                PAN_PSIRT_API,
+                params={"product": "PAN-OS", "version": f"PAN-OS {ver}",
+                        "sort": "-date"},
+                headers=_PSIRT_HEADERS, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            logger.warning("PAN PSIRT fetch failed for %s: %s", ver, str(e)[:120])
+            continue
+        items = data if isinstance(data, list) else data.get("advisories", []) or []
+        for adv in items[:per_version_cap]:
+            aid = adv.get("ID", "")
+            sev = (adv.get("baseSeverity") or adv.get("threatSeverity") or "").lower()
+            crit = sev if sev in ("critical", "high", "medium", "low") else "medium"
+            problem = next((p.get("value", "") for p in adv.get("problem", [])
+                            if p.get("lang") == "en"), "")
+            # fixed[] aligns with version[]; surface the fix for the installed branch
+            branch = ".".join(ver.split(".")[:2])
+            fixed = ""
+            for v_label, fx in zip(adv.get("version", []), adv.get("fixed", [])):
+                if v_label.replace("PAN-OS ", "") == branch:
+                    fixed = fx
+                    break
+            urgency = _psirt_urgency(crit)
+            out.append({
+                "category": "exploit",
+                "criticality": crit,
+                "severity": "low" if crit == "info" else crit,
+                # The vendor itself filtered by installed version -> confirmed.
+                "relevance_score": 90,
+                "relevance_band": "high",
+                "relevance_reason": (
+                    f"Palo Alto PSIRT lists installed PAN-OS {ver} as affected "
+                    f"by this advisory"
+                ),
+                "confidence": 95,  # authoritative vendor feed
+                "title": f"{aid}: {adv.get('title', '')}"[:512],
+                "description": problem[:1000],
+                "iocs": ([{"type": "cve", "value": aid}]
+                         if aid.upper().startswith("CVE-") else []),
+                "source": {
+                    "onion_url": None, "search_engine": None, "scraped_at": None,
+                    "raw_excerpt": problem[:500],
+                    "page_title": "Palo Alto PSIRT",
+                    "marketplace_or_forum": "Palo Alto Networks Security Advisories",
+                },
+                "recommended_actions": [
+                    f"[{urgency}] Upgrade PAN-OS on affected devices "
+                    f"(target: {fixed or 'per vendor advisory'})"
+                ],
+                "tags": ["psirt", "palo-alto", "vendor-advisory", "version-confirmed"],
+            })
+    logger.info("PAN PSIRT: %d advisories affect installed PAN-OS versions", len(out))
+    return out
+
+
+def fetch_fortinet_psirt_findings(
+    db: Session,
+    device_ids: Optional[list[int]] = None,
+    timeout: int = 20,
+    cap: int = 15,
+) -> list[dict[str, Any]]:
+    """Fortinet PSIRT IR advisories (RSS). Free, no auth.
+
+    The RSS is not version-filtered, so relevance starts low (like NVD) and the
+    correlator/analyst confirms. Only items naming the customer's Fortinet
+    firewall products are kept.
+    """
+    import xml.etree.ElementTree as ET
+
+    vendor_tokens = _customer_vendor_tokens(db, device_ids)
+    if not any(t in ("fortios", "fortigate") for t in vendor_tokens):
+        return []
+    try:
+        r = requests.get(FORTINET_PSIRT_RSS, headers=_PSIRT_HEADERS, timeout=timeout)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+    except Exception as e:
+        logger.warning("Fortinet PSIRT RSS fetch failed: %s", str(e)[:150])
+        return []
+    out: list[dict[str, Any]] = []
+    for item in root.iter("item"):
+        if len(out) >= cap:
+            break
+        title = (item.findtext("title") or "").strip()
+        desc = (item.findtext("description") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        hay = f"{title} {desc}".lower()
+        if not any(t in hay for t in ("fortios", "fortigate")):
+            continue
+        cves = sorted({m.upper() for m in _CVE_ID_RE.findall(f"{title} {desc} {link}")})
+        crit = "high" if "critical" in hay else "medium"
+        out.append({
+            "category": "exploit",
+            "criticality": crit,
+            "severity": crit,
+            "relevance_score": 30,
+            "relevance_band": "low",
+            "relevance_reason": ("Fortinet PSIRT advisory for the customer's "
+                                 "firewall product; not version-confirmed"),
+            "confidence": 95,
+            "title": f"Fortinet PSIRT: {title}"[:512],
+            "description": (desc or title)[:1000],
+            "iocs": [{"type": "cve", "value": c} for c in cves],
+            "source": {
+                "onion_url": None, "search_engine": None, "scraped_at": None,
+                "raw_excerpt": (desc or title)[:500],
+                "page_title": "Fortinet PSIRT",
+                "marketplace_or_forum": "FortiGuard PSIRT IR Advisories",
+            },
+            "recommended_actions": [
+                "[SCHEDULED] Review Fortinet advisory and patch affected versions "
+                f"(target: {cves[0] if cves else link or 'vendor advisory'})"
+            ],
+            "tags": ["psirt", "fortinet", "vendor-advisory"],
+        })
+    logger.info("Fortinet PSIRT: %d advisories match customer products", len(out))
+    return out
+
+
+EPSS_API_URL = "https://api.first.org/data/v1/epss"
+EPSS_LIKELY_THRESHOLD = float(os.getenv("LTI_EPSS_LIKELY_THRESHOLD", "0.5"))
+
+
+def _enrich_with_epss(findings: list[dict[str, Any]], timeout: int = 15) -> None:
+    """Annotate CVE findings in place with FIRST.org EPSS exploitation
+    probabilities (free, no auth, one batched request).
+
+    Above EPSS_LIKELY_THRESHOLD the finding gets a `likely-exploited` tag and
+    the probability is appended to relevance_reason. Bands/scores are NOT
+    changed here — relevance upgrades stay the correlator's job.
+    """
+    by_cve: dict[str, dict[str, Any]] = {}
+    for f in findings:
+        for i in f.get("iocs", []):
+            if i.get("type") == "cve" and i.get("value"):
+                by_cve.setdefault(i["value"].upper(), f)
+    if not by_cve:
+        return
+    try:
+        resp = requests.get(
+            EPSS_API_URL,
+            params={"cve": ",".join(sorted(by_cve))},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        rows = resp.json().get("data", [])
+    except Exception as e:
+        logger.warning("EPSS fetch failed (non-fatal): %s", str(e)[:150])
+        return
+    enriched = likely = 0
+    for row in rows:
+        f = by_cve.get((row.get("cve") or "").upper())
+        if f is None:
+            continue
+        try:
+            epss = float(row.get("epss", 0))
+        except (TypeError, ValueError):
+            continue
+        enriched += 1
+        f.setdefault("tags", []).append(f"epss:{epss:.2f}")
+        if epss >= EPSS_LIKELY_THRESHOLD:
+            likely += 1
+            f["tags"].append("likely-exploited")
+            _r = (f.get("relevance_reason") or "").rstrip(". ")
+            f["relevance_reason"] = (
+                (_r + "; " if _r else "")
+                + f"EPSS predicts a {epss:.0%} chance of exploitation in the wild."
+            )
+    logger.info("EPSS: enriched %d/%d CVEs (%d likely-exploited)",
+                enriched, len(by_cve), likely)
 
 
 def fetch_clearnet_findings(
@@ -283,12 +501,23 @@ def fetch_clearnet_findings(
                 seen_cves.add(primary)
             findings.append(f)
 
+    # Order = dedup priority: KEV (actively exploited) > PAN PSIRT
+    # (vendor-confirmed for the installed version) > Fortinet PSIRT > NVD.
     try:
         _add(fetch_kev_findings(db, device_ids))
     except Exception as e:
         logger.error("KEV connector failed: %s", str(e)[:150])
     try:
+        _add(fetch_paloalto_psirt_findings(db, device_ids))
+    except Exception as e:
+        logger.error("PAN PSIRT connector failed: %s", str(e)[:150])
+    try:
+        _add(fetch_fortinet_psirt_findings(db, device_ids))
+    except Exception as e:
+        logger.error("Fortinet PSIRT connector failed: %s", str(e)[:150])
+    try:
         _add(fetch_nvd_findings(db, device_ids))
     except Exception as e:
         logger.error("NVD connector failed: %s", str(e)[:150])
+    _enrich_with_epss(findings)
     return findings

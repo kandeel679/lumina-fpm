@@ -47,11 +47,9 @@ from .schemas import (
 from .keyword_extractor import extract_keywords, keywords_are_empty
 from .correlator import correlate_findings
 from .diff_tracker import mark_new_findings
-from .llm_client import call_llm_structured, call_llm_text, get_robin_model_name
+from .llm_client import call_llm_structured, get_robin_model_name
 from .prompts.query_generator import QUERY_GENERATOR_PROMPT
-from .prompts.refiners import build_refiner_prompt
 from .prompts.findings import build_findings_prompt
-from .prompts.shared import SHARED_PREAMBLE
 from .scraper.engine import search_dark_web, scrape_results
 from .stream import sse_publisher
 from .exceptions import LLMValidationError, LLMProviderError
@@ -361,6 +359,10 @@ def _relevance_terms(keywords: dict[str, Any]) -> set[str]:
         dom = (dom or "").strip().lower()
         if dom:
             terms.add(dom)
+    for ip in keywords.get("org_ips", []) or []:
+        ip = (ip or "").strip().lower()
+        if ip:
+            terms.add(ip)
     joined = " ".join(keywords.get("vendors_models", []) or []).lower()
     for key, products in _VENDOR_PRODUCT_SYNONYMS.items():
         if key in joined or any(p in joined for p in products):
@@ -506,6 +508,13 @@ def run_scan(
     start_time = time.time()
     had_partial_failures = False
     all_findings: list[dict[str, Any]] = []
+    # Deterministic-connector results; fetched BEFORE the Findings LLM call when
+    # the dark-web path runs (so the narrative fronts the whole report), or in
+    # the merge step below as a fallback when query generation was skipped.
+    clearnet_findings: list[dict[str, Any]] = []
+    dls_findings: list[dict[str, Any]] = []
+    dls_domains_checked = 0
+    _connectors_done = False
 
     try:
         # Build marker — appears in celery logs ONLY when the worker has loaded
@@ -635,6 +644,36 @@ def run_scan(
                 _before_rel, len(scrape_data),
             )
 
+            # ── Deterministic connectors run FIRST (no LLM / no Tor) so their
+            # summary can be injected into the Findings prompt: the narrative's
+            # BOTTOM LINE must speak for the WHOLE report, not just the corpus.
+            try:
+                from .clearnet_intel import fetch_clearnet_findings
+                clearnet_findings = fetch_clearnet_findings(db, device_ids=device_ids)
+            except Exception as e:
+                logger.error("Clearnet intel failed: %s", str(e))
+                _log_error(report, "clearnet", str(e))
+            try:
+                from .darkweb_aggregators import fetch_ransomware_dls_findings
+                dls_findings, dls_domains_checked = fetch_ransomware_dls_findings(
+                    db, device_ids=device_ids)
+            except Exception as e:
+                logger.error("Dark-web aggregator intel failed: %s", str(e))
+                _log_error(report, "darkweb_aggregator", str(e))
+            _connectors_done = True
+            _cn_high = sum(1 for f in clearnet_findings
+                           if f.get("relevance_band") in ("medium", "high"))
+            _dls_confirmed = sum(1 for f in dls_findings
+                                 if "possible-match" not in (f.get("tags") or []))
+            external_context = (
+                f"- Clearnet (CISA KEV + NVD): {len(clearnet_findings)} vendor-scoped CVE "
+                f"finding(s), of which {_cn_high} at medium+ relevance to this inventory.\n"
+                f"- Ransomware leak sites (aggregator): checked {dls_domains_checked} org "
+                f"term(s); {len(dls_findings)} listing(s) found "
+                f"({_dls_confirmed} confirmed, {len(dls_findings) - _dls_confirmed} "
+                f"possible-match pending human verification)."
+            )
+
             # ── Step 6+7: ONE consolidated Findings call ──
             # Replaces Robin's generic narrative + the 5 per-category refiners
             # (6 LLM calls -> 1). The customer's firewall fingerprint is injected
@@ -662,6 +701,7 @@ def run_scan(
                     firewall_context_json=keyword_json,
                     requested_categories=requested_categories,
                     scraped_text=corpus,
+                    external_context=external_context,
                 )
                 try:
                     result = call_llm_structured(
@@ -687,22 +727,37 @@ def run_scan(
                     "count": len(all_findings),
                 })
 
-        # ── Clearnet seed findings (deterministic, no LLM / no Tor) ──
-        # Authoritative CVE/KEV data scoped to the customer's firewall vendors;
-        # reliable even when Tor is flaky, and free against the LLM budget.
+        # ── Merge deterministic connector findings (clearnet + leak-site) ──
+        # Normally prefetched before the Findings LLM call (so the narrative
+        # fronts the whole report); fetched here only when the dark-web path
+        # was skipped (no queries). Reliable even when Tor/LLM are down.
         darkweb_count = len(all_findings)
-        clearnet_count = 0
-        try:
-            from .clearnet_intel import fetch_clearnet_findings
-            clearnet_findings = fetch_clearnet_findings(db, device_ids=device_ids)
-            if clearnet_findings:
-                clearnet_count = len(clearnet_findings)
-                all_findings.extend(clearnet_findings)
-                logger.info("Merged %d clearnet (CISA KEV + NVD) findings", clearnet_count)
-                sse_publisher.emit(report.id, "clearnet_merged", {"count": clearnet_count})
-        except Exception as e:
-            logger.error("Clearnet intel failed: %s", str(e))
-            _log_error(report, "clearnet", str(e))
+        if not _connectors_done:
+            try:
+                from .clearnet_intel import fetch_clearnet_findings
+                clearnet_findings = fetch_clearnet_findings(db, device_ids=device_ids)
+            except Exception as e:
+                logger.error("Clearnet intel failed: %s", str(e))
+                _log_error(report, "clearnet", str(e))
+            try:
+                from .darkweb_aggregators import fetch_ransomware_dls_findings
+                dls_findings, dls_domains_checked = fetch_ransomware_dls_findings(
+                    db, device_ids=device_ids)
+            except Exception as e:
+                logger.error("Dark-web aggregator intel failed: %s", str(e))
+                _log_error(report, "darkweb_aggregator", str(e))
+
+        clearnet_count = len(clearnet_findings)
+        if clearnet_findings:
+            all_findings.extend(clearnet_findings)
+            logger.info("Merged %d clearnet (CISA KEV + NVD) findings", clearnet_count)
+            sse_publisher.emit(report.id, "clearnet_merged", {"count": clearnet_count})
+
+        dls_count = len(dls_findings)
+        if dls_findings:
+            all_findings.extend(dls_findings)
+            logger.info("Merged %d ransomware leak-site finding(s)", dls_count)
+            sse_publisher.emit(report.id, "dls_merged", {"count": dls_count})
 
         # ── Step 8: Dedupe IOCs ──
         all_findings = _dedupe_iocs(all_findings)
@@ -739,8 +794,15 @@ def run_scan(
             report.coverage_note = (
                 f"Searched {report.queries_generated_count or 0} dark-web queries; "
                 f"scraped {report.onion_pages_scraped_count or 0} onion pages; "
-                f"merged {clearnet_count} clearnet finding(s) from CISA KEV and NVD "
-                f"scoped to the customer's firewall vendors. "
+                f"merged {clearnet_count} clearnet finding(s) from CISA KEV, vendor "
+                f"PSIRT feeds, and NVD scoped to the customer's firewall vendors"
+                + (
+                    f"; checked ransomware leak sites (via Ransomware.live) for "
+                    f"{dls_domains_checked} org domain(s) — "
+                    + ("no listing found. " if dls_count == 0
+                       else f"{dls_count} listing(s) found. ")
+                    if dls_domains_checked else ". "
+                )
                 + (
                     "No item reached medium+ relevance to the monitored firewalls."
                     if report.clean
@@ -753,8 +815,8 @@ def run_scan(
         from collections import Counter
         _bands = Counter(f.get("relevance_band") for f in all_findings)
         logger.info(
-            "Assessment: darkweb=%d clearnet=%d total=%d clean=%s bands=%s",
-            darkweb_count, clearnet_count, len(all_findings),
+            "Assessment: darkweb=%d clearnet=%d dls=%d total=%d clean=%s bands=%s",
+            darkweb_count, clearnet_count, dls_count, len(all_findings),
             report.clean, dict(_bands),
         )
 

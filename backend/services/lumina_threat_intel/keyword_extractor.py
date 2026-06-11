@@ -7,11 +7,18 @@ from the existing FirewallDevice, Vendor, and PolicyRule tables.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
-from models.models import FirewallDevice, Vendor, NetworkObject
+from models.models import FirewallDevice, NetworkObject, RuleAnomaly, Vendor
+
+_CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,}\b", re.IGNORECASE)
+_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}(/\d{1,2})?$")
+_PRIVATE_PREFIXES = ("10.", "192.168.", "127.", "169.254.") + tuple(
+    f"172.{i}." for i in range(16, 32)
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,7 @@ def extract_keywords(db: Session, device_ids: Optional[list[int]] = None) -> dic
         "vendors_models": [],
         "cves": [],
         "org_domains": [],
+        "org_ips": [],
     }
 
     try:
@@ -68,19 +76,37 @@ def extract_keywords(db: Session, device_ids: Optional[list[int]] = None) -> dic
             .all()
         )
         domain_set: set[str] = set()
+        ip_set: set[str] = set()
         for obj in domain_objects:
-            val = (obj.value or "").strip()
-            if val and "." in val and not val.startswith("10.") and not val.startswith("192.168."):
+            val = (obj.value or "").strip().lower()
+            if not val or "." not in val:
+                continue
+            if _IP_RE.match(val):
+                # ip-netmask objects: keep PUBLIC IPs separately — they are
+                # exposure indicators, not domains (P-test fix: an IP in
+                # org_domains polluted prompts and queries).
+                if not val.startswith(_PRIVATE_PREFIXES):
+                    ip_set.add(val)
+            elif any(c.isalpha() for c in val):
                 domain_set.add(val)
         bundle["org_domains"] = sorted(domain_set)[:50]  # cap to avoid huge prompts
+        bundle["org_ips"] = sorted(ip_set)[:50]
+
+        # --- CVEs mentioned in rule-anomaly descriptions ---
+        cve_set: set[str] = set()
+        for (desc,) in db.query(RuleAnomaly.description).all():
+            for m in _CVE_RE.findall(desc or ""):
+                cve_set.add(m.upper())
+        bundle["cves"] = sorted(cve_set)[:25]
 
         logger.info(
             "Keyword extraction complete: %d firmwares, %d vendor_models, "
-            "%d cves, %d org_domains",
+            "%d cves, %d org_domains, %d org_ips",
             len(bundle["firmwares"]),
             len(bundle["vendors_models"]),
             len(bundle["cves"]),
             len(bundle["org_domains"]),
+            len(bundle["org_ips"]),
         )
 
     except Exception as e:
@@ -91,4 +117,5 @@ def extract_keywords(db: Session, device_ids: Optional[list[int]] = None) -> dic
 
 def keywords_are_empty(bundle: dict[str, Any]) -> bool:
     """Check if the keyword bundle has any meaningful content."""
-    return not any(bundle.get(key) for key in ("firmwares", "vendors_models", "cves", "org_domains"))
+    return not any(bundle.get(key) for key in (
+        "firmwares", "vendors_models", "cves", "org_domains", "org_ips"))

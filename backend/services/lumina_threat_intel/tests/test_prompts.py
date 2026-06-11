@@ -19,6 +19,16 @@ class TestSharedPreamble:
 
 
 class TestQueryGeneratorPrompt:
+    def test_no_corpus_rules_in_query_prompt(self):
+        # Query generation has no scraped corpus; the data-handling rules
+        # (IOC grounding / injection resistance) must NOT be included.
+        prompt = QUERY_GENERATOR_PROMPT.format(keyword_bundle_json="{}")
+        assert "UNTRUSTED_SCRAPED_DATA" not in prompt
+
+    def test_query_cap_present(self):
+        prompt = QUERY_GENERATOR_PROMPT.format(keyword_bundle_json="{}")
+        assert "AT MOST 12" in prompt
+
     def test_interpolates_keywords(self):
         kw_json = '{"firmwares": ["PAN-OS 10.2.3"], "vendors_models": [], "cves": [], "org_domains": []}'
         prompt = QUERY_GENERATOR_PROMPT.format(keyword_bundle_json=kw_json)
@@ -59,6 +69,88 @@ class TestRefinerPromptBuilder:
     def test_iab_guidance_mentions_severity_tiers(self):
         assert "critical" in CATEGORY_GUIDANCE_MAP["iab"].lower()
         assert "high" in CATEGORY_GUIDANCE_MAP["iab"].lower()
+
+
+class TestFindingsPrompt:
+    def test_findings_prompt_renders_with_all_blocks(self):
+        from services.lumina_threat_intel.prompts.findings import build_findings_prompt
+        prompt = build_findings_prompt('{"firmwares": ["FortiOS 7.4.3"]}',
+                                       ["exploit"], "corpus text")
+        assert "FortiOS 7.4.3" in prompt
+        assert "<UNTRUSTED_SCRAPED_DATA>" in prompt
+        # coverage_note must be demanded on every scan, not only when clean
+        assert "ALWAYS REQUIRED" in prompt
+        # confidence rubric is inlined (no dangling reference)
+        assert "Start at 50" in prompt
+        # urgency-prefixed action format
+        assert "[IMMEDIATE|24H|SCHEDULED]" in prompt
+        # structured admin narrative
+        assert "BOTTOM LINE" in prompt and "PRIORITISED NEXT STEPS" in prompt
+
+
+class TestExternalContextInPrompt:
+    def test_parallel_channel_summary_injected(self):
+        from services.lumina_threat_intel.prompts.findings import build_findings_prompt
+        prompt = build_findings_prompt(
+            "{}", ["exploit"], "corpus",
+            external_context="- Clearnet: 58 findings, 43 at medium+ relevance.")
+        assert "PARALLEL CHANNELS" in prompt
+        assert "43 at medium+ relevance" in prompt
+        # bottom line must speak for the whole report
+        assert "WHOLE report" in prompt
+
+    def test_defaults_to_none_marker(self):
+        from services.lumina_threat_intel.prompts.findings import build_findings_prompt
+        assert "(none)" in build_findings_prompt("{}", ["exploit"], "corpus")
+
+
+class TestClearnetHelpers:
+    def test_psirt_urgency_mapping(self):
+        from services.lumina_threat_intel.clearnet_intel import _psirt_urgency
+        assert _psirt_urgency("critical") == "IMMEDIATE"
+        assert _psirt_urgency("high") == "24H"
+        assert _psirt_urgency("medium") == "SCHEDULED"
+
+
+class TestKeywordExtractorHelpers:
+    def test_ip_regex_and_private_prefixes(self):
+        from services.lumina_threat_intel.keyword_extractor import _IP_RE, _PRIVATE_PREFIXES
+        assert _IP_RE.match("203.0.113.50")
+        assert _IP_RE.match("203.0.113.0/24")
+        assert not _IP_RE.match("novatech.com")
+        assert "172.16." in _PRIVATE_PREFIXES and "172.31." in _PRIVATE_PREFIXES
+
+    def test_cve_regex(self):
+        from services.lumina_threat_intel.keyword_extractor import _CVE_RE
+        found = _CVE_RE.findall("see cve-2024-3400 and CVE-2025-0136; not CVE-12")
+        assert sorted(c.upper() for c in found) == ["CVE-2024-3400", "CVE-2025-0136"]
+
+
+class TestDarkwebAggregators:
+    def test_victim_to_finding_shape(self):
+        from services.lumina_threat_intel.darkweb_aggregators import _victim_to_finding
+        f = _victim_to_finding(
+            {"victim": "NovaTech Inc", "group": "akira",
+             "discovered": "2026-06-01", "post_url": "http://x.onion/post"},
+            "novatech.com",
+        )
+        assert f["category"] == "ransomware"
+        assert f["relevance_band"] == "high" and f["relevance_score"] == 95
+        assert f["iocs"] == [{"type": "domain", "value": "novatech.com"}]
+        assert f["source"]["onion_url"] == "http://x.onion/post"
+        assert all(a.startswith("[IMMEDIATE]") for a in f["recommended_actions"])
+        assert "dark-web" in f["tags"] and "akira" in f["tags"]
+
+    def test_unconfirmed_victim_is_possible_match(self):
+        from services.lumina_threat_intel.darkweb_aggregators import _victim_to_finding
+        f = _victim_to_finding(
+            {"victim": "Novatech EngineeringConsultants", "group": "akira"},
+            "novatech.com", confirmed=False,
+        )
+        assert f["relevance_band"] == "medium" and f["relevance_score"] == 50
+        assert "POSSIBLE match" in f["relevance_reason"]
+        assert "possible-match" in f["tags"]
+        assert all(a.startswith("[24H]") for a in f["recommended_actions"])
 
 
 class TestValidateIocsInSource:

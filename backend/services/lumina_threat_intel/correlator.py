@@ -243,7 +243,16 @@ def correlate_findings(
         # Hybrid relevance: the LLM proposed a relevance score/band against the
         # fingerprint; here code VERIFIES it against real inventory. A confirmed
         # rule/device match upgrades relevance to high (authoritative).
-        if matched_rule_ids or matched_device_ids:
+        # EXCEPTION: `possible-match` findings (e.g. a leak-site victim whose
+        # NAME merely resembles the customer) carry the customer's own org
+        # domain as the IOC — matching that against the customer's own network
+        # objects is circular and proves nothing. They stay at their stated
+        # band until a human verifies.
+        if "possible-match" in (finding.get("tags") or []):
+            finding["matched_rule_ids"] = []
+            finding["matched_device_ids"] = []
+            finding["correlation_match_reason"] = None
+        elif matched_rule_ids or matched_device_ids:
             finding["relevance_band"] = "high"
             try:
                 finding["relevance_score"] = max(int(finding.get("relevance_score") or 0), 90)
@@ -253,6 +262,12 @@ def correlate_findings(
             finding["relevance_reason"] = (
                 (_reason + "; " if _reason else "") + "confirmed match against firewall inventory"
             )[:500]
+            # A confirmed inventory match means the fix is no longer routine:
+            # escalate SCHEDULED actions to 24H (IMMEDIATE ones stay as-is).
+            finding["recommended_actions"] = [
+                a.replace("[SCHEDULED]", "[24H]", 1) if a.startswith("[SCHEDULED]") else a
+                for a in (finding.get("recommended_actions") or [])
+            ]
 
     correlated_count = sum(
         1 for f in findings if f.get("matched_rule_ids") or f.get("matched_device_ids")
