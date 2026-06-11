@@ -179,6 +179,23 @@ LFPM.threats = [
     description:'Sensitive info disclosure in NetScaler ADC/Gateway leading to session token theft.' },
 ];
 
+/* Enrich mock threats with fields the live API mapper provides so fallback
+ * renders identically (advisory KPIs, relevance badges, source lanes). */
+LFPM.threats.forEach((t, i) => {
+  if (t.relevanceBand == null) {
+    t.relevanceBand = t.kev ? 'high' : (t.severity === 'critical' ? 'medium' : 'low');
+  }
+  if (t.relevanceScore == null) t.relevanceScore = t.kev ? 90 : (t.severity === 'critical' ? 60 : 25);
+  if (t.relevanceReason == null) t.relevanceReason = '';
+  if (t.isNew == null) t.isNew = i < 2;
+  if (t.isDarkweb == null) t.isDarkweb = false;
+  if (t.isClearnet == null) t.isClearnet = true;
+  if (t.sourceMarketplace == null) {
+    t.sourceMarketplace = t.kev ? 'CISA Known Exploited Vulnerabilities' : 'NVD';
+  }
+  if (t.correlated == null) t.correlated = (t.firewallIds || []).length > 0;
+});
+
 LFPM.firmwareTimeline = [
   { firmware:'PAN-OS 9.1.12', vendor:'palo-alto', released:'2022-08-15', eol:'2025-03-01', cves:4, isEol:true,  installed:1 },
   { firmware:'PAN-OS 10.1.3', vendor:'palo-alto', released:'2022-03-17', eol:'2026-06-30', cves:5, isEol:false, installed:1 },

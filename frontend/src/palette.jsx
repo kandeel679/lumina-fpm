@@ -124,7 +124,14 @@ function CommandPalette({ open, onClose, onNavigate, onOpenInspector }) {
       onOpenInspector({ kind:'host', data: item.payload });
     } else if (item.kind === 'recent') {
       setQ(item.label);
-      return; // don't close
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        const len = item.label.length;
+        el.setSelectionRange(len, len);
+      });
+      return;
     }
     onClose();
   };

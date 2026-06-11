@@ -469,7 +469,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
               }}>
                 <div style={{
                   width: 40, height: 40, borderRadius: 20,
-                  background: 'rgba(74,222,128,0.18)',
+                  background: 'var(--sev-safe-bg)',
                   border: '1px solid var(--sev-safe-bd)',
                   display:'flex', alignItems:'center', justifyContent:'center',
                   color: 'var(--sev-safe)',

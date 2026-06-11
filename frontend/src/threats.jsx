@@ -293,6 +293,26 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
         <Kpi2 label="devices exposed"   value={stats.exposed} />
       </div>
 
+      {meta.usingMockThreats && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '8px 14px', margin: '0 0 1px 0',
+          background: 'var(--bg-1)', border: '1px solid var(--bd-1)', borderRadius: 5,
+          fontSize: 12, color: 'var(--fg-2)',
+        }}>
+          <I.AlertCirc size={13} style={{ color: 'var(--fg-3)', flexShrink: 0 }} />
+          <span>No scan data yet — advisories below are demo data. Run a threat scan to populate live findings.</span>
+          <button
+            className="btn"
+            style={{ marginLeft: 'auto', flexShrink: 0 }}
+            onClick={() => { setTabAndHash('scan'); runThreatScan(); }}
+            disabled={scanning}
+          >
+            {scanning ? <><span className="li-spinner" /> scanning…</> : <><I.Play size={12} /> run a scan</>}
+          </button>
+        </div>
+      )}
+
       {tab === 'scan' ? (
         <LatestScanPanel
           I={I}
@@ -595,6 +615,7 @@ function AdvisoriesPanel({
           <div className="seg">
             <button className={vendFilter.has('palo-alto') ? 'active' : ''} onClick={() => toggle(vendFilter, 'palo-alto', setVend)}>palo alto</button>
             <button className={vendFilter.has('fortinet') ? 'active' : ''}  onClick={() => toggle(vendFilter, 'fortinet', setVend)}>fortinet</button>
+            <button className={vendFilter.has('cisco') ? 'active' : ''}     onClick={() => toggle(vendFilter, 'cisco', setVend)}>cisco</button>
           </div>
           <button
             className={`chip ${kevOnly ? 'critical' : ''}`}
@@ -619,7 +640,7 @@ function AdvisoriesPanel({
             <thead>
               <tr>
                 <th style={{ paddingLeft: 14 }}>cve</th>
-                <th>sev / cvss</th>
+                <th>sev / est. cvss</th>
                 <th>title</th>
                 <th>vendor</th>
                 <th>affected devices</th>
@@ -641,7 +662,7 @@ function AdvisoriesPanel({
                   <td>
                     <span className={`stat-text ${t.severity}`}><span className="dot" />{t.severity}</span>
                     <div className="mono" style={{ fontSize: 10.5, color: LFPM.fmt.sevColor(t.severity), fontWeight: 600 }}>
-                      {t.cvss.toFixed(1)}
+                      {Number.isFinite(t.cvss) ? t.cvss.toFixed(1) : '—'}
                     </div>
                   </td>
                   <td className="truncate" style={{ maxWidth: 340 }}>
@@ -666,13 +687,13 @@ function AdvisoriesPanel({
                   </td>
                   <td>
                     <div className="row gap-2">
-                      {t.vendors.map(v => (
+                      {(t.vendors || []).map(v => (
                         <span key={v} className="chip" style={{ fontSize: 10 }}>{v === 'palo-alto' ? 'PA' : v === 'fortinet' ? 'FT' : 'CS'}</span>
                       ))}
                     </div>
                   </td>
                   <td className="mono dim" style={{ fontSize: 11 }}>
-                    {t.firewallIds.map(id => LFPM.firewalls.find(f => f.id === id)?.display).filter(Boolean).join(', ')}
+                    {(t.firewallIds || []).map(id => LFPM.firewalls.find(f => f.id === id)?.display).filter(Boolean).join(', ') || '—'}
                   </td>
                   <td>
                     <span className={`stat-text ${t.exploit === 'active' || t.exploit === 'wild' ? 'critical' : t.exploit === 'poc' ? 'high' : 'dim'}`}>

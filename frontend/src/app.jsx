@@ -104,6 +104,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [inspector, setInspector]     = useState(null);
   const [timeRange, setTimeRange]     = useState('24h');
+  const [timeRangeLabel, setTimeRangeLabel] = useState(null);
   const [theme, setTheme]             = useState(readTheme);
 
   /* Persist theme + apply to <html> on every change */
@@ -189,7 +190,7 @@ export default function App() {
 
   /* Stats for badge count on Audit nav */
   const criticalCount = useMemo(() =>
-    LFPM.policies.filter(p => p.status !== 'clean').length, []);
+    LFPM.policies.filter(p => p.status !== 'clean').length, [dataVersion]);
 
   const openInspector  = useCallback((payload) => setInspector(payload), []);
   const closeInspector = useCallback(() => setInspector(null), []);
@@ -223,12 +224,13 @@ export default function App() {
   }, []);
 
   /* Time-range handler */
-  const handleTimeRange = useCallback((id) => {
+  const handleTimeRange = useCallback((id, customLabel) => {
     setTimeRange(id);
-    const label = ({
+    setTimeRangeLabel(customLabel || null);
+    const label = customLabel || ({
       '1h':'last hour', '6h':'last 6 hours', '24h':'last 24 hours',
       '7d':'last 7 days', '30d':'last 30 days', '90d':'last 90 days',
-    })[id];
+    })[id] || id;
     window.toast(`Time range: ${label}`, { kind: 'info', sub: 'metrics and charts refreshed' });
   }, []);
 
@@ -283,8 +285,10 @@ export default function App() {
           onSignOut={handleSignOut}
           onNavigate={goTo}
           onOpenInspector={openInspector}
+          onSync={refreshLFPMData}
           theme={theme}
           onToggleTheme={toggleTheme}
+          timeRangeLabel={timeRangeLabel}
         />
       </div>
       <main className="shell-main">
@@ -295,7 +299,7 @@ export default function App() {
         {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshLFPMData} />}
       </main>
       <div className="shell-status">
-        <StatusBar lastSync="14:32:08 UTC · 4m ago" queue={0} user={user} />
+        <StatusBar queue={0} user={user} dataVersion={dataVersion} />
       </div>
 
       <Inspector open={inspector} onClose={closeInspector} />

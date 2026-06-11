@@ -191,14 +191,17 @@ function SectionBand({ lanePositions, firewalls }) {
   };
 
   /* Compute span for each vendor group */
-  const vendors = ['palo-alto', 'fortinet'];
+  const vendors = Array.from(new Set(firewalls.map(f => f.vendorId).filter(Boolean)));
   const groups = vendors.map(vId => {
     const fws = firewalls.filter(f => f.vendorId === vId);
     if (!fws.length) return null;
     const start = lanePositions[fws[0].id];
     const end = lanePositions[fws[fws.length - 1].id] + laneW;
-    const color = vId === 'palo-alto' ? '#ffb866' : '#ff7a7a';
-    const label = vId === 'palo-alto' ? 'palo alto networks' : 'fortinet';
+    const color = vId === 'palo-alto' ? 'var(--vendor-paloalto)'
+      : vId === 'fortinet' ? 'var(--vendor-fortinet)'
+      : vId === 'cisco' ? 'var(--vendor-cisco)' : 'var(--vendor-unknown)';
+    const label = vId === 'palo-alto' ? 'palo alto networks'
+      : vId === 'fortinet' ? 'fortinet' : vId === 'cisco' ? 'cisco' : vId;
     return { vId, start, end, color, label, count: fws.length };
   }).filter(Boolean);
 
@@ -311,6 +314,7 @@ function computeFocus(target, edges, allZones, allAssets) {
 function Topology({ openInspector, intent, goTo }) {
   const I = window.Icons;
   const topoRef = useRefT(null);
+  const svgRef = useRefT(null);
   const [tip, setTip] = useStateT(null);
   const [hover, setHover] = useStateT(null);     // { id, kind }  — active when no selection
   const [selected, setSelected] = useStateT(null); // { id, kind, label } — sticky
@@ -486,10 +490,28 @@ function Topology({ openInspector, intent, goTo }) {
           ><I.Maximize size={13} /> reset</button>
           <button
             className="btn"
-            onClick={() => window.toast('Topology exported', {
-              kind:'ok',
-              sub:`topology-${new Date().toISOString().slice(0,10)}.svg · ${lanes.length} fw · ${window.LFPM.zones.length} zones`,
-            })}
+            onClick={() => {
+              const svg = svgRef.current;
+              if (!svg) {
+                window.toast('Export failed', { kind:'err', sub:'topology canvas not ready' });
+                return;
+              }
+              const xml = new XMLSerializer().serializeToString(svg);
+              const fname = `topology-${new Date().toISOString().slice(0, 10)}.svg`;
+              const blob = new Blob(
+                [`<?xml version="1.0" encoding="UTF-8"?>\n${xml}`],
+                { type: 'image/svg+xml;charset=utf-8' },
+              );
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = fname;
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              window.toast('Topology exported', {
+                kind:'ok',
+                sub: `${fname} · ${lanes.length} fw · ${window.LFPM.zones.length} zones`,
+              });
+            }}
           ><I.Download size={13} /> export</button>
         </div>
       </div>
@@ -512,7 +534,7 @@ function Topology({ openInspector, intent, goTo }) {
           <div className="row"><span className="swatch-line" style={{ background:'var(--sev-critical)' }} /> critical threat</div>
           <div className="row"><span className="swatch-line" style={{ background:'var(--sev-high)' }} /> high threat</div>
           <div className="row" style={{ alignItems:'center' }}>
-            <svg width="18" height="2"><line x1="0" y1="1" x2="18" y2="1" stroke="rgba(110,231,245,0.5)" strokeWidth="1" strokeDasharray="3 3" /></svg>
+            <svg width="18" height="2"><line x1="0" y1="1" x2="18" y2="1" stroke="var(--topo-accent-50)" strokeWidth="1" strokeDasharray="3 3" /></svg>
             <span>internet trunk</span>
           </div>
           <div className="sub">zones · risk</div>
@@ -535,6 +557,7 @@ function Topology({ openInspector, intent, goTo }) {
 
         {/* ── SVG canvas ── */}
         <svg
+          ref={svgRef}
           className="topo-svg"
           viewBox={`0 0 ${TOPO.W} ${TOPO.H}`}
           preserveAspectRatio="xMidYMid meet"
@@ -542,7 +565,7 @@ function Topology({ openInspector, intent, goTo }) {
         >
           <defs>
             <marker id="mk-low"  viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M0,0 L10,5 L0,10 z" fill="rgba(110,231,245,0.55)" />
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--topo-accent-55)" />
             </marker>
             <marker id="mk-high" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--sev-high)" />
@@ -551,8 +574,8 @@ function Topology({ openInspector, intent, goTo }) {
               <path d="M0,0 L10,5 L0,10 z" fill="var(--sev-critical)" />
             </marker>
             <linearGradient id="lane-bg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.018)" />
-              <stop offset="100%" stopColor="rgba(255,255,255,0.005)" />
+              <stop offset="0%" stopColor="var(--topo-lane-0)" />
+              <stop offset="100%" stopColor="var(--topo-lane-1)" />
             </linearGradient>
           </defs>
 
@@ -576,7 +599,7 @@ function Topology({ openInspector, intent, goTo }) {
 
             const col = e.severity === 'critical' ? 'var(--sev-critical)'
                      : e.severity === 'high'      ? 'var(--sev-high)'
-                     : 'rgba(110,231,245,0.5)';
+                     : 'var(--topo-accent-50)';
 
             const marker = e.severity === 'critical' ? 'url(#mk-crit)'
                          : e.severity === 'high'     ? 'url(#mk-high)'
@@ -687,7 +710,9 @@ function Topology({ openInspector, intent, goTo }) {
           {lanes.map(lane => {
             const fw = lane.fw;
             const meta = laneMeta[fw.id];
-            const vendorAccent = fw.vendorId === 'palo-alto' ? '#ffb866' : '#ff7a7a';
+            const vendorAccent = fw.vendorId === 'palo-alto' ? 'var(--vendor-paloalto)'
+              : fw.vendorId === 'fortinet' ? 'var(--vendor-fortinet)'
+              : fw.vendorId === 'cisco' ? 'var(--vendor-cisco)' : 'var(--vendor-unknown)';
             const isSel = selected?.id === fw.id;
             const tipData = {
               kind: 'firewall',
@@ -836,7 +861,7 @@ function Topology({ openInspector, intent, goTo }) {
                         width={TOPO.laneW - 8}
                         height={TOPO.zoneHeaderH}
                         rx="4"
-                        fill="rgba(255,255,255,0.018)"
+                        fill="var(--topo-lane-0)"
                       />
                       <g
                         onClick={(e) => { e.stopPropagation(); handleSelect(z.id, 'zone', z.name, { kind:'zone', data: { ...z, fwId: fw.id, fwDisplay: fw.display } }); }}
@@ -897,7 +922,7 @@ function Topology({ openInspector, intent, goTo }) {
                               x="-6" y="0"
                               width={TOPO.laneW - 16} height={TOPO.assetH - 2}
                               rx="3"
-                              fill={aSel ? 'rgba(110,231,245,0.06)' : 'transparent'}
+                              fill={aSel ? 'var(--topo-accent-06)' : 'transparent'}
                               stroke={aSel ? 'var(--accent-bd)' : 'transparent'}
                             />
                             {/* Icon */}

@@ -12,13 +12,13 @@ import { LFPM as mockLFPM } from './data';
  * which broke the dashboard's vendor filters (NaN risk) and mislabelled Cisco. */
 function vendorMeta(name) {
   const n = (name || '').toLowerCase();
-  if (n.includes('palo'))  return { id: 'palo-alto', abbr: 'PA', accent: '#ffb866', os: 'PAN-OS' };
-  if (n.includes('forti')) return { id: 'fortinet',  abbr: 'FT', accent: '#ff7a7a', os: 'FortiOS' };
-  if (n.includes('cisco')) return { id: 'cisco',     abbr: 'CS', accent: '#6bb4f7', os: 'ASA' };
+  if (n.includes('palo'))  return { id: 'palo-alto', abbr: 'PA', accent: 'var(--vendor-paloalto)', os: 'PAN-OS' };
+  if (n.includes('forti')) return { id: 'fortinet',  abbr: 'FT', accent: 'var(--vendor-fortinet)', os: 'FortiOS' };
+  if (n.includes('cisco')) return { id: 'cisco',     abbr: 'CS', accent: 'var(--vendor-cisco)', os: 'ASA' };
   return {
     id: n.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown',
     abbr: (name || '?').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || '??',
-    accent: '#9aa3b2', os: '',
+    accent: 'var(--vendor-unknown)', os: '',
   };
 }
 
@@ -332,7 +332,18 @@ export async function fetchLFPMData() {
       return { sourceMarketplace, isClearnet, isDarkweb };
     };
 
-    const threats = threatFindings.items && threatFindings.items.length > 0
+    /* Exploit-status values must match the Threats page filter: active | wild | poc | none.
+     * KEV = confirmed active exploitation; 'wild'/'poc' come from evidence text; else 'none'. */
+    const deriveExploit = (f, kev) => {
+      if (kev) return 'active';
+      const hay = `${f.title || ''} ${f.description || ''} ${(f.tags || []).join(' ')}`.toLowerCase();
+      if (/in the wild|widely exploited|mass exploit|actively exploited|active exploitation/.test(hay)) return 'wild';
+      if (/\bpoc\b|proof[- ]of[- ]concept|exploit (code|available|published|released)|public exploit|metasploit/.test(hay)) return 'poc';
+      return 'none';
+    };
+
+    const usingMockThreats = !(threatFindings.items && threatFindings.items.length > 0);
+    const threats = !usingMockThreats
       ? threatFindings.items.map(f => {
           const matchedFw = (f.matched_device_ids || []).map(id => deviceById.get(String(id))).filter(Boolean);
           const kev = isKev(f);
@@ -348,7 +359,7 @@ export async function fetchLFPMData() {
             published: f.source_scraped_at ? String(f.source_scraped_at).split('T')[0]
                        : (f.created_at ? String(f.created_at).split('T')[0] : ''),
             patched: f.recommended_actions && f.recommended_actions.length > 0 ? f.recommended_actions[0] : 'Review vendor advisory',
-            exploit: kev ? 'active' : (f.is_new_since_last_scan ? 'poc' : 'poc'),
+            exploit: deriveExploit(f, kev),
             kev,
             correlated: (f.matched_device_ids || []).length > 0,
             correlationReason: f.correlation_match_reason || '',
@@ -374,6 +385,7 @@ export async function fetchLFPMData() {
       criticalFindings: tiStats?.critical_findings_last_7d || 0,
       highFindings: tiStats?.high_findings_last_7d || 0,
       correlatedRules: tiStats?.correlated_rules_count || 0,
+      usingMockThreats, // true = no scan findings yet; UI shows demo advisories + "run a scan" notice
     };
 
     // Live activity feed derived from real findings + anomalies + last scan.

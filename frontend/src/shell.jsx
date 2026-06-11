@@ -1,6 +1,7 @@
 import React from "react";
 import { Icons } from "./icons";
 import { LFPM } from "./data";
+import { triggerRulesSync } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * App shell — left rail, topbar, status bar
  * ───────────────────────────────────────────────────────────────── */
@@ -78,32 +79,48 @@ function Rail({ current, onNav, criticalCount }) {
 export { Sparkline, Rail, Topbar, StatusBar };
 
 /* ── Topbar ──────────────────────────────────────────────────────── */
-function Topbar({ crumbs = [], onPalette, user, timeRange, onTimeRange, onSignOut, onNavigate, onOpenInspector, onSync, theme, onToggleTheme }) {
+function Topbar({ crumbs = [], onPalette, user, timeRange, timeRangeLabel, onTimeRange, onSignOut, onNavigate, onOpenInspector, onSync, theme, onToggleTheme }) {
   const I = window.Icons;
   const [open, setOpen] = useState(null); // 'user' | 'notif' | 'tenant' | 'range' | null
   const [syncing, setSyncing] = useState(false);
 
-  const handleSync = () => {
+  const handleSync = async () => {
     if (syncing) return;
     setSyncing(true);
-    window.toast('Sync started', { kind: 'info', sub: 'pulling rules from 5 firewalls…' });
-    setTimeout(() => {
+    const n = LFPM.firewalls?.length || 0;
+    window.toast('Sync started', { kind: 'info', sub: `pulling rules from ${n} firewall${n === 1 ? '' : 's'}…` });
+    try {
+      const results = await Promise.allSettled(
+        (LFPM.firewalls || []).map(fw => triggerRulesSync(fw.id))
+      );
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
+      if (typeof onSync === 'function') await onSync();
+      if (ok === 0) {
+        window.toast('Sync failed', { kind: 'crit', sub: 'backend unreachable — no devices synced' });
+      } else {
+        window.toast('Sync complete', {
+          kind: failed > 0 ? 'warn' : 'ok',
+          sub: `${ok}/${results.length} devices · ${LFPM.policies?.length || 0} rules${failed > 0 ? ` · ${failed} failed` : ''}`,
+        });
+      }
+    } catch (err) {
+      window.toast('Sync failed', { kind: 'crit', sub: String(err.message || err) });
+    } finally {
       setSyncing(false);
-      window.toast('Sync complete', { kind: 'ok', sub: '5 devices · 44 rules · 0 errors' });
-      onSync?.();
-    }, 1400);
+    }
   };
 
-  const trLabel = ({
+  const trLabel = timeRangeLabel || ({
     '1h':'last 1h', '6h':'last 6h', '24h':'last 24h', '7d':'last 7d', '30d':'last 30d', '90d':'last 90d',
   })[timeRange] || 'last 24h';
 
   return (
     <header className="topbar" style={{ position: 'relative' }}>
       <button className="tb-tenant" onClick={() => setOpen(open === 'tenant' ? null : 'tenant')} title="Switch organization">
-        <div className="tb-tenant-mark">A</div>
+        <div className="tb-tenant-mark">N</div>
         <div className="col" style={{ lineHeight: 1.15 }}>
-          <span className="tb-tenant-name">Acme Industrial</span>
+          <span className="tb-tenant-name">NovaTech Industries</span>
           <span className="tb-tenant-env">prod · eu-west-1</span>
         </div>
         <I.Chevron size={12} />
@@ -177,8 +194,8 @@ function Topbar({ crumbs = [], onPalette, user, timeRange, onTimeRange, onSignOu
 
       {open === 'tenant' && <window.TenantMenu onClose={() => setOpen(null)} />}
       {open === 'range'  && <window.TimeRangeMenu current={timeRange} onPick={onTimeRange} onClose={() => setOpen(null)} />}
-      {open === 'notif'  && <window.NotifMenu onClose={() => setOpen(null)} onOpenInspector={onOpenInspector} />}
-      {open === 'user'   && <window.UserMenu user={user} onClose={() => setOpen(null)} onNavigate={onNavigate} onSignOut={onSignOut} />}
+      {open === 'notif'  && <window.NotifMenu onClose={() => setOpen(null)} onOpenInspector={onOpenInspector} onNavigate={onNavigate} />}
+      {open === 'user'   && <window.UserMenu user={user} onClose={() => setOpen(null)} onNavigate={onNavigate} onSignOut={onSignOut} theme={theme} onToggleTheme={onToggleTheme} />}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </header>
@@ -186,13 +203,28 @@ function Topbar({ crumbs = [], onPalette, user, timeRange, onTimeRange, onSignOu
 }
 
 /* ── Status bar (terminal-style bottom strip) ───────────────────── */
-function StatusBar({ lastSync, queue = 0, region = 'soc-eu-west-1', env = 'prod', user }) {
+function formatLastSync(iso) {
+  if (!iso) return 'no scans yet';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'no scans yet';
+  const utc = d.toISOString().slice(11, 19) + ' UTC';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return `${utc} · just now`;
+  if (mins < 60) return `${utc} · ${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${utc} · ${hrs}h ago`;
+  return `${utc} · ${Math.floor(hrs / 24)}d ago`;
+}
+
+function StatusBar({ queue = 0, region = 'soc-eu-west-1', env = 'prod', user, dataVersion }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(i);
   }, []);
   const utc = now.toISOString().slice(11, 19) + ' UTC';
+  const lastSync = formatLastSync(LFPM.meta?.lastScanAt);
+  void dataVersion;
   return (
     <footer className="statusbar">
       <div className="sb-seg">

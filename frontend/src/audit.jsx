@@ -49,6 +49,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
       setVendor(new Set([intent.vendor]));
     }
     if (intent.status) setStat(new Set([intent.status]));
+    if (intent.q) setSearch(intent.q);
     if (intent.minRisk) setMinRisk(+intent.minRisk || 0);
     if (intent.rule) {
       const r = LFPM.policies.find(p => p.id === intent.rule);
@@ -133,7 +134,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
   const activeFilters = [
     ...[...statuses].map(s => ({ key:'status:'+s, label:s, clear: () => toggle(statuses, s, setStat) })),
     ...[...vendor].map(v => ({ key:'vendor:'+v, label: v === 'palo-alto' ? 'palo alto' : 'fortinet', clear: () => toggle(vendor, v, setVendor) })),
-    ...[...fws].map(f => ({ key:'fw:'+f, label: LFPM.firewalls.find(x => x.id === f)?.display, clear: () => toggle(fws, f, setFws) })),
+    ...[...fws].map(f => ({ key:'fw:'+f, label: LFPM.firewalls.find(x => x.id === f)?.display || f, clear: () => toggle(fws, f, setFws) })),
     ...[...actions].map(a => ({ key:'action:'+a, label:a, clear: () => toggle(actions, a, setActions) })),
     ...(minRisk > 0 ? [{ key:'risk', label:`risk ≥ ${minRisk}`, clear: () => setMinRisk(0) }] : []),
     ...(search ? [{ key:'q', label:`"${search}"`, clear: () => setSearch('') }] : []),
@@ -151,16 +152,26 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
         <div className="row gap-2" style={{ marginLeft: 'auto' }}>
           <button
             className="btn"
-            onClick={() => window.toast(`Exported ${filtered.length} rule${filtered.length === 1 ? '' : 's'} as CSV`, {
-              kind:'ok', sub:`policy-audit-${new Date().toISOString().slice(0,10)}.csv`,
-            })}
+            onClick={() => {
+              const esc = (v) => {
+                const s = String(v ?? '');
+                return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+              };
+              const header = ['id','name','device','vendor','src_zone','dst_zone','src','dst','service','action','status','priority','risk_score','enabled'];
+              const rows = filtered.map(p => {
+                const fw = LFPM.firewalls.find(f => f.id === p.firewallId);
+                return [p.id, p.name, fw?.display || '—', fw?.vendor || '—', p.srcZone, p.dstZone, p.srcIp, p.dstIp, p.service, p.action, p.status, p.priority, p.riskScore, p.enabled ? 'yes' : 'no'].map(esc).join(',');
+              });
+              const fname = `policy-audit-${new Date().toISOString().slice(0,10)}.csv`;
+              const blob = new Blob([header.join(',') + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = fname;
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              window.toast(`Exported ${filtered.length} rule${filtered.length === 1 ? '' : 's'} as CSV`, { kind:'ok', sub: fname });
+            }}
           ><I.Download size={13} /> export csv</button>
-          <button
-            className="btn"
-            onClick={() => window.toast('Run-to-run diff coming soon', {
-              kind:'info', sub:'compares ruleset between two analyzer passes',
-            })}
-          ><I.Code size={13} /> compare runs</button>
           <button
             className="btn primary"
             disabled={running}
@@ -170,13 +181,23 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
               setRunning(true);
               window.toast('Audit run started', { kind:'info', sub:`analyzing ${LFPM.policies.length} rules across ${LFPM.firewalls.length} firewalls…` });
               try {
-                await Promise.all(LFPM.firewalls.map(fw => triggerDeviceAnalysis(fw.id)));
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                const results = await Promise.allSettled(
+                  LFPM.firewalls.map(fw => triggerDeviceAnalysis(fw.id))
+                );
+                const ok = results.filter(r => r.status === 'fulfilled').length;
+                const failed = results.length - ok;
                 if (typeof refreshData === 'function') {
                   await refreshData();
                 }
                 const updatedAnomalies = LFPM.policies.filter(p => p.status !== 'clean').length;
-                window.toast('Audit complete', { kind:'ok', sub:`${updatedAnomalies} anomalies surfaced · database synchronized` });
+                if (ok === 0) {
+                  window.toast('Audit failed', { kind:'crit', sub:`0/${results.length} devices analyzed — backend unreachable` });
+                } else {
+                  window.toast('Audit complete', {
+                    kind: failed > 0 ? 'warn' : 'ok',
+                    sub: `${ok}/${results.length} devices analyzed · ${updatedAnomalies} anomalies open${failed > 0 ? ` · ${failed} failed` : ''}`,
+                  });
+                }
               } catch (e) {
                 console.error(e);
                 window.toast('Audit failed', { kind:'crit', sub: String(e.message || e) });
@@ -214,14 +235,6 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
                   <span className="muted mono" style={{ fontSize: 10.5 }}>{v.count()}</span>
                 </button>
               ))}
-              <button
-                style={{ padding:'5px 8px', fontSize:12, color:'var(--fg-3)', textAlign:'left', borderRadius: 3 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--fg-1)'}
-                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--fg-3)'}
-                onClick={() => window.toast('Saved views editor coming soon', { kind:'info', sub:'right-click any view to rename or share' })}
-              >
-                + new view…
-              </button>
             </div>
           </div>
 
@@ -369,7 +382,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
                           {rule.srcZone} → {rule.dstZone}
                         </div>
                       </td>
-                      <td className="mono dim">{fw?.display}</td>
+                      <td className="mono dim">{fw?.display || '—'}</td>
                       <td className="mono dim" style={{ fontSize: 11 }}>{rule.srcIp}</td>
                       <td className="mono dim truncate" style={{ fontSize: 11, maxWidth: 150 }}>{rule.dstIp}</td>
                       <td className="mono dim" style={{ fontSize: 11 }}>{rule.service}</td>

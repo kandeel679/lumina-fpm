@@ -100,7 +100,7 @@ function useOutsideClick(ref, onClose, active) {
 window.useOutsideClick = useOutsideClick;
 
 /* ── User Menu ──────────────────────────────────────────────────── */
-function UserMenu({ user, onClose, onNavigate, onSignOut }) {
+function UserMenu({ user, onClose, onNavigate, onSignOut, theme, onToggleTheme }) {
   const I = window.Icons;
   const ref = useRefM(null);
   useOutsideClick(ref, onClose, true);
@@ -128,14 +128,14 @@ function UserMenu({ user, onClose, onNavigate, onSignOut }) {
           <span className="ico"><I.Key size={14} /></span>
           api tokens
         </div>
-        <div className="popover-row" onClick={() => { window.toast('Theme toggle is disabled in this build', { kind:'info', sub: 'Dark mode only' }); onClose(); }}>
-          <span className="ico"><I.Settings size={14} /></span>
-          appearance
+        <div className="popover-row" onClick={() => { onToggleTheme?.(); onClose(); }}>
+          <span className="ico">{theme === 'dark' ? <I.Sun size={14} /> : <I.Moon size={14} />}</span>
+          appearance · {theme === 'dark' ? 'dark' : 'light'} — switch to {theme === 'dark' ? 'light' : 'dark'}
         </div>
         <div className="popover-divider" />
-        <div className="popover-row" onClick={() => { window.toast('Help center coming soon', { kind:'info' }); onClose(); }}>
+        <div className="popover-row" onClick={() => { window.toast('Keyboard shortcuts', { kind:'info', sub: '⌘K search · / filter · j/k rows · esc close', duration: 4500 }); onClose(); }}>
           <span className="ico"><I.AlertCirc size={14} /></span>
-          help & docs
+          help & shortcuts
         </div>
         <div className="popover-row danger" onClick={() => { onSignOut(); onClose(); }}>
           <span className="ico"><I.Logout size={14} /></span>
@@ -150,22 +150,22 @@ function UserMenu({ user, onClose, onNavigate, onSignOut }) {
 }
 
 /* ── Notification Menu ──────────────────────────────────────────── */
-function NotifMenu({ onClose, onOpenInspector }) {
+function NotifMenu({ onClose, onOpenInspector, onNavigate }) {
   const I = window.Icons;
   const ref = useRefM(null);
   useOutsideClick(ref, onClose, true);
-  const items = [
-    { id:'n1', kind:'crit',  title:'CVE-2024-3400 still unpatched on pa-820-branch', t:'2m ago', cveId:'CVE-2024-3400' },
-    { id:'n2', kind:'high',  title:'New shadowed rule detected · POL-018 on pa-3260-dmz', t:'8m ago', ruleId:'POL-018' },
-    { id:'n3', kind:'high',  title:'pa-820-branch · connector status degraded',         t:'14m ago', fwId:'fw-003' },
-    { id:'n4', kind:'med',   title:'Weekly audit digest available', t:'1h ago' },
-    { id:'n5', kind:'read',  title:'fortinet psirt sync · ok',     t:'1h ago' },
-  ];
+  /* Live items: top of the activity feed (same source as the dashboard) */
+  const sevToKind = { critical:'crit', high:'high', medium:'med' };
+  const items = (LFPM.activityFeed || []).slice(0, 5).map((a, i) => ({
+    id: `n${i}`,
+    kind: sevToKind[a.sev] || (a.kind === 'alert' ? 'high' : 'read'),
+    title: a.text || '—',
+    t: a.t || '',
+    link: a.link || null,
+  }));
   const openFor = (it) => {
-    if (it.cveId)   onOpenInspector({ kind:'cve',      data: window.LFPM.threats.find(t => t.id === it.cveId) });
-    else if (it.ruleId) onOpenInspector({ kind:'rule', data: window.LFPM.policies.find(p => p.id === it.ruleId) });
-    else if (it.fwId)   onOpenInspector({ kind:'firewall', data: window.LFPM.firewalls.find(f => f.id === it.fwId) });
-    else window.toast('Opened report', { kind:'info' });
+    if (it.link && onNavigate) onNavigate(it.link.page, it.link.params || null);
+    else window.toast('No linked view for this event', { kind:'info', sub: it.title });
     onClose();
   };
   return (
@@ -198,31 +198,21 @@ function TenantMenu({ onClose }) {
   const I = window.Icons;
   const ref = useRefM(null);
   useOutsideClick(ref, onClose, true);
-  const tenants = [
-    { id:'acme',     name:'Acme Industrial',   env:'prod',    region:'eu-west-1', active:true,  letter:'A' },
-    { id:'acme-stg', name:'Acme Industrial',   env:'staging', region:'eu-west-1', active:false, letter:'A' },
-    { id:'globex',   name:'Globex Corp',       env:'prod',    region:'us-east-2', active:false, letter:'G' },
-    { id:'initech',  name:'Initech',           env:'prod',    region:'us-west-1', active:false, letter:'I' },
-  ];
-  const pick = (t) => {
-    if (t.active) { onClose(); return; }
-    window.toast('Org switching disabled in this build', { kind:'info', sub: `would load ${t.name} · ${t.env}` });
-    onClose();
-  };
   return (
     <div ref={ref} className="popover" style={{ left: 8, top: 'calc(var(--topbar-h) + 4px)', width: 260 }}>
-      <div className="popover-head"><div className="popover-title">switch organization</div></div>
+      <div className="popover-head"><div className="popover-title">organization</div></div>
       <div className="popover-body" style={{ padding: 4 }}>
-        {tenants.map(t => (
-          <div key={t.id} className={`popover-row ${t.active ? 'active' : ''}`} onClick={() => pick(t)}>
-            <div className="tb-tenant-mark" style={{ width: 22, height: 22, fontSize: 10 }}>{t.letter}</div>
-            <div className="col" style={{ lineHeight: 1.15 }}>
-              <span style={{ color:'var(--fg-0)', fontSize: 12.5 }}>{t.name}</span>
-              <span className="muted mono" style={{ fontSize: 10.5 }}>{t.env} · {t.region}</span>
-            </div>
-            <span className="check"><I.CheckCirc size={13} /></span>
+        <div className="popover-row active" onClick={onClose}>
+          <div className="tb-tenant-mark" style={{ width: 22, height: 22, fontSize: 10 }}>N</div>
+          <div className="col" style={{ lineHeight: 1.15 }}>
+            <span style={{ color:'var(--fg-0)', fontSize: 12.5 }}>NovaTech Industries</span>
+            <span className="muted mono" style={{ fontSize: 10.5 }}>prod · eu-west-1</span>
           </div>
-        ))}
+          <span className="check"><I.CheckCirc size={13} /></span>
+        </div>
+      </div>
+      <div className="popover-footer">
+        <span className="muted" style={{ fontSize: 10.5 }}>Multi-tenant — Pro roadmap</span>
       </div>
     </div>
   );
@@ -233,6 +223,25 @@ function TimeRangeMenu({ current, onPick, onClose }) {
   const I = window.Icons;
   const ref = useRefM(null);
   useOutsideClick(ref, onClose, true);
+  const [showCustom, setShowCustom] = useStateM(false);
+  const [from, setFrom] = useStateM('');
+  const [to, setTo] = useStateM('');
+  const fmt = (iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    return Number.isNaN(d.getTime())
+      ? null
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  const applyCustom = () => {
+    const a = fmt(from);
+    const b = fmt(to);
+    if (!a || !b) {
+      window.toast('Pick both dates', { kind: 'warn', sub: 'a start and end date are required' });
+      return;
+    }
+    onPick('custom', `${a} – ${b}`);
+    onClose();
+  };
   const opts = [
     { id:'1h',  label:'last 1 hour' },
     { id:'6h',  label:'last 6 hours' },
@@ -256,10 +265,32 @@ function TimeRangeMenu({ current, onPick, onClose }) {
           </div>
         ))}
         <div className="popover-divider" />
-        <div className="popover-row" onClick={() => { window.toast('Custom range picker coming soon', { kind:'info' }); onClose(); }}>
+        <div className="popover-row" onClick={() => setShowCustom(s => !s)}>
           <span className="ico"><I.Calendar size={14} /></span>
           custom range…
         </div>
+        {showCustom && (
+          <div className="col" style={{ gap: 6, padding: '6px 8px 8px' }}>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              style={{ background: 'var(--bg-2)', color: 'var(--fg-1)', border: '1px solid var(--bd-1)', borderRadius: 4, padding: '4px 6px', fontSize: 11.5, fontFamily: 'var(--f-mono)' }}
+            />
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              style={{ background: 'var(--bg-2)', color: 'var(--fg-1)', border: '1px solid var(--bd-1)', borderRadius: 4, padding: '4px 6px', fontSize: 11.5, fontFamily: 'var(--f-mono)' }}
+            />
+            <button
+              onClick={applyCustom}
+              style={{ background: 'var(--accent)', color: 'var(--bg-0)', border: 'none', borderRadius: 4, padding: '5px 8px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+            >
+              apply range
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

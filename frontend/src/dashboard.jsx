@@ -16,6 +16,25 @@ import { triggerDeviceAnalysis } from "./api";
 
 const { useMemo: useMemoD } = React;
 
+/* Time-range configurations: number of trend points, minutes per point,
+ * and the feed window in seconds. Deterministic — no randomness in render. */
+const TIME_RANGES = {
+  '1h':  { points: 12, stepMin: 5,    feedSec: 3600 },
+  '6h':  { points: 12, stepMin: 30,   feedSec: 6 * 3600 },
+  '24h': { points: 24, stepMin: 60,   feedSec: 24 * 3600 },
+  '7d':  { points: 28, stepMin: 360,  feedSec: 7 * 86400 },
+  '30d': { points: 30, stepMin: 1440, feedSec: 30 * 86400 },
+  '90d': { points: 30, stepMin: 4320, feedSec: 90 * 86400 },
+};
+
+/* Friendly "minutes ago" label for chart axes/tooltips. */
+function agoLabel(min) {
+  if (min <= 0) return 'now';
+  if (min < 60) return `-${Math.round(min)}m`;
+  if (min < 1440) return `-${Math.round(min / 60)}h`;
+  return `-${Math.round(min / 1440)}d`;
+}
+
 function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, refreshData }) {
   const I = window.Icons;
   const [running, setRunning] = React.useState(false);
@@ -49,13 +68,23 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
     setRunning(true);
     window.toast('Audit run started', { kind:'info', sub:`analyzing ${LFPM.policies.length} rules across ${LFPM.firewalls.length} firewalls…` });
     try {
-      await Promise.all(LFPM.firewalls.map(fw => triggerDeviceAnalysis(fw.id)));
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const results = await Promise.allSettled(
+        LFPM.firewalls.map(fw => triggerDeviceAnalysis(fw.id))
+      );
+      const ok = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
       if (typeof refreshData === 'function') {
         await refreshData();
       }
       const updatedAnomalies = LFPM.policies.filter(p => p.status !== 'clean').length;
-      window.toast('Audit complete', { kind:'ok', sub:`${updatedAnomalies} anomalies surfaced · database synchronized` });
+      if (ok === 0) {
+        window.toast('Audit failed', { kind:'crit', sub:`0/${results.length} devices analyzed — backend unreachable` });
+      } else {
+        window.toast('Audit complete', {
+          kind: failed > 0 ? 'warn' : 'ok',
+          sub: `${ok}/${results.length} devices analyzed · ${updatedAnomalies} anomalies open${failed > 0 ? ` · ${failed} failed` : ''}`,
+        });
+      }
     } catch (e) {
       console.error(e);
       window.toast('Audit failed', { kind:'crit', sub: String(e.message || e) });
@@ -65,13 +94,31 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
   };
 
   const exportSnapshot = () => {
-    window.toast('Snapshot exported', {
-      kind: 'ok',
-      sub: `overview-${new Date().toISOString().slice(0,10)}.pdf · 7 panels · 1.2 MB`,
-    });
+    const snapshot = {
+      exportedAt: new Date().toISOString(),
+      timeRange,
+      stats,
+      fleet: fleet.map(({ id, display, vendor, status, rules, anomalies, cves, kev, riskScore }) =>
+        ({ id, display, vendor, status, rules, anomalies, cves, kev, riskScore })),
+      topRiskyRules: topRisky,
+      advisories: topCves,
+      conflicts: LFPM.conflicts,
+    };
+    const name = `overview-${new Date().toISOString().slice(0,10)}.json`;
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+    window.toast('Snapshot exported', { kind:'ok', sub:`${name} · ${fleet.length} devices · ${topCves.length} advisories` });
   };
 
   const pickRange = (id) => onTimeRange && onTimeRange(id);
+  const rangeCfg = TIME_RANGES[timeRange] || TIME_RANGES['24h'];
+  const rangePanelLabel = ({
+    '1h': 'last 1h', '6h': 'last 6h', '24h': 'last 24h',
+    '7d': 'last 7d', '30d': 'last 30d', '90d': 'last 90d',
+  })[timeRange] || timeRange;
 
   const stats = useMemoD(() => {
     const p = LFPM.policies;
@@ -90,7 +137,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       degraded:    LFPM.firewalls.filter(f => f.status !== 'online').length,
       avgRisk:     Math.round(p.reduce((a, x) => a + x.riskScore, 0) / p.length),
     };
-  }, []);
+  }, [timeRange]);
 
   const fleet = useMemoD(() => {
     return LFPM.firewalls.map(fw => {
@@ -100,28 +147,37 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       const kev = cves.filter(c => c.kev).length;
       return { ...fw, rules: rules.length, anomalies, cves: cves.length, kev };
     }).sort((a, b) => b.riskScore - a.riskScore);
-  }, []);
+  }, [timeRange]);
 
   const topRisky = useMemoD(() =>
     [...LFPM.policies]
       .filter(p => p.status !== 'clean')
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 5),
-  []);
+  [timeRange]);
 
   const topCves = useMemoD(() =>
     [...LFPM.threats]
       .sort((a, b) => (b.kev ? 1 : 0) - (a.kev ? 1 : 0) || b.cvss - a.cvss)
       .slice(0, 4),
-  []);
+  [timeRange]);
+
+  const activityFeed = useMemoD(() => {
+    const feed = LFPM.activityFeed || [];
+    if (!feed.length) return feed;
+    const anchor = secondsOf(feed[0]?.t);
+    const maxSec = rangeCfg.feedSec;
+    return feed.filter(f => Math.max(0, anchor - secondsOf(f.t)) <= maxSec);
+  }, [timeRange, rangeCfg.feedSec]);
 
   const charts = useMemoD(() => {
-    const trend = Array.from({ length: 24 }, (_, i) => {
-      const base = 56
-        + Math.sin(i * 0.4) * 6
-        + Math.cos(i * 0.9) * 3
-        + (i > 16 ? (i - 16) * 1.3 : 0);
-      return Math.round(Math.max(35, Math.min(95, base)));
+    const baseHits = LFPM.hits24h || [];
+    const peakHit = Math.max(...baseHits, 1);
+    const { points } = rangeCfg;
+    const trend = Array.from({ length: points }, (_, i) => {
+      const srcIdx = points <= 1 ? 0 : Math.round((i / (points - 1)) * (baseHits.length - 1));
+      const hit = baseHits[srcIdx] ?? peakHit * 0.5;
+      return Math.round(Math.max(35, Math.min(95, 35 + (hit / peakHit) * 60)));
     });
 
     const anomalyTypes = [
@@ -154,8 +210,8 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       };
     }).sort((a, b) => b.avg - a.avg);
 
-    return { trend, anomalyTypes, vendors };
-  }, [stats]);
+    return { trend, anomalyTypes, vendors, stepMin: rangeCfg.stepMin };
+  }, [stats, timeRange, rangeCfg]);
 
   return (
     <div className="page">
@@ -248,12 +304,16 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                 title="View high-risk rules"
               >
                 <div className="panel-title"><I.Activity size={12} /> risk trend</div>
-                <div className="panel-cta">last 24h <I.ChevronR size={11} /></div>
+                <div className="panel-cta">{rangePanelLabel} <I.ChevronR size={11} /></div>
               </div>
               <div className="chart-body">
-                <TrendChart data={charts.trend} id="risk24" />
+                <TrendChart data={charts.trend} id="risk24" stepMin={charts.stepMin} />
                 <div className="chart-axis">
-                  <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
+                  <span>{agoLabel((charts.trend.length - 1) * charts.stepMin)}</span>
+                  <span>{agoLabel(Math.round((charts.trend.length - 1) * charts.stepMin * 0.75))}</span>
+                  <span>{agoLabel(Math.round((charts.trend.length - 1) * charts.stepMin * 0.5))}</span>
+                  <span>{agoLabel(Math.round((charts.trend.length - 1) * charts.stepMin * 0.25))}</span>
+                  <span>now</span>
                 </div>
                 <div className="chart-legend">
                   <span><span className="sw" style={{ background:'var(--accent)' }} /> hourly avg risk score</span>
@@ -456,7 +516,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                             <span className="mono strong truncate" style={{ maxWidth: 200 }}>{r.name}</span>
                           </div>
                         </td>
-                        <td className="mono dim">{fw?.display}</td>
+                        <td className="mono dim">{fw?.display || '—'}</td>
                         <td>
                           <span className={`stat-text ${
                             r.status === 'permissive' ? 'high' :
@@ -486,6 +546,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
               <div className="col" style={{ padding: 0 }}>
                 {topCves.map(c => (
                   <div key={c.id}
+                    className="clickable-row"
                     onClick={() => navigate('threats', { cve: c.id })}
                     title={`Open ${c.id} in Threat Intel`}
                     style={{
@@ -493,9 +554,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                       borderBottom: '1px solid var(--bd-1)',
                       cursor: 'pointer',
                       display: 'flex', alignItems: 'flex-start', gap: 10,
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = ''}>
+                    }}>
                     <span className="sev-stripe" style={{
                       margin: '2px 0 0 -14px', height: 24,
                       background: LFPM.fmt.sevColor(c.severity),
@@ -552,7 +611,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                         <span className={`chip ${c.severity}`}>{c.severity}</span>
                         <span className="chip">{c.type.replace('-', ' ')}</span>
                         <span className="muted mono" style={{ fontSize: 11 }}>
-                          {c.ruleA} on {fwA?.display} ⇄ {c.ruleB} on {fwB?.display}
+                          {c.ruleA} on {fwA?.display || '—'} ⇄ {c.ruleB} on {fwB?.display || '—'}
                         </span>
                       </div>
                       <div style={{ fontSize: 12, color:'var(--fg-2)', marginTop: 6, lineHeight: 1.55 }}>
@@ -569,10 +628,11 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
 
         {/* Right column — grouped activity feed */}
         <ActivityColumn
-          feed={LFPM.activityFeed}
+          feed={activityFeed}
           navigate={navigate}
           collapsed={activityCollapsed}
           onToggle={toggleActivity}
+          rangeLabel={rangePanelLabel}
         />
       </div>
     </div>
@@ -617,7 +677,7 @@ function HeroKpi({ label, value, sub, delta, deltaKind, color, kind, trail, onCl
  *  On hover: nearest data point gets a crosshair + dot, tooltip
  *  shows time + value. On leave, reverts to the latest point.
  */
-function TrendChart({ data, id = 'trend', color = 'var(--accent)', height = 90 }) {
+function TrendChart({ data, id = 'trend', color = 'var(--accent)', height = 90, stepMin = 60 }) {
   const svgRef = React.useRef(null);
   const [hoverI, setHoverI] = React.useState(null);
 
@@ -651,12 +711,9 @@ function TrendChart({ data, id = 'trend', color = 'var(--accent)', height = 90 }
   };
   const onLeave = () => setHoverI(null);
 
-  /* 24 hourly samples ending at "now" — map index to a friendly
-   * relative-time label. data[len-1] is current, data[0] is 23h ago. */
-  const hoursAgo = (i) => data.length - 1 - i;
   const tipLabel = (i) => {
-    const ago = hoursAgo(i);
-    return ago === 0 ? 'now' : `${ago}h ago`;
+    const minAgo = (data.length - 1 - i) * stepMin;
+    return agoLabel(minAgo);
   };
 
   const showHover = hoverI !== null;
@@ -768,7 +825,7 @@ function HBars({ items, max }) {
 }
 
 /* ── Activity column — critical first, then recent ──────────── */
-function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
+function ActivityColumn({ feed, navigate, collapsed, onToggle, rangeLabel = '24h' }) {
   const I = window.Icons;
   const priority = feed.filter(f => f.sev === 'critical' || f.sev === 'high');
   const rest     = feed.filter(f => !(f.sev === 'critical' || f.sev === 'high'));
@@ -814,7 +871,7 @@ function ActivityColumn({ feed, navigate, collapsed, onToggle }) {
     <div className="activity-col">
       <div className="panel-head" style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-1)' }}>
         <div className="panel-title"><I.Activity size={12} /> activity</div>
-        <div className="panel-meta">live · last 60m</div>
+        <div className="panel-meta">live · {rangeLabel}</div>
         <button
           className="activity-collapse-btn"
           onClick={onToggle}

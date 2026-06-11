@@ -6,7 +6,13 @@ import { LFPM } from "./data";
  * Triggered from any table row or from the command palette
  * ───────────────────────────────────────────────────────────────── */
 
-const { useEffect: useEffectI } = React;
+const { useEffect: useEffectI, useState: useStateI } = React;
+
+/* Navigate via the app's hash router (app.jsx listens to hashchange). */
+function navTo(page, params) {
+  const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+  window.location.hash = `#${page}${qs}`;
+}
 
 function KV({ k, v, mono = false }) {
   return (
@@ -37,7 +43,7 @@ function RuleDetail({ rule }) {
         <div className="kvgrid">
           <KV k="rule id"   v={rule.id}              mono />
           <KV k="name"      v={rule.name}            mono />
-          <KV k="firewall"  v={fw?.display}          mono />
+          <KV k="firewall"  v={fw?.display || '—'}   mono />
           <KV k="vendor"    v={fw?.vendor} />
           <KV k="priority"  v={`#${rule.priority}`}  mono />
           <KV k="action"    v={<span className={`verb ${rule.action}`}>{rule.action}</span>} />
@@ -111,16 +117,16 @@ function RuleDetail({ rule }) {
         <div className="row" style={{ marginTop: 10, gap: 6, flexWrap: 'wrap' }}>
           <button
             className="btn primary"
-            onClick={() => window.toast(`Rule ${rule.id} disabled`, {
-              kind:'ok',
-              sub:`change request CR-${Math.floor(Math.random() * 90000 + 10000)} opened`,
-            })}
+            onClick={() => {
+              rule.enabled = !rule.enabled;
+              window.toast(`Rule ${rule.id} ${rule.enabled ? 'enabled' : 'disabled'}`, {
+                kind:'ok', sub:'change queued · sync to apply',
+              });
+            }}
           >{rule.enabled ? 'disable rule' : 'enable rule'}</button>
           <button
             className="btn"
-            onClick={() => window.toast(`Jumping to ${LFPM.firewalls.find(f => f.id === rule.firewallId)?.display}`, {
-              kind:'info', sub:'deep-link to vendor management UI · coming soon',
-            })}
+            onClick={() => navTo('audit', { firewall: rule.firewallId })}
           >view in firewall</button>
           <button
             className="btn ghost"
@@ -393,9 +399,7 @@ function ZoneDetail({ zone }) {
         <div className="row" style={{ marginTop: 10, gap: 6 }}>
           <button
             className="btn"
-            onClick={() => window.toast(`Filtered rules for zone ${zone.name}`, {
-              kind:'info', sub: `${related.length} rules · jump to Policy Audit`,
-            })}
+            onClick={() => navTo('audit', { firewall: fwId, q: zone.name })}
           >view in audit</button>
           <button
             className="btn ghost"
@@ -477,15 +481,19 @@ function ExternalDetail({ node }) {
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
             <button
               className="btn primary"
-              onClick={() => window.toast(`Block list updated`, {
-                kind:'ok', sub:`${node.ip} added to deny-list across ${affected.length} firewalls`,
-              })}
+              onClick={() => {
+                navTo('audit', { q: node.ip });
+                window.toast(`Filtering audit by ${node.ip}`, {
+                  kind:'ok', sub:`source/dest match · ${affected.length} firewalls in scope`,
+                });
+              }}
             >block at perimeter</button>
             <button
               className="btn"
-              onClick={() => window.toast('Hunting paths', {
-                kind:'info', sub:`searching for flows to/from ${node.ip} in last 24h`,
-              })}
+              onClick={() => {
+                navTo('threats', { q: node.ip });
+                window.toast('Threat hunt', { kind:'info', sub:`searching advisories for ${node.ip}` });
+              }}
             >hunt traffic</button>
           </div>
         </div>
@@ -563,15 +571,17 @@ function PathDetail({ edge, ext, fw }) {
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
             <button
               className="btn primary"
-              onClick={() => window.toast(`Path mitigation queued`, {
-                kind:'ok', sub:`block-list rule generated for ${fw.display} · review in audit`,
-              })}
+              onClick={() => {
+                const rid = exposedRules[0]?.id || relevantRules[0]?.id;
+                if (rid) navTo('audit', { rule: rid });
+                window.toast('Path mitigation', {
+                  kind:'ok', sub: rid ? `opened ${rid} in audit` : 'no ingress rules to review',
+                });
+              }}
             >mitigate path</button>
             <button
               className="btn"
-              onClick={() => window.toast(`Filtering ingress rules`, {
-                kind:'info', sub:`${relevantRules.length} rules · jump to Policy Audit`,
-              })}
+              onClick={() => navTo('audit', { firewall: fw.id, filter: 'permissive' })}
             >review rules</button>
           </div>
         </div>

@@ -142,9 +142,9 @@ function Connectors({ openInspector, refreshData }) {
                       className="btn ghost"
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.toast(`Configure ${fw.display}`, { kind:'info', sub:'connector settings · read-only demo' });
+                        openInspector({ kind:'firewall', data: fw });
                       }}
-                      title="Configure connector"
+                      title="View connector details"
                       style={{ padding: '4px 8px', minHeight: 0 }}
                     ><I.Settings size={12} /></button>
                   </div>
@@ -153,14 +153,10 @@ function Connectors({ openInspector, refreshData }) {
             ))}
           </tbody>
         </table>
-        <div style={{ padding: 10, borderTop:'1px solid var(--bd-1)', display:'flex', gap: 8 }}>
+        <div style={{ padding: 10, borderTop:'1px solid var(--bd-1)', display:'flex', gap: 8, alignItems: 'center' }}>
+          <span className="muted" style={{ fontSize: 11.5 }}>New connectors onboard via CLI · UI in Pro roadmap</span>
           <button
-            className="btn"
-            onClick={() => window.toast('Add connector flow coming soon', {
-              kind:'info', sub:'paste device IP + api token to onboard',
-            })}
-          ><I.Plus size={13} /> add connector</button>
-          <button
+            style={{ marginLeft: 'auto' }}
             className="btn ghost"
             onClick={async () => {
               window.toast('Triggering sync across fleet...', { kind:'info' });
@@ -258,8 +254,49 @@ function Schedules() {
 }
 
 /* ── Notifications ────────────────────────────────────────────── */
+const NOTIF_LS_KEY = 'lumina_notif_rules';
+const NOTIF_DEFAULTS = [
+  { id: 'crit',      trigger: 'severity ≥ critical',         channel: 'pagerduty · soc-on-call',      enabled: true },
+  { id: 'kev',       trigger: 'cisa kev match',              channel: 'slack · #soc-alerts',          enabled: true },
+  { id: 'shadowed',  trigger: 'new shadowed rule detected',  channel: 'jira · backlog SOC-INF',       enabled: true },
+  { id: 'conflict',  trigger: 'cross-vendor conflict opened', channel: 'email · soc-ops@lumina.local', enabled: true },
+  { id: 'offline',   trigger: 'firewall offline > 5m',       channel: 'pagerduty · network-on-call',  enabled: true },
+  { id: 'jobfail',   trigger: 'analyzer job failed',         channel: 'slack · #platform',            enabled: true },
+  { id: 'redundant', trigger: 'redundant rule found',        channel: 'jira · backlog (low)',         enabled: false },
+  { id: 'digest',    trigger: 'weekly digest',               channel: 'email · soc-ops@lumina.local', enabled: true },
+];
+
+function loadNotifRules() {
+  try {
+    const raw = localStorage.getItem(NOTIF_LS_KEY);
+    if (!raw) return NOTIF_DEFAULTS;
+    const saved = JSON.parse(raw);
+    return NOTIF_DEFAULTS.map(d => ({
+      ...d,
+      enabled: saved[d.id] != null ? !!saved[d.id] : d.enabled,
+    }));
+  } catch {
+    return NOTIF_DEFAULTS;
+  }
+}
+
 function Notifications() {
   const I = window.Icons;
+  const [rules, setRules] = useStateS(loadNotifRules);
+  const toggleRule = (id) => {
+    setRules(prev => {
+      const next = prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
+      try {
+        const map = Object.fromEntries(next.map(r => [r.id, r.enabled]));
+        localStorage.setItem(NOTIF_LS_KEY, JSON.stringify(map));
+      } catch {}
+      const hit = next.find(r => r.id === id);
+      window.toast(hit?.enabled ? 'Notification enabled' : 'Notification paused', {
+        kind: 'ok', sub: hit?.trigger || id,
+      });
+      return next;
+    });
+  };
   return (
     <>
       <SectionHead title="Notifications" desc="Route security findings to email, Slack, PagerDuty, and ticketing." />
@@ -268,21 +305,18 @@ function Notifications() {
           <div className="panel-title"><I.Bell size={12} /> routing rules</div>
         </div>
         <div className="col" style={{ padding: 0 }}>
-          {[
-            { trigger: 'severity ≥ critical',                    channel: 'pagerduty · soc-on-call',         enabled: true },
-            { trigger: 'cisa kev match',                          channel: 'slack · #soc-alerts',             enabled: true },
-            { trigger: 'new shadowed rule detected',              channel: 'jira · backlog SOC-INF',          enabled: true },
-            { trigger: 'cross-vendor conflict opened',            channel: 'email · soc-ops@acme.local',      enabled: true },
-            { trigger: 'firewall offline > 5m',                   channel: 'pagerduty · network-on-call',     enabled: true },
-            { trigger: 'analyzer job failed',                     channel: 'slack · #platform',               enabled: true },
-            { trigger: 'redundant rule found',                    channel: 'jira · backlog (low)',            enabled: false },
-            { trigger: 'weekly digest',                           channel: 'email · soc-ops@acme.local',      enabled: true },
-          ].map((n, i) => (
-            <div key={i} style={{
-              padding: '10px 14px', display: 'grid',
-              gridTemplateColumns: '2fr 2fr 80px',
-              borderBottom: '1px solid var(--bd-1)', alignItems: 'center', gap: 14,
-            }}>
+          {rules.map((n) => (
+            <div
+              key={n.id}
+              style={{
+                padding: '10px 14px', display: 'grid',
+                gridTemplateColumns: '2fr 2fr 80px',
+                borderBottom: '1px solid var(--bd-1)', alignItems: 'center', gap: 14,
+                cursor: 'pointer',
+              }}
+              onClick={() => toggleRule(n.id)}
+              title="Click to toggle"
+            >
               <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>{n.trigger}</span>
               <span className="mono dim" style={{ fontSize: 11.5 }}>{n.channel}</span>
               <span className={`stat-text ${n.enabled ? 'safe' : 'dim'}`} style={{ justifySelf: 'end' }}>
@@ -410,15 +444,30 @@ function ApiSecrets() {
         <div style={{ padding: 10, borderTop: '1px solid var(--bd-1)', display:'flex', gap: 8 }}>
           <button
             className="btn primary"
-            onClick={() => window.toast('Token wizard coming soon', {
-              kind:'info', sub:'name · expiry · scopes — admins only',
-            })}
+            onClick={() => {
+              const token = {
+                name: `demo-token-${Date.now().toString(36)}`,
+                prefix: `lfpm_pat_${Math.random().toString(36).slice(2, 6)}…`,
+                scope: 'read:policies, read:cves',
+                created: new Date().toISOString(),
+                note: 'Demo token manifest — store securely; not persisted server-side',
+              };
+              const fname = `${token.name}.json`;
+              const blob = new Blob([JSON.stringify(token, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = fname;
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              window.toast('Demo token created', { kind:'ok', sub: `${fname} downloaded` });
+            }}
           ><I.Plus size={13} /> create token</button>
           <button
             className="btn"
-            onClick={() => window.toast('API docs', {
-              kind:'info', sub:'docs.lumina-fpm.io/api/v1 — opens in a real build',
-            })}
+            onClick={() => {
+              window.open('/docs', '_blank', 'noopener');
+              window.toast('API docs opened', { kind:'info', sub:'FastAPI Swagger UI · /docs' });
+            }}
           ><I.Code size={13} /> open api docs</button>
         </div>
       </div>
