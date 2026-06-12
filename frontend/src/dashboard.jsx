@@ -231,9 +231,10 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
             ))}
           </div>
           <button className="btn" onClick={exportSnapshot}><I.Download size={13} /> export</button>
-          <button className="btn primary" onClick={runAudit} disabled={running}
-                  style={running ? { opacity: 0.7, cursor: 'wait' } : {}}>
-            <I.Play size={13} /> {running ? 'running…' : 'run audit'}
+          <button className="btn primary" onClick={runAudit} disabled={running}>
+            {running
+              ? <><span className="li-spinner" /> running…</>
+              : <><I.Play size={13} /> run audit</>}
           </button>
         </div>
       </div>

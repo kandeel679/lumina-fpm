@@ -36,6 +36,9 @@ function RuleDetail({ rule }) {
     clean:       `No anomalies detected. Rule conforms to least-privilege and is not shadowed by any higher-priority rule.`,
   }[rule.status];
 
+  /* Local state so toggle is immediately visible without a full refresh. */
+  const [enabled, setEnabled] = React.useState(Boolean(rule.enabled));
+
   return (
     <>
       <div className="inspector-section">
@@ -44,10 +47,10 @@ function RuleDetail({ rule }) {
           <KV k="rule id"   v={rule.id}              mono />
           <KV k="name"      v={rule.name}            mono />
           <KV k="firewall"  v={fw?.display || '—'}   mono />
-          <KV k="vendor"    v={fw?.vendor} />
+          <KV k="vendor"    v={fw?.vendor || '—'} />
           <KV k="priority"  v={`#${rule.priority}`}  mono />
           <KV k="action"    v={<span className={`verb ${rule.action}`}>{rule.action}</span>} />
-          <KV k="enabled"   v={rule.enabled
+          <KV k="enabled"   v={enabled
             ? <span className="stat-text safe"><span className="dot" /> enabled</span>
             : <span className="stat-text dim"><span className="dot" /> disabled</span>} />
         </div>
@@ -118,12 +121,14 @@ function RuleDetail({ rule }) {
           <button
             className="btn primary"
             onClick={() => {
-              rule.enabled = !rule.enabled;
-              window.toast(`Rule ${rule.id} ${rule.enabled ? 'enabled' : 'disabled'}`, {
-                kind:'ok', sub:'change queued · sync to apply',
+              const next = !enabled;
+              rule.enabled = next; /* optimistic mutation into the shared data object */
+              setEnabled(next);
+              window.toast(`Rule ${rule.id} ${next ? 'enabled' : 'disabled'}`, {
+                kind: 'ok', sub: 'change queued · sync to apply',
               });
             }}
-          >{rule.enabled ? 'disable rule' : 'enable rule'}</button>
+          >{enabled ? 'disable rule' : 'enable rule'}</button>
           <button
             className="btn"
             onClick={() => navTo('audit', { firewall: rule.firewallId })}

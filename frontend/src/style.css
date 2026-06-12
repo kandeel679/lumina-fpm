@@ -9,7 +9,6 @@
   --bg-1:        #0e1117;   /* primary surface */
   --bg-2:        #131720;   /* elevated panel */
   --bg-3:        #181d28;   /* hover / row stripe */
-  --bg-4:        #1f2531;   /* pressed / table head */
 
   /* borders */
   --bd-1:        #1c2230;   /* hairline */
@@ -25,7 +24,6 @@
 
   /* accent (one, used for selection/primary action only) */
   --accent:        #6ee7f5;
-  --accent-strong: #22d3ee;
   --accent-bg:     rgba(110,231,245,0.10);
   --accent-bd:     rgba(110,231,245,0.32);
 
@@ -90,6 +88,12 @@
   --topo-orb-b:  rgba(255,77,109,0.035);
   --logo-inset-hi: rgba(255,255,255,0.05);
 
+  /* interaction helpers */
+  --accent-bg-hover:    rgba(110,231,245,0.16);
+  --sev-safe-pulse:     rgba(74,222,128,0.45);
+  --feed-priority-bg:   rgba(255,77,109,0.025);
+  --feed-priority-high-bg: rgba(255,155,77,0.025);
+
   color-scheme: dark;
 }
 
@@ -103,7 +107,6 @@
   --bg-1:        #ffffff;
   --bg-2:        #f7f9fc;
   --bg-3:        #eef2f7;
-  --bg-4:        #e3e8f0;
 
   /* borders */
   --bd-1:        #e4e8ef;
@@ -119,7 +122,6 @@
 
   /* accent — darker cyan for contrast on white */
   --accent:        #0e8aa6;
-  --accent-strong: #0a7894;
   --accent-bg:     rgba(14,138,166,0.10);
   --accent-bd:     rgba(14,138,166,0.32);
 
@@ -169,6 +171,12 @@
   --topo-orb-a:  rgba(14,138,166,0.05);
   --topo-orb-b:  rgba(209,29,57,0.04);
   --logo-inset-hi: rgba(15,23,42,0.04);
+
+  /* interaction helpers */
+  --accent-bg-hover:    rgba(14,138,166,0.18);
+  --sev-safe-pulse:     rgba(19,138,63,0.45);
+  --feed-priority-bg:   rgba(209,29,57,0.04);
+  --feed-priority-high-bg: rgba(194,87,12,0.04);
 
   color-scheme: light;
 }
@@ -719,9 +727,9 @@ a { color: inherit; text-decoration: none; }
   animation: rail-pulse 2s var(--ease) infinite;
 }
 @keyframes rail-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.45); }
-  70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
-  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  0%   { box-shadow: 0 0 0 0 var(--sev-safe-pulse); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 /* "Open in inspector" style nudge on conflict cards */
@@ -864,16 +872,13 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 0 0 3px var(--sev-critical-bg);
 }
 .feed-row.priority {
-  background: rgba(255,77,109,0.025);
+  background: var(--feed-priority-bg);
   border-left: 2px solid var(--sev-critical);
   padding-left: 10px;
 }
-[data-theme="light"] .feed-row.priority {
-  background: rgba(209,29,57,0.04);
-}
 .feed-row.priority.high {
   border-left-color: var(--sev-high);
-  background: rgba(255,155,77,0.025);
+  background: var(--feed-priority-high-bg);
 }
 [data-theme="light"] .feed-row.priority.high {
   background: rgba(194,87,12,0.04);
@@ -1072,7 +1077,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent);
   border-color: var(--accent-bd);
 }
-.btn.primary:hover { background: rgba(110,231,245,0.16); }
+.btn.primary:hover { background: var(--accent-bg-hover); }
 .btn.ghost { background: transparent; }
 .btn.danger {
   background: var(--sev-critical-bg);
