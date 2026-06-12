@@ -38,8 +38,12 @@ function ToastHost() {
   const [exiting, setExiting] = useStateM(new Set());
 
   useEffectM(() => toastBus.subscribe((t) => {
-    setToasts((prev) => [...prev, t]);
-    setTimeout(() => dismiss(t.id), t.duration);
+    /* Defer to a microtask so a toast fired synchronously during another
+     * component's render (e.g. App) never triggers setState-in-render. */
+    queueMicrotask(() => {
+      setToasts((prev) => [...prev, t]);
+      setTimeout(() => dismiss(t.id), t.duration);
+    });
   }), []);
 
   const dismiss = (id) => {
