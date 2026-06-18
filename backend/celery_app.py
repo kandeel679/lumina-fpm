@@ -61,6 +61,6 @@ celery.conf.update(
 )
 
 # Explicitly register task modules
-# (autodiscover_tasks expects a 'tasks.py' file inside each package,
+# (autodiscover_tasks expects a 'tasks.py' file inside each package, 
 #  but our module is named 'threat_intel.py')
 celery.conf.include = ["tasks.threat_intel", "tasks.anomaly"]

@@ -373,7 +373,7 @@ export async function fetchLFPMData() {
             isDarkweb: lane.isDarkweb,
           };
         })
-      : mockLFPM.threats; // Fallback to mock threats if scan hasn't run yet
+      : []; // No fallback to mock threats if scan hasn't run yet
 
     // Scan metadata (drives live KPIs + page subtitle, no fabricated numbers)
     const meta = {
@@ -385,7 +385,7 @@ export async function fetchLFPMData() {
       criticalFindings: tiStats?.critical_findings_last_7d || 0,
       highFindings: tiStats?.high_findings_last_7d || 0,
       correlatedRules: tiStats?.correlated_rules_count || 0,
-      usingMockThreats, // true = no scan findings yet; UI shows demo advisories + "run a scan" notice
+      usingMockThreats, // true = no scan findings yet; UI shows "run a scan" notice
     };
 
     // Live activity feed derived from real findings + anomalies + last scan.
@@ -396,17 +396,17 @@ export async function fetchLFPMData() {
       vendors,
       firewalls,
       policies,
-      conflicts: conflicts.length > 0 ? conflicts : mockLFPM.conflicts,
+      conflicts,
       threats,
       meta,
-      zones: zones.length > 0 ? zones : mockLFPM.zones,
-      assets: assets.length > 0 ? assets : mockLFPM.assets,
-      firmwareTimeline: mockLFPM.firmwareTimeline,
-      externalNodes: mockLFPM.externalNodes,
-      activityFeed: liveFeed.length > 0 ? liveFeed : mockLFPM.activityFeed,
-      hits24h: mockLFPM.hits24h,
-      users: mockLFPM.users,
-      savedSearches: mockLFPM.savedSearches,
+      zones,
+      assets,
+      firmwareTimeline: [],
+      externalNodes: [],
+      activityFeed: liveFeed,
+      hits24h: [],
+      users: [],
+      savedSearches: [],
       fmt: mockLFPM.fmt,
     };
   } catch (err) {

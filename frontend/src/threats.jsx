@@ -301,7 +301,7 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
           fontSize: 12, color: 'var(--fg-2)',
         }}>
           <I.AlertCirc size={13} style={{ color: 'var(--fg-3)', flexShrink: 0 }} />
-          <span>No scan data yet — advisories below are demo data. Run a threat scan to populate live findings.</span>
+          <span>No scan data yet. Run a threat scan to populate live findings.</span>
           <button
             className="btn"
             style={{ marginLeft: 'auto', flexShrink: 0 }}
