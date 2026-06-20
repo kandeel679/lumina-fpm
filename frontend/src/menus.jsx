@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 /* ─────────────────────────────────────────────────────────────────
  * Toast system + popover menus
  *
@@ -155,6 +155,7 @@ function UserMenu({ user, onClose, onNavigate, onSignOut, theme, onToggleTheme }
 
 /* ── Notification Menu ──────────────────────────────────────────── */
 function NotifMenu({ onClose, onOpenInspector, onNavigate }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const ref = useRefM(null);
   useOutsideClick(ref, onClose, true);

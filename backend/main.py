@@ -14,11 +14,23 @@ import celery_app as _celery_app  # noqa: F401
 from models.models import get_db
 from models import crud, models
 from api.routes import vendors, devices, rules, network_objects
+from api.routes import external_nodes, threat_feeds, api_tokens, audit_logs, saved_searches
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create tables if they don't exist
+    engine = models.get_engine()
+    models.Base.metadata.create_all(bind=engine)
+    yield
+    # Shutdown logic can go here
 
 app = FastAPI(
     title="LuminaFPM Backend API",
     description="API for the LuminaFPM Firewall Policy Management application",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # Configure CORS to allow communication with the frontend
@@ -36,29 +48,6 @@ SessionLocal = get_db()
 # Mount the Threat Intel router
 app.include_router(threat_intel_router)
 
-# Create threat-intel tables on startup (matches existing pattern in crud.py)
-@app.on_event("startup")
-def create_threat_intel_tables():
-    """Auto-create threat-intel tables if they don't exist."""
-    from models.models import get_db as _get_db
-    from sqlalchemy import create_engine
-    from os import getenv
-    engine = create_engine(getenv("DATABASE_URL", ""), echo=False)
-    Base.metadata.create_all(bind=engine)
-
-
-# =====================================================================
-# STARTUP EVENT — Auto-create tables if they don't exist
-# =====================================================================
-@app.on_event("startup")
-def on_startup():
-    db = SessionLocal()
-    try:
-        engine = db.get_bind()
-        crud.create_database(engine)
-    finally:
-        db.close()
-
 
 # =====================================================================
 # CORE ENDPOINTS
@@ -67,6 +56,16 @@ def on_startup():
 def read_root():
     return {"message": "Welcome to the LuminaFPM API!"}
 
+
+app.include_router(vendors.router)
+app.include_router(devices.router)
+app.include_router(network_objects.router)
+app.include_router(rules.router)
+app.include_router(external_nodes.router)
+app.include_router(threat_feeds.router)
+app.include_router(api_tokens.router)
+app.include_router(audit_logs.router)
+app.include_router(saved_searches.router)
 
 @app.get("/health")
 def health_check():

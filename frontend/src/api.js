@@ -401,12 +401,12 @@ export async function fetchLFPMData() {
       meta,
       zones,
       assets,
-      firmwareTimeline: [],
-      externalNodes: [],
+      firmwareTimeline: mockLFPM.firmwareTimeline || [],
+      externalNodes: mockLFPM.externalNodes || [],
       activityFeed: liveFeed,
-      hits24h: [],
-      users: [],
-      savedSearches: [],
+      hits24h: mockLFPM.hits24h || [],
+      users: mockLFPM.users || [],
+      savedSearches: mockLFPM.savedSearches || [],
       fmt: mockLFPM.fmt,
     };
   } catch (err) {

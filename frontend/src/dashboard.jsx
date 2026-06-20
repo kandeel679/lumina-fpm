@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 import { triggerDeviceAnalysis } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * Dashboard — Overview
@@ -36,6 +36,7 @@ function agoLabel(min) {
 }
 
 function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, refreshData }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const [running, setRunning] = React.useState(false);
 
@@ -137,7 +138,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       degraded:    LFPM.firewalls.filter(f => f.status !== 'online').length,
       avgRisk:     Math.round(p.reduce((a, x) => a + x.riskScore, 0) / p.length),
     };
-  }, [timeRange]);
+  }, [timeRange, LFPM.policies, LFPM.conflicts, LFPM.threats, LFPM.firewalls]);
 
   const fleet = useMemoD(() => {
     return LFPM.firewalls.map(fw => {
@@ -147,20 +148,20 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       const kev = cves.filter(c => c.kev).length;
       return { ...fw, rules: rules.length, anomalies, cves: cves.length, kev };
     }).sort((a, b) => b.riskScore - a.riskScore);
-  }, [timeRange]);
+  }, [timeRange, LFPM.firewalls, LFPM.policies, LFPM.threats]);
 
   const topRisky = useMemoD(() =>
     [...LFPM.policies]
       .filter(p => p.status !== 'clean')
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 5),
-  [timeRange]);
+  [timeRange, LFPM.policies]);
 
   const topCves = useMemoD(() =>
     [...LFPM.threats]
       .sort((a, b) => (b.kev ? 1 : 0) - (a.kev ? 1 : 0) || b.cvss - a.cvss)
       .slice(0, 4),
-  [timeRange]);
+  [timeRange, LFPM.threats]);
 
   const activityFeed = useMemoD(() => {
     const feed = LFPM.activityFeed || [];
@@ -168,7 +169,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
     const anchor = secondsOf(feed[0]?.t);
     const maxSec = rangeCfg.feedSec;
     return feed.filter(f => Math.max(0, anchor - secondsOf(f.t)) <= maxSec);
-  }, [timeRange, rangeCfg.feedSec]);
+  }, [timeRange, rangeCfg.feedSec, LFPM.activityFeed]);
 
   const charts = useMemoD(() => {
     const baseHits = LFPM.hits24h || [];
@@ -211,7 +212,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
     }).sort((a, b) => b.avg - a.avg);
 
     return { trend, anomalyTypes, vendors, stepMin: rangeCfg.stepMin };
-  }, [stats, timeRange, rangeCfg]);
+  }, [stats, timeRange, rangeCfg, LFPM.hits24h, LFPM.firewalls, LFPM.vendors, LFPM.policies, LFPM.threats]);
 
   return (
     <div className="page">

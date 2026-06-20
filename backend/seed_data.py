@@ -80,6 +80,9 @@ def seed():
             "hostname": "FG-HQ-EDGE-01",
             "firmware_version": "7.4.3",
             "management_ip": "10.0.1.1",
+            "location": "HQ DC · Rack 3A",
+            "uptime": "99.99%",
+            "throughput": "16.0 Gbps",
             "status": "online",
         },
         {
@@ -87,6 +90,9 @@ def seed():
             "hostname": "FG-HQ-CORE-01",
             "firmware_version": "7.4.3",
             "management_ip": "10.0.1.2",
+            "location": "HQ DC · Rack 3A",
+            "uptime": "99.99%",
+            "throughput": "16.0 Gbps",
             "status": "online",
         },
         {
@@ -94,6 +100,9 @@ def seed():
             "hostname": "PA-DC-NORTH-01",
             "firmware_version": "11.1.2",
             "management_ip": "10.10.1.1",
+            "location": "Data Center North",
+            "uptime": "99.99%",
+            "throughput": "8.2 Gbps",
             "status": "online",
         },
         {
@@ -101,6 +110,9 @@ def seed():
             "hostname": "PA-DC-SOUTH-01",
             "firmware_version": "11.0.4",
             "management_ip": "10.10.2.1",
+            "location": "Data Center North",
+            "uptime": "99.99%",
+            "throughput": "8.2 Gbps",
             "status": "degraded",
         },
         {
@@ -108,6 +120,9 @@ def seed():
             "hostname": "ASA-BRANCH-ALEX-01",
             "firmware_version": "9.18.3",
             "management_ip": "172.16.0.1",
+            "location": "Branch · Alex",
+            "uptime": "99.99%",
+            "throughput": "940 Mbps",
             "status": "online",
         },
     ]
@@ -345,6 +360,7 @@ def seed():
         {"rule_id": rule_ids["Disabled-Test-Rule"], "anomaly_type": "stale_rule", "severity_level": "low",
          "description": "Rule has been disabled since network audit. Should be removed to keep policy clean."},
         {"rule_id": rule_ids["Allow-Outbound-Web"], "anomaly_type": "shadowed_rule", "severity_level": "medium",
+         "related_rule_id": "POL-005",
          "description": "Parts of this rule's traffic may be shadowed by the Block-C2-Traffic rule above it in evaluation order."},
         {"rule_id": rule_ids["Allow-Monitoring"], "anomaly_type": "overly_permissive", "severity_level": "medium",
          "description": "Monitoring rule allows access to 'any' destination zone. Should be scoped to specific monitored subnets."},
@@ -354,6 +370,50 @@ def seed():
         api("post", f"/rules/{a['rule_id']}/anomalies", a)
         sev_icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}[a["severity_level"]]
         print(f"  {sev_icon} {a['anomaly_type']} on '{rule_name}' — {a['severity_level']}")
+
+    # ==================================================================
+    # 9. EXTERNAL NODES, THREAT FEEDS, API TOKENS, LOGS, SEARCHES
+    # ==================================================================
+    print("\n📦 Creating extra hardcoded entities...")
+    extra_nodes = [
+        {"name": "APT-29-C2", "ip_address": "185.220.100.1", "node_type": "threat_actor", "description": "Known APT29 Command & Control"},
+        {"name": "Cloudflare-Edge", "ip_address": "1.1.1.1", "node_type": "cloud_service", "description": "Cloudflare DNS Edge"},
+    ]
+    for n in extra_nodes:
+        api("post", "/external-nodes/", n)
+    print(f"  ✔ {len(extra_nodes)} external nodes")
+
+    threat_feeds = [
+        {"name": "AlienVault OTX", "url": "https://otx.alienvault.com", "status": "active"},
+        {"name": "Spamhaus DROP", "url": "https://www.spamhaus.org/drop/drop.txt", "status": "active"},
+    ]
+    for f in threat_feeds:
+        api("post", "/threat-feeds/", f)
+    print(f"  ✔ {len(threat_feeds)} threat feeds")
+
+    api_tokens = [
+        {"admin_id": admin_ids[0], "name": "CI/CD Deployment Token", "token_hash": "dummy_hash_123"},
+        {"admin_id": admin_ids[1], "name": "Monitoring Script Token", "token_hash": "dummy_hash_456"},
+    ]
+    for t in api_tokens:
+        api("post", "/api-tokens/", t)
+    print(f"  ✔ {len(api_tokens)} API tokens")
+
+    audit_logs = [
+        {"admin_id": admin_ids[0], "action": "LOGIN", "target_type": "system", "target_id": None, "details": "Successful login via Web UI"},
+        {"admin_id": admin_ids[1], "action": "UPDATE_RULE", "target_type": "PolicyRule", "target_id": "Allow-Outbound-Web", "details": "Changed log setting to 'all-sessions'"},
+    ]
+    for l in audit_logs:
+        api("post", "/audit-logs/", l)
+    print(f"  ✔ {len(audit_logs)} audit logs")
+
+    saved_searches = [
+        {"admin_id": admin_ids[0], "name": "Critical Rule Anomalies", "query_string": "severity:critical type:overly_permissive"},
+        {"admin_id": admin_ids[2], "name": "Branch Office Disabled Rules", "query_string": "device:ASA-BRANCH-ALEX-01 active:false"},
+    ]
+    for s in saved_searches:
+        api("post", "/saved-searches/", s)
+    print(f"  ✔ {len(saved_searches)} saved searches")
 
     # ==================================================================
     # SUMMARY
@@ -368,6 +428,7 @@ def seed():
     print(f"     • {len(rules)} policy rules")
     print(f"     • {len(mappings)} rule-object mappings")
     print(f"     • {len(anomalies)} detected anomalies")
+    print(f"     • Extraneous models seeded (ExternalNodes, Feeds, Logs...)")
     print("=" * 60)
     print("\n  📖 View your API docs at: http://localhost:8000/docs")
     print("  🛡️  Threat intel data will be generated by the LTI scan pipeline.\n")

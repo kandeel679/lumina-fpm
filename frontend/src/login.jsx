@@ -1,5 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
+import { useLFPM } from "./context/LFPMContext";
 /* ─────────────────────────────────────────────────────────────────
  * Login flow
  *
@@ -16,6 +17,7 @@ const DEMO_PASSWORD = 'demo';
 const DEMO_MFA_CODE = '123456';
 
 function Login({ onLogin, theme, onToggleTheme }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const [step, setStep]         = useStateL('credentials');     // credentials | mfa | webauthn | success
   const [pwFallback, setPwFallback] = useStateL(false);          // reveal email+password fallback form
@@ -40,7 +42,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
   const append = (entry) => setLog(l => [...l, { t: new Date().toISOString().slice(11, 19), ...entry }]);
 
   const userByEmail = (em) =>
-    window.LFPM.users.find(u => u.email.toLowerCase() === em.toLowerCase());
+    LFPM.users.find(u => u.email.toLowerCase() === em.toLowerCase());
 
   /* ── Initial form submit dispatcher ───────────────────────────── */
   /* security key is the primary path; Enter triggers it unless the
@@ -125,7 +127,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
     await new Promise(r => setTimeout(r, 1200));
     append({ kind:'ok', text:'authn · webauthn assertion · userVerified=true · transport=usb' });
     append({ kind:'ok', text:'session · jwt minted · ttl 30m · scope soc:full' });
-    const u = userByEmail(email) || window.LFPM.users[0];
+    const u = userByEmail(email) || LFPM.users[0];
     setResolvedUser(u);
     append({ kind:'info', text:`redirecting · ${u.role}:dashboard` });
     setStep('success');
@@ -331,7 +333,7 @@ function Login({ onLogin, theme, onToggleTheme }) {
                   demo accounts · password <span className="mono" style={{ color: 'var(--fg-1)' }}>demo</span> · mfa <span className="mono" style={{ color:'var(--fg-1)' }}>123456</span>
                 </div>
                 <div className="col" style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--fg-2)', gap: 3 }}>
-                  {window.LFPM.users.map(u => (
+                  {LFPM.users.map(u => (
                     <button
                       key={u.id}
                       type="button"

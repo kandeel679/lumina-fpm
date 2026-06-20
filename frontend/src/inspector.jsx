@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 /* ─────────────────────────────────────────────────────────────────
  * Inspector — right-side detail pane for rule / firewall / cve / host
  * Triggered from any table row or from the command palette
@@ -25,6 +25,7 @@ function KV({ k, v, mono = false }) {
 
 /* ── Rule detail ────────────────────────────────────────────────── */
 function RuleDetail({ rule }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const fw = LFPM.firewalls.find(f => f.id === rule.firewallId);
   const shadowedBy = rule.shadowedBy ? LFPM.policies.find(p => p.id === rule.shadowedBy) : null;
@@ -149,6 +150,7 @@ function RuleDetail({ rule }) {
 
 /* ── Firewall detail ─────────────────────────────────────────────── */
 function FirewallDetail({ fw }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const rules = LFPM.policies.filter(p => p.firewallId === fw.id);
   const cves = LFPM.threats.filter(t => t.firewallIds.includes(fw.id));
@@ -225,6 +227,7 @@ function FirewallDetail({ fw }) {
 
 /* ── CVE detail ─────────────────────────────────────────────────── */
 function CveDetail({ cve }) {
+  const { data: LFPM } = useLFPM();
   const affected = cve.firewallIds.map(id => LFPM.firewalls.find(f => f.id === id)).filter(Boolean);
   return (
     <>
@@ -273,6 +276,7 @@ function CveDetail({ cve }) {
 
 /* ── Host detail ────────────────────────────────────────────────── */
 function HostDetail({ host }) {
+  const { data: LFPM } = useLFPM();
   const zone = LFPM.zones.find(z => z.id === host.zoneId);
   const fw = zone ? LFPM.firewalls.find(f => f.id === zone.fwId) : null;
   return (
@@ -310,6 +314,7 @@ function HostDetail({ host }) {
 
 /* ── Zone detail ────────────────────────────────────────────────── */
 function ZoneDetail({ zone }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const fwId = zone.fwId;
   const fw = LFPM.firewalls.find(f => f.id === fwId);
@@ -422,6 +427,7 @@ function ZoneDetail({ zone }) {
 
 /* ── External / threat node detail ──────────────────────────────── */
 function ExternalDetail({ node }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const targetMap = {
     'ext-internet':  ['fw-001','fw-002','fw-003','fw-004','fw-005'],
@@ -509,6 +515,7 @@ function ExternalDetail({ node }) {
 
 /* ── Threat path (edge) detail ──────────────────────────────────── */
 function PathDetail({ edge, ext, fw }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const isThreat = edge.kind === 'threat';
   const severity = edge.severity || 'low';
@@ -597,6 +604,7 @@ function PathDetail({ edge, ext, fw }) {
 
 /* ── Main Inspector wrapper ─────────────────────────────────────── */
 function Inspector({ open, onClose }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   useEffectI(() => {
     if (!open) return;

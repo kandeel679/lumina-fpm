@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 import { triggerDeviceAnalysis } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * Policy Audit — faceted ruleset analyzer
@@ -9,15 +9,16 @@ import { triggerDeviceAnalysis } from "./api";
 const { useState: useStateA, useMemo: useMemoA } = React;
 
 const VIEWS = [
-  { id: 'all',          label: 'all rules',                       count: () => LFPM.policies.length },
-  { id: 'anomalies',    label: 'anomalies',           highlight: true, count: () => LFPM.policies.filter(p => p.status !== 'clean').length },
-  { id: 'critical',     label: 'risk ≥ 80',                       count: () => LFPM.policies.filter(p => p.riskScore >= 80).length },
-  { id: 'permissive',   label: 'overly permissive',               count: () => LFPM.policies.filter(p => p.status === 'permissive').length },
-  { id: 'shadowed',     label: 'shadowed',                        count: () => LFPM.policies.filter(p => p.status === 'shadowed').length },
-  { id: 'disabled',     label: 'disabled rules',                  count: () => LFPM.policies.filter(p => !p.enabled).length },
+  { id: 'all',          label: 'all rules',                       count: (LFPM) => LFPM.policies.length },
+  { id: 'anomalies',    label: 'anomalies',           highlight: true, count: (LFPM) => LFPM.policies.filter(p => p.status !== 'clean').length },
+  { id: 'critical',     label: 'risk ≥ 80',                       count: (LFPM) => LFPM.policies.filter(p => p.riskScore >= 80).length },
+  { id: 'permissive',   label: 'overly permissive',               count: (LFPM) => LFPM.policies.filter(p => p.status === 'permissive').length },
+  { id: 'shadowed',     label: 'shadowed',                        count: (LFPM) => LFPM.policies.filter(p => p.status === 'shadowed').length },
+  { id: 'disabled',     label: 'disabled rules',                  count: (LFPM) => LFPM.policies.filter(p => !p.enabled).length },
 ];
 
 function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goTo, refreshData }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const [running, setRunning] = React.useState(false);
   const [view, setView]       = useStateA('all');
@@ -55,7 +56,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
       const r = LFPM.policies.find(p => p.id === intent.rule);
       if (r) openInspector({ kind:'rule', data: r });
     }
-  }, [intent]);
+  }, [intent, LFPM.policies, LFPM.firewalls]);
 
   const toggle = (set, val, setter) => {
     const ns = new Set(set);
@@ -101,7 +102,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
       return 0;
     });
     return data;
-  }, [view, search, vendor, fws, statuses, actions, minRisk, sortKey, sortDir]);
+  }, [view, search, vendor, fws, statuses, actions, minRisk, sortKey, sortDir, LFPM.policies, LFPM.firewalls]);
 
   const counts = useMemoA(() => {
     const all = LFPM.policies;
@@ -115,7 +116,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
       pa:         all.filter(p => LFPM.firewalls.find(f => f.id === p.firewallId)?.vendorId === 'palo-alto').length,
       ft:         all.filter(p => LFPM.firewalls.find(f => f.id === p.firewallId)?.vendorId === 'fortinet').length,
     };
-  }, []);
+  }, [LFPM.policies, LFPM.firewalls]);
 
   const sort = (k) => {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -232,7 +233,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
                     {v.highlight && <span style={{ width: 4, height: 4, borderRadius: 2, background: 'var(--sev-high)' }} />}
                     {v.label}
                   </span>
-                  <span className="muted mono" style={{ fontSize: 10.5 }}>{v.count()}</span>
+                  <span className="muted mono" style={{ fontSize: 10.5 }}>{v.count(LFPM)}</span>
                 </button>
               ))}
             </div>

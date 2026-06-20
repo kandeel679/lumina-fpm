@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 /* ─────────────────────────────────────────────────────────────────
  * Command Palette (⌘K) — global search/jump
  * ───────────────────────────────────────────────────────────────── */
@@ -8,6 +8,7 @@ import { LFPM } from "./data";
 const { useState: useStateP, useEffect: useEffectP, useRef: useRefP, useMemo: useMemoP } = React;
 
 function CommandPalette({ open, onClose, onNavigate, onOpenInspector }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const [q, setQ] = useStateP('');
   const [idx, setIdx] = useStateP(0);
@@ -94,7 +95,7 @@ function CommandPalette({ open, onClose, onNavigate, onOpenInspector }) {
 
     if (!groups.length) groups.push({ title:'no matches', items: [] });
     return groups;
-  }, [q]);
+  }, [q, LFPM.policies, LFPM.firewalls, LFPM.threats, LFPM.assets, LFPM.savedSearches]);
 
   const flat = useMemoP(() => results.flatMap(g => g.items), [results]);
 

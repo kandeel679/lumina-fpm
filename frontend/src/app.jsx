@@ -2,8 +2,7 @@
  * App root — auth gate, nav state, palette + inspector orchestration
  * ───────────────────────────────────────────────────────────────── */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { LFPM } from './data';
-import { fetchLFPMData } from './api';
+import { useLFPM } from './context/LFPMContext';
 import { Icons } from './icons';
 import { ToastHost } from './menus';
 import { Rail, Topbar, StatusBar } from './shell';
@@ -57,33 +56,7 @@ function makeHash(page, intent) {
 }
 
 export default function App() {
-  const [loaded, setLoaded] = useState(false);
-  const [dataVersion, setDataVersion] = useState(0);
-
-  const refreshLFPMData = useCallback(async () => {
-    try {
-      const backendData = await fetchLFPMData();
-      Object.assign(LFPM, backendData);
-      setDataVersion(v => v + 1);
-    } catch (e) {
-      console.error("Failed to refresh backend data", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const backendData = await fetchLFPMData();
-        Object.assign(LFPM, backendData);
-        setDataVersion(v => v + 1);
-      } catch (e) {
-        console.error("Backend API fetch failed, using mock data", e);
-      } finally {
-        setLoaded(true);
-      }
-    }
-    load();
-  }, []);
+  const { data, loading, error, refreshData } = useLFPM();
 
   const [user, setUser] = useState(() => {
     try {
@@ -190,7 +163,7 @@ export default function App() {
 
   /* Stats for badge count on Audit nav */
   const criticalCount = useMemo(() =>
-    LFPM.policies.filter(p => p.status !== 'clean').length, [dataVersion]);
+    data.policies.filter(p => p.status !== 'clean').length, [data.policies]);
 
   const openInspector  = useCallback((payload) => setInspector(payload), []);
   const closeInspector = useCallback(() => setInspector(null), []);
@@ -245,7 +218,7 @@ export default function App() {
   }
 
   /* Initialization Loader */
-  if (!loaded) {
+  if (loading) {
     return (
       <div className="login-wrap" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '20px', background: 'var(--bg-0)' }}>
         <div className="term-log" style={{ width: '450px', padding: '24px', border: '1px solid var(--bd-1)', borderRadius: '6px', background: 'var(--bg-1)', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', fontFamily: 'var(--f-mono)' }}>
@@ -285,21 +258,21 @@ export default function App() {
           onSignOut={handleSignOut}
           onNavigate={goTo}
           onOpenInspector={openInspector}
-          onSync={refreshLFPMData}
+          onSync={refreshData}
           theme={theme}
           onToggleTheme={toggleTheme}
           timeRangeLabel={timeRangeLabel}
         />
       </div>
       <main className="shell-main">
-        {page === 'dashboard' && <Dashboard            user={user} openInspector={openInspector} goTo={goTo} timeRange={timeRange} onTimeRange={setTimeRange} refreshData={refreshLFPMData} />}
-        {page === 'audit'     && <PolicyAudit          user={user} openInspector={openInspector} goTo={goTo} intent={intent} selectedRuleId={inspector?.kind === 'rule' ? inspector.data.id : null} refreshData={refreshLFPMData} />}
+        {page === 'dashboard' && <Dashboard            user={user} openInspector={openInspector} goTo={goTo} timeRange={timeRange} onTimeRange={setTimeRange} refreshData={refreshData} />}
+        {page === 'audit'     && <PolicyAudit          user={user} openInspector={openInspector} goTo={goTo} intent={intent} selectedRuleId={inspector?.kind === 'rule' ? inspector.data.id : null} refreshData={refreshData} />}
         {page === 'topology'  && <Topology             user={user} openInspector={openInspector} goTo={goTo} intent={intent} />}
-        {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} refreshData={refreshLFPMData} />}
-        {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshLFPMData} />}
+        {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} refreshData={refreshData} />}
+        {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshData} />}
       </main>
       <div className="shell-status">
-        <StatusBar queue={0} user={user} dataVersion={dataVersion} />
+        <StatusBar queue={0} user={user} dataVersion={0} />
       </div>
 
       <Inspector open={inspector} onClose={closeInspector} />

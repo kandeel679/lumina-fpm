@@ -248,7 +248,6 @@ def _build_search_queries_from_keywords(
 def _generate_queries_batched(
     keywords: dict[str, list[str]],
     requested_categories: list[str],
-    max_queries: int = 8,
 ) -> list[dict[str, str]]:
     """Generate ALL dark-web search queries in a SINGLE structured LLM call.
 
@@ -282,6 +281,8 @@ def _generate_queries_batched(
         if query_text and key not in seen:
             seen.add(key)
             queries.append({"query": query_text, "category": category})
+            
+        max_queries = int(os.getenv("LTI_MAX_QUERIES", 8))
         if len(queries) >= max_queries:
             break
 
@@ -295,7 +296,6 @@ def _generate_queries_batched(
 def _filter_results_in_code(
     search_results: list[dict[str, str]],
     queries: list[dict[str, str]],
-    top_n: int = 20,
 ) -> list[dict[str, str]]:
     """Rank and trim search results WITHOUT an LLM call.
 
@@ -324,6 +324,7 @@ def _filter_results_in_code(
         return s
 
     ranked = sorted(search_results, key=score, reverse=True)
+    top_n = int(os.getenv("LTI_MAX_FILTERED_RESULTS", 20))
     return ranked[:top_n]
 
 
@@ -392,8 +393,6 @@ def _filter_scraped_by_relevance(
 
 def _build_corpus(
     scrape_data: list[dict[str, Any]],
-    max_pages: int = 25,
-    max_chars: int = 60000,
 ) -> str:
     """Assemble ONE token-budgeted corpus from scraped pages for the single
     consolidated Findings call. Each page is labelled with its source so the
@@ -408,6 +407,10 @@ def _build_corpus(
         url = sd.get("url", "")
         title = sd.get("title", "")
         block = f"[SOURCE_URL: {url}]\n[PAGE_TITLE: {title}]\n{text}"
+        
+        max_pages = int(os.getenv("LTI_MAX_PAGES", 25))
+        max_chars = int(os.getenv("LTI_MAX_CHARS", 60000))
+        
         if total + len(block) > max_chars:
             block = block[: max(0, max_chars - total)]
         if not block:
@@ -419,7 +422,7 @@ def _build_corpus(
     return "\n\n=====\n\n".join(blocks)
 
 
-def _build_clean_digest(scrape_data: list[dict[str, Any]], max_items: int = 25) -> str:
+def _build_clean_digest(scrape_data: list[dict[str, Any]]) -> str:
     """Build a MODERATION-SAFE digest of dark-web search hits for the LLM.
 
     Cloud gateways (Gemini, AgentRouter, ...) block raw dark-web page text. So
@@ -457,6 +460,8 @@ def _build_clean_digest(scrape_data: list[dict[str, Any]], max_items: int = 25) 
             "ips": [_defang(x) for x in ips],
             "emails": [_defang(x) for x in emails],
         })
+        
+        max_items = int(os.getenv("LTI_MAX_DIGEST_ITEMS", 25))
         if len(items) >= max_items:
             break
     return json.dumps(items, indent=1)
@@ -578,22 +583,23 @@ def run_scan(
                 _log_error(report, "search_dark_web", error_msg)
                 raise Exception(error_msg)
 
-            search_results = search_dark_web(queries, max_workers=5)
+            max_workers = int(os.getenv("LTI_MAX_WORKERS", 5))
+            search_results = search_dark_web(queries, max_workers=max_workers)
             logger.info("Search returned %d results", len(search_results))
 
             # Cap total search results
-            if len(search_results) > 100:
-                search_results = search_results[:100]
+            max_search_results = int(os.getenv("LTI_MAX_SEARCH_RESULTS", 100))
+            if len(search_results) > max_search_results:
+                search_results = search_results[:max_search_results]
 
             sse_publisher.emit(report.id, "search_complete", {
                 "results_count": len(search_results),
             })
 
-            # ── Step 4: Filter results in code (no LLM call) ──
             if search_results:
                 before = len(search_results)
                 search_results = _filter_results_in_code(
-                    search_results, queries, top_n=20,
+                    search_results, queries
                 )
                 logger.info(
                     "Step 4: Filtered %d -> %d results in code (no LLM call)",
@@ -609,7 +615,7 @@ def run_scan(
             logger.info("Step 5: Scraping %d results via Robin", len(search_results))
             scrape_data = scrape_results(
                 search_results,
-                max_workers=5,
+                max_workers=max_workers,
                 progress_cb=scrape_progress,
             )
             report.onion_pages_scraped_count = len(scrape_data)
@@ -686,9 +692,9 @@ def run_scan(
             #   "excerpts" = Robin-style truncated REAL page text (for permissive
             #                APIs like DeepSeek/Ollama) -> richer, dedicated reports
             if os.getenv("LTI_CORPUS_MODE", "digest").lower() == "excerpts":
-                corpus = _build_corpus(scrape_data, max_pages=25, max_chars=60000)
+                corpus = _build_corpus(scrape_data)
             else:
-                corpus = _build_clean_digest(scrape_data, max_items=25)
+                corpus = _build_clean_digest(scrape_data)
             keyword_json = json.dumps(keywords, indent=2)
 
             if not corpus.strip():

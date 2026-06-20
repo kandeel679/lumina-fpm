@@ -8,9 +8,18 @@ from os import getenv
 
 Base = declarative_base()
 
+_engine = None
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        DATABASE_URL = getenv("DATABASE_URL")
+        # Echo is set to False to avoid flooding production logs
+        _engine = create_engine(DATABASE_URL, echo=False)
+    return _engine
+
 def get_db():
-    DATABASE_URL = getenv("DATABASE_URL")
-    engine = create_engine(DATABASE_URL, echo=True)
+    engine = get_engine()
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -47,6 +56,9 @@ class FirewallDevice(Base):
     hostname = Column(String(255), nullable=False)
     firmware_version = Column(String(50), nullable=True)
     management_ip = Column(String(45), nullable=False)
+    location = Column(String(255), nullable=True)
+    uptime = Column(String(50), nullable=True)
+    throughput = Column(String(50), nullable=True)
     last_poll_time = Column(DateTime, nullable=True)
     status = Column(String(20), default="unknown")
 
@@ -151,6 +163,7 @@ class RuleAnomaly(Base):
     rule_id = Column(Integer, ForeignKey("policy_rule.rule_id"), nullable=False)
     anomaly_type = Column(String(100), nullable=False)
     severity_level = Column(String(20), nullable=False)
+    related_rule_id = Column(String(100), nullable=True)  # e.g., 'POL-002' or vendor_rule_id of shadowed rule
     description = Column(Text, nullable=True)
     detected_at = Column(DateTime, default=datetime.utcnow)
 
@@ -164,3 +177,61 @@ class RuleAnomaly(Base):
         return f"<RuleAnomaly(anomaly_id={self.anomaly_id}, anomaly_type='{self.anomaly_type}')>"
 
 
+class ExternalNode(Base):
+    __tablename__ = "external_node"
+    node_id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    ip_address = Column(String(45), nullable=False)
+    node_type = Column(String(50), nullable=False)  # 'threat_actor', 'partner', 'cloud_service', etc.
+    description = Column(Text, nullable=True)
+    
+    def __repr__(self):
+        return f"<ExternalNode(node_id={self.node_id}, name='{self.name}')>"
+
+class ThreatFeed(Base):
+    __tablename__ = "threat_feed"
+    feed_id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    url = Column(String(255), nullable=False)
+    status = Column(String(20), default="active")
+    last_sync = Column(DateTime, nullable=True)
+    
+    def __repr__(self):
+        return f"<ThreatFeed(feed_id={self.feed_id}, name='{self.name}')>"
+
+class APIToken(Base):
+    __tablename__ = "api_token"
+    token_id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(Integer, ForeignKey("administrator.admin_id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    token_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    last_used = Column(DateTime, nullable=True)
+    
+    def __repr__(self):
+        return f"<APIToken(token_id={self.token_id}, name='{self.name}')>"
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(Integer, ForeignKey("administrator.admin_id"), nullable=True)
+    action = Column(String(100), nullable=False)
+    target_type = Column(String(50), nullable=False)
+    target_id = Column(String(100), nullable=True)
+    details = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<AuditLog(log_id={self.log_id}, action='{self.action}')>"
+
+class SavedSearch(Base):
+    __tablename__ = "saved_search"
+    search_id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_id = Column(Integer, ForeignKey("administrator.admin_id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    query_string = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<SavedSearch(search_id={self.search_id}, name='{self.name}')>"

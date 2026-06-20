@@ -15,74 +15,38 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+import os
+import redis
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
 class SSEPublisher:
     """SSE event publisher keyed by report_id.
 
-    emit() is called from background (non-async) threads.
-    subscribe() is always called from an async context (the SSE endpoint).
-    Thread-safety is achieved via loop.call_soon_threadsafe().
+    Publishes events to a Redis Pub/Sub channel so any API worker can stream them.
     """
 
-    def __init__(self) -> None:
-        self._events: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        self._subscribers: dict[int, list[asyncio.Queue]] = defaultdict(list)
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-
     def emit(self, report_id: int, event_type: str, data: dict[str, Any]) -> None:
-        """Publish an event. Safe to call from any thread."""
+        """Publish an event to Redis Pub/Sub. Safe to call from any thread."""
         event = {
             "event": event_type,
             "data": data,
             "timestamp": time.time(),
         }
-        self._events[report_id].append(event)
-
-        loop = self._loop
-        for queue in self._subscribers.get(report_id, []):
-            try:
-                if loop is not None and loop.is_running():
-                    loop.call_soon_threadsafe(queue.put_nowait, event)
-                else:
-                    queue.put_nowait(event)
-            except Exception:
-                logger.warning(
-                    "SSE: failed to deliver event %s for report %d",
-                    event_type, report_id,
-                )
-
-    def subscribe(self, report_id: int) -> asyncio.Queue:
-        """Create a new subscriber queue. Must be called from an async context."""
         try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            pass
+            r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+            r.publish(f"sse_events:{report_id}", json.dumps(event))
+            r.close()
+        except Exception as e:
+            logger.warning(
+                "SSE: failed to publish event %s for report %d: %s",
+                event_type, report_id, str(e)[:100]
+            )
 
-        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-
-        # Replay existing events so late-joining clients catch up
-        for event in self._events.get(report_id, []):
-            try:
-                queue.put_nowait(event)
-            except asyncio.QueueFull:
-                break
-
-        self._subscribers[report_id].append(queue)
-        return queue
-
-    def unsubscribe(self, report_id: int, queue: asyncio.Queue) -> None:
-        """Remove a subscriber queue."""
-        subs = self._subscribers.get(report_id, [])
-        if queue in subs:
-            subs.remove(queue)
-
-    def cleanup(self, report_id: int) -> None:
-        """Remove all events and subscribers for a completed report."""
-        self._events.pop(report_id, None)
-        self._subscribers.pop(report_id, None)
-
-    def get_history(self, report_id: int) -> list[dict[str, Any]]:
-        """Get all events for a report (for late-joining clients)."""
-        return list(self._events.get(report_id, []))
+    def subscribe(self, report_id: int): pass
+    def unsubscribe(self, report_id: int, queue): pass
+    def cleanup(self, report_id: int) -> None: pass
+    def get_history(self, report_id: int) -> list[dict[str, Any]]: return []
 
 
 # Module-level singleton

@@ -15,7 +15,7 @@ from typing import Optional
 import redis
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, cast, Text
 from sqlalchemy.orm import Session
 
 from models.models import get_db, FirewallDevice, Vendor
@@ -66,21 +66,31 @@ RATE_LIMIT_PER_TENANT_DAY = 50
 
 
 def _check_rate_limit(admin_id: Optional[int]) -> None:
-    """Simple in-memory rate limiter."""
+    """Redis-backed rate limiter using a sliding window."""
     now = datetime.utcnow().timestamp()
-    key = f"user:{admin_id or 'anon'}"
-    history = _scan_timestamps.setdefault(key, [])
-
-    one_hour_ago = now - 3600
-    history[:] = [t for t in history if t > one_hour_ago]
-
-    if len(history) >= RATE_LIMIT_PER_USER_HOUR:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded: max {RATE_LIMIT_PER_USER_HOUR} scans per hour",
-        )
-
-    history.append(now)
+    key = f"rate_limit:user:{admin_id or 'anon'}"
+    r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    try:
+        one_hour_ago = now - 3600
+        # Remove old entries
+        r.zremrangebyscore(key, 0, one_hour_ago)
+        # Count current entries
+        count = r.zcard(key)
+        
+        if count >= RATE_LIMIT_PER_USER_HOUR:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: max {RATE_LIMIT_PER_USER_HOUR} scans per hour",
+            )
+            
+        # Add new entry
+        # We add a small randomness to the member string in case of exact timestamp collisions
+        import uuid
+        member = f"{now}_{uuid.uuid4().hex[:8]}"
+        r.zadd(key, {member: now})
+        r.expire(key, 3600)
+    finally:
+        r.close()
 
 
 # ── Endpoints ──
@@ -321,50 +331,43 @@ async def stream_scan_progress(report_id: int, db: Session = Depends(get_session
 
     async def event_generator():
         r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
-        key = f"scan_progress:{report_id}"
-        last_phase = None
+        pubsub = r.pubsub()
+        channel = f"sse_events:{report_id}"
+        pubsub.subscribe(channel)
+        
         try:
-            while True:
-                raw = r.get(key)
-                if raw:
-                    progress = json.loads(raw)
-                    current_phase = progress.get("phase", "")
+            # Check DB once for late joiners if scan is already done
+            db_session = SessionLocal()
+            try:
+                rpt = db_session.query(ThreatIntelReport).filter(
+                    ThreatIntelReport.id == report_id
+                ).first()
+                if rpt and rpt.status in ("completed", "failed", "partial"):
+                    yield format_sse_message({
+                        "event": "done",
+                        "data": {"status": rpt.status, "report_id": report_id},
+                    })
+                    return
+            finally:
+                db_session.close()
 
-                    # Only emit if phase changed (avoid duplicate events)
-                    if current_phase != last_phase:
-                        last_phase = current_phase
-                        event = {
-                            "event": progress.get("status", "progress"),
-                            "data": progress,
-                        }
-                        yield format_sse_message(event)
+            # Poll pub/sub
+            while True:
+                message = pubsub.get_message(ignore_subscribe_messages=True)
+                if message:
+                    event = json.loads(message["data"])
+                    yield format_sse_message(event)
 
                     # Terminal states
-                    status = progress.get("status", "")
-                    if status in ("SUCCESS", "FAILED"):
+                    event_type = event.get("event", "")
+                    if event_type in ("done", "failed"):
                         break
-                else:
-                    # No progress yet — check if report already finished
-                    db_session = SessionLocal()
-                    try:
-                        rpt = db_session.query(ThreatIntelReport).filter(
-                            ThreatIntelReport.id == report_id
-                        ).first()
-                        if rpt and rpt.status in ("completed", "failed", "partial"):
-                            yield format_sse_message({
-                                "event": "done",
-                                "data": {"status": rpt.status, "report_id": report_id},
-                            })
-                            break
-                    finally:
-                        db_session.close()
 
-                # Poll interval
-                await asyncio.sleep(1)
-
-                # Keepalive
+                await asyncio.sleep(0.5)
                 yield ": keepalive\n\n"
         finally:
+            pubsub.unsubscribe(channel)
+            pubsub.close()
             r.close()
 
     return StreamingResponse(
@@ -570,7 +573,7 @@ def get_findings_for_rule(rule_id: int, db: Session = Depends(get_session)):
         db.query(ThreatIntelFinding)
         .filter(
             ThreatIntelFinding.matched_rule_ids.isnot(None),
-            func.cast(ThreatIntelFinding.matched_rule_ids, func.text()).contains(str(rule_id)),
+            cast(ThreatIntelFinding.matched_rule_ids, Text).contains(str(rule_id)),
         )
         .order_by(ThreatIntelFinding.severity, ThreatIntelFinding.created_at.desc())
         .limit(50)

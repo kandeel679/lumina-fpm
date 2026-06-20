@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 import { triggerRulesSync } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * Settings — admin console (read-only demo)
@@ -83,6 +83,7 @@ function Settings({ openInspector, refreshData }) {
 
 /* ── Connectors ─────────────────────────────────────────────── */
 function Connectors({ openInspector, refreshData }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   return (
     <>
@@ -332,6 +333,7 @@ function Notifications() {
 
 /* ── Access & roles ───────────────────────────────────────────── */
 function AccessRoles() {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   return (
     <>

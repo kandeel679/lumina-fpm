@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 /* ─────────────────────────────────────────────────────────────────
  * Topology — operational network diagram
  *
@@ -312,6 +312,7 @@ function computeFocus(target, edges, allZones, allAssets) {
 
 /* ── Main page ────────────────────────────────────────────────── */
 function Topology({ openInspector, intent, goTo }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const topoRef = useRefT(null);
   const svgRef = useRefT(null);
@@ -337,36 +338,36 @@ function Topology({ openInspector, intent, goTo }) {
 
   /* Lanes & geometry */
   const lanePositions = useMemoT(
-    () => computeLanePositions(window.LFPM.firewalls),
-    []
+    () => computeLanePositions(LFPM.firewalls),
+    [LFPM.firewalls]
   );
   const lanes = useMemoT(() => {
-    return window.LFPM.firewalls.map(fw =>
-      layoutLane(fw, lanePositions[fw.id], window.LFPM.zones, window.LFPM.assets)
+    return LFPM.firewalls.map(fw =>
+      layoutLane(fw, lanePositions[fw.id], LFPM.zones, LFPM.assets)
     );
-  }, [lanePositions]);
+  }, [lanePositions, LFPM.firewalls, LFPM.zones, LFPM.assets]);
 
   /* External nodes */
   const externals = useMemoT(() =>
-    window.LFPM.externalNodes.map((n, i) => ({
+    LFPM.externalNodes.map((n, i) => ({
       ...n,
       x: TOPO.externalX,
       y: TOPO.externalStartY + i * (TOPO.externalH + TOPO.externalGap),
     })),
-  []);
+  [LFPM.externalNodes]);
 
   /* CVEs & cumulative metrics per firewall lane */
   const laneMeta = useMemoT(() => {
     const out = {};
     lanes.forEach(lane => {
-      const cves = window.LFPM.threats.filter(t => t.firewallIds.includes(lane.fw.id));
+      const cves = LFPM.threats.filter(t => t.firewallIds.includes(lane.fw.id));
       const kev  = cves.filter(c => c.kev).length;
-      const rules = window.LFPM.policies.filter(p => p.firewallId === lane.fw.id).length;
-      const anomalies = window.LFPM.policies.filter(p => p.firewallId === lane.fw.id && p.status !== 'clean').length;
+      const rules = LFPM.policies.filter(p => p.firewallId === lane.fw.id).length;
+      const anomalies = LFPM.policies.filter(p => p.firewallId === lane.fw.id && p.status !== 'clean').length;
       out[lane.fw.id] = { cves: cves.length, kev, rules, anomalies };
     });
     return out;
-  }, [lanes]);
+  }, [lanes, LFPM.threats, LFPM.policies]);
 
   /* Build edges (one per external → fw, with severity from external threat level) */
   const edges = useMemoT(() => {
@@ -410,8 +411,8 @@ function Topology({ openInspector, intent, goTo }) {
   /* Focus calculation */
   const activeTarget = selected || hover;
   const focus = useMemoT(
-    () => computeFocus(activeTarget, edges, window.LFPM.zones, window.LFPM.assets),
-    [activeTarget, edges]
+    () => computeFocus(activeTarget, edges, LFPM.zones, LFPM.assets),
+    [activeTarget, edges, LFPM.zones, LFPM.assets]
   );
 
   /* Visibility filters for edges */
@@ -475,7 +476,7 @@ function Topology({ openInspector, intent, goTo }) {
         <div>
           <h1 className="page-title">Network Topology</h1>
           <p className="page-sub">
-            {window.LFPM.firewalls.length} firewalls · {window.LFPM.zones.length} zones · {window.LFPM.assets.length} monitored assets · 3 active threat vectors
+            {LFPM.firewalls.length} firewalls · {LFPM.zones.length} zones · {LFPM.assets.length} monitored assets · 3 active threat vectors
           </p>
         </div>
         <div className="row gap-2" style={{ marginLeft: 'auto' }}>
@@ -509,7 +510,7 @@ function Topology({ openInspector, intent, goTo }) {
               setTimeout(() => URL.revokeObjectURL(url), 1000);
               window.toast('Topology exported', {
                 kind:'ok',
-                sub: `${fname} · ${lanes.length} fw · ${window.LFPM.zones.length} zones`,
+                sub: `${fname} · ${lanes.length} fw · ${LFPM.zones.length} zones`,
               });
             }}
           ><I.Download size={13} /> export</button>
@@ -580,7 +581,7 @@ function Topology({ openInspector, intent, goTo }) {
           </defs>
 
           {/* Section labels */}
-          {layer.labels && <SectionBand lanePositions={lanePositions} firewalls={window.LFPM.firewalls} />}
+          {layer.labels && <SectionBand lanePositions={lanePositions} firewalls={LFPM.firewalls} />}
 
           {/* ─── Edges ─── */}
           {edges.filter(isEdgeVisible).map(e => {
@@ -623,7 +624,7 @@ function Topology({ openInspector, intent, goTo }) {
                   if (isStruct) return;
                   evt.stopPropagation();
                   const ext = externals.find(n => n.id === e.sourceId);
-                  const fw  = window.LFPM.firewalls.find(f => f.id === e.targetFwId);
+                  const fw  = LFPM.firewalls.find(f => f.id === e.targetFwId);
                   handleSelect(
                     e.id, 'path',
                     `${ext?.name || e.sourceId} → ${fw?.display || e.targetFwId}`,
@@ -723,7 +724,7 @@ function Topology({ openInspector, intent, goTo }) {
                   { k:'model', v: fw.model },
                   { k:'firmware', v: fw.firmware },
                   { k:'ip', v: fw.ip },
-                  { k:'risk', v: `${fw.riskScore} · ${window.LFPM.fmt.riskLabel(fw.riskScore)}` },
+                  { k:'risk', v: `${fw.riskScore} · ${LFPM.fmt.riskLabel(fw.riskScore)}` },
                   { k:'cves', v: `${meta.cves}${meta.kev ? ` · ${meta.kev} kev` : ''}` },
                 ],
                 hint: 'click to focus this firewall',
@@ -800,7 +801,7 @@ function Topology({ openInspector, intent, goTo }) {
                   {/* Divider */}
                   <line x1="14" y1="84" x2={TOPO.laneW - 14} y2="84" stroke="var(--bd-1)" />
                   {/* Footer line: risk + cves badges */}
-                  <text x="14" y="100" fontSize="12" fill={window.LFPM.fmt.riskColor(fw.riskScore)} fontWeight="600" style={{ fontFamily: 'var(--f-mono)' }}>
+                  <text x="14" y="100" fontSize="12" fill={LFPM.fmt.riskColor(fw.riskScore)} fontWeight="600" style={{ fontFamily: 'var(--f-mono)' }}>
                     risk {fw.riskScore}
                   </text>
                   {meta.cves > 0 && (
@@ -821,7 +822,7 @@ function Topology({ openInspector, intent, goTo }) {
                 {lane.zones.map(z => {
                   const zRisk = Math.max(
                     0,
-                    ...window.LFPM.policies
+                    ...LFPM.policies
                       .filter(p => p.firewallId === fw.id && (p.srcZone.toLowerCase() === z.name || p.dstZone.toLowerCase() === z.name))
                       .map(p => p.riskScore)
                   );

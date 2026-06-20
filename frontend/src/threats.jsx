@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 import {
   fetchThreatReports,
   fetchThreatReportDetail,
@@ -27,6 +27,7 @@ function findingIsDarkweb(f) {
 }
 
 function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const meta = LFPM.meta || {};
 
@@ -72,7 +73,7 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
       const c = LFPM.threats.find(t => t.id === intent.cve);
       if (c) openInspector({ kind:'cve', data: c });
     }
-  }, [intent, openInspector]);
+  }, [intent, openInspector, LFPM.threats]);
 
   /* Load report list */
   useEffectTI(() => {
@@ -211,7 +212,7 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
       (SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]) ||
       (b.cvss - a.cvss)
     );
-  }, [sevFilter, exFilter, vendFilter, kevOnly, highRelOnly, search]);
+  }, [sevFilter, exFilter, vendFilter, kevOnly, highRelOnly, search, LFPM.threats]);
 
   const stats = useMemoTI(() => ({
     total:    LFPM.threats.length,
@@ -223,7 +224,7 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
     exposed:  new Set(LFPM.threats.flatMap(t => t.firewallIds)).size,
     clearnet: LFPM.threats.filter(t => t.isClearnet).length,
     darkweb:  LFPM.threats.filter(t => t.isDarkweb).length,
-  }), [meta.newFindingsLastScan]);
+  }), [meta.newFindingsLastScan, LFPM.threats]);
 
   const scanFindings = reportDetail?.findings || [];
   const scanLaneCounts = useMemoTI(() => {
@@ -356,6 +357,7 @@ function LatestScanPanel({
   I, reportDetail, loadingReport, completedReports, selectedReportId,
   onSelectReport, scanLaneCounts, scanning, scanProgress, openInspector,
 }) {
+  const { data: LFPM } = useLFPM();
   if (loadingReport && !reportDetail) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--fg-3)' }}>
@@ -561,6 +563,7 @@ function AdvisoriesPanel({
   kevOnly, highRelOnly, setSev, setEx, setVend, setSearch,
   setKevOnly, setHighRelOnly, toggle, openInspector, goTo,
 }) {
+  const { data: LFPM } = useLFPM();
   const applyQuickFilter = (kind) => {
     setSev(new Set());
     setEx(new Set());

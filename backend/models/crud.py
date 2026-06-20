@@ -164,18 +164,37 @@ def create_rule_anomaly(db: Session, anomaly_data: dict):
 def delete_rule_anomaly(db: Session, anomaly_id: int):
     return delete_data(db, models.RuleAnomaly, "anomaly_id", anomaly_id)
 
-# --- ThreatIntelligence ---
-def create_threat_intelligence(db: Session, threat_data: dict):
-    return insert_data(db, models.ThreatIntelligence, threat_data)
+# --- ExternalNode ---
+def create_external_node(db: Session, node_data: dict):
+    return insert_data(db, models.ExternalNode, node_data)
 
-def delete_threat_intelligence(db: Session, threat_id: int):
-    return delete_data(db, models.ThreatIntelligence, "threat_id", threat_id)
+def delete_external_node(db: Session, node_id: int):
+    return delete_data(db, models.ExternalNode, "node_id", node_id)
 
-# --- ThreatCorrelation (Composite Key) ---
-def create_threat_correlation(db: Session, correlation_data: dict):
-    return insert_data(db, models.ThreatCorrelation, correlation_data)
+# --- ThreatFeed ---
+def create_threat_feed(db: Session, feed_data: dict):
+    return insert_data(db, models.ThreatFeed, feed_data)
 
-def remove_threat_correlation(db: Session, rule_id: int, threat_id: int):
-    return delete_data_composite(db, models.ThreatCorrelation, {
-        "rule_id": rule_id, "threat_id": threat_id
-    })
+def delete_threat_feed(db: Session, feed_id: int):
+    return delete_data(db, models.ThreatFeed, "feed_id", feed_id)
+
+# --- APIToken ---
+def create_api_token(db: Session, token_data: dict):
+    return insert_data(db, models.APIToken, token_data)
+
+def delete_api_token(db: Session, token_id: int):
+    return delete_data(db, models.APIToken, "token_id", token_id)
+
+# --- AuditLog ---
+def create_audit_log(db: Session, log_data: dict):
+    return insert_data(db, models.AuditLog, log_data)
+
+def delete_audit_log(db: Session, log_id: int):
+    return delete_data(db, models.AuditLog, "log_id", log_id)
+
+# --- SavedSearch ---
+def create_saved_search(db: Session, search_data: dict):
+    return insert_data(db, models.SavedSearch, search_data)
+
+def delete_saved_search(db: Session, search_id: int):
+    return delete_data(db, models.SavedSearch, "search_id", search_id)

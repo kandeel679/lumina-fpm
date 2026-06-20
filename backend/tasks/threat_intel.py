@@ -47,21 +47,25 @@ def _set_progress(
     status: str = "running",
     detail: str = "",
 ) -> None:
-    """Write scan progress to a Redis key."""
-    key = f"scan_progress:{report_id}"
-    payload = json.dumps({
-        "phase": phase,
-        "percent": percent,
-        "status": status,
-        "detail": detail,
-        "updated_at": datetime.utcnow().isoformat(),
-    })
+    """Publish scan progress to Redis Pub/Sub channel."""
+    channel = f"sse_events:{report_id}"
+    event = {
+        "event": status,
+        "data": {
+            "phase": phase,
+            "percent": percent,
+            "status": status,
+            "detail": detail,
+            "updated_at": datetime.utcnow().isoformat(),
+        },
+        "timestamp": time.time(),
+    }
     try:
         r = _redis_client()
-        r.set(key, payload, ex=PROGRESS_TTL)
+        r.publish(channel, json.dumps(event))
         r.close()
     except Exception as e:
-        logger.warning("Failed to update Redis progress for report %d: %s", report_id, str(e)[:100])
+        logger.warning("Failed to publish Redis progress for report %d: %s", report_id, str(e)[:100])
 
 
 @celery.task(

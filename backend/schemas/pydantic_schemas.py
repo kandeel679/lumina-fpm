@@ -53,6 +53,9 @@ class DeviceBase(BaseModel):
     vendor_id: int
     hostname: str
     management_ip: str
+    location: Optional[str] = None
+    uptime: Optional[str] = None
+    throughput: Optional[str] = None
     firmware_version: Optional[str] = None
     last_poll_time: Optional[datetime] = None
     status: Optional[str] = "unknown"
@@ -64,6 +67,9 @@ class DeviceUpdate(BaseModel):
     vendor_id: Optional[int] = None
     hostname: Optional[str] = None
     management_ip: Optional[str] = None
+    location: Optional[str] = None
+    uptime: Optional[str] = None
+    throughput: Optional[str] = None
     firmware_version: Optional[str] = None
     last_poll_time: Optional[datetime] = None
     status: Optional[str] = None
@@ -195,6 +201,7 @@ class RuleAnomalyBase(BaseModel):
     rule_id: int
     anomaly_type: str
     severity_level: str
+    related_rule_id: Optional[str] = None
     description: Optional[str] = None
 
 class RuleAnomalyCreate(RuleAnomalyBase):
@@ -203,6 +210,7 @@ class RuleAnomalyCreate(RuleAnomalyBase):
 class RuleAnomalyUpdate(BaseModel):
     anomaly_type: Optional[str] = None
     severity_level: Optional[str] = None
+    related_rule_id: Optional[str] = None
     description: Optional[str] = None
 
 class RuleAnomalyResponse(RuleAnomalyBase):
@@ -211,4 +219,112 @@ class RuleAnomalyResponse(RuleAnomalyBase):
     detected_at: Optional[datetime] = None
 
 
+# =====================================================================
+# EXTERNAL NODE SCHEMAS
+# =====================================================================
 
+class ExternalNodeBase(BaseModel):
+    name: str
+    ip_address: str
+    node_type: str
+    description: Optional[str] = None
+
+class ExternalNodeCreate(ExternalNodeBase):
+    pass
+
+class ExternalNodeUpdate(BaseModel):
+    name: Optional[str] = None
+    ip_address: Optional[str] = None
+    node_type: Optional[str] = None
+    description: Optional[str] = None
+
+class ExternalNodeResponse(ExternalNodeBase):
+    model_config = ConfigDict(from_attributes=True)
+    node_id: int
+
+
+# =====================================================================
+# THREAT FEED SCHEMAS
+# =====================================================================
+
+class ThreatFeedBase(BaseModel):
+    name: str
+    url: str
+    status: Optional[str] = "active"
+
+class ThreatFeedCreate(ThreatFeedBase):
+    pass
+
+class ThreatFeedUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    status: Optional[str] = None
+
+class ThreatFeedResponse(ThreatFeedBase):
+    model_config = ConfigDict(from_attributes=True)
+    feed_id: int
+    last_sync: Optional[datetime] = None
+
+
+# =====================================================================
+# API TOKEN SCHEMAS
+# =====================================================================
+
+class APITokenBase(BaseModel):
+    admin_id: int
+    name: str
+
+class APITokenCreate(APITokenBase):
+    pass
+
+class APITokenUpdate(BaseModel):
+    name: Optional[str] = None
+
+class APITokenResponse(APITokenBase):
+    model_config = ConfigDict(from_attributes=True)
+    token_id: int
+    created_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    last_used: Optional[datetime] = None
+
+
+# =====================================================================
+# AUDIT LOG SCHEMAS
+# =====================================================================
+
+class AuditLogBase(BaseModel):
+    admin_id: Optional[int] = None
+    action: str
+    target_type: str
+    target_id: Optional[str] = None
+    details: Optional[str] = None
+
+class AuditLogCreate(AuditLogBase):
+    pass
+
+class AuditLogResponse(AuditLogBase):
+    model_config = ConfigDict(from_attributes=True)
+    log_id: int
+    timestamp: Optional[datetime] = None
+
+
+# =====================================================================
+# SAVED SEARCH SCHEMAS
+# =====================================================================
+
+class SavedSearchBase(BaseModel):
+    admin_id: int
+    name: str
+    query_string: str
+
+class SavedSearchCreate(SavedSearchBase):
+    pass
+
+class SavedSearchUpdate(BaseModel):
+    name: Optional[str] = None
+    query_string: Optional[str] = None
+
+class SavedSearchResponse(SavedSearchBase):
+    model_config = ConfigDict(from_attributes=True)
+    search_id: int
+    created_at: Optional[datetime] = None

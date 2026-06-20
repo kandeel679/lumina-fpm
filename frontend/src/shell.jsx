@@ -1,6 +1,6 @@
 import React from "react";
 import { Icons } from "./icons";
-import { LFPM } from "./data";
+import { useLFPM } from "./context/LFPMContext";
 import { triggerRulesSync } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * App shell — left rail, topbar, status bar
@@ -80,6 +80,7 @@ export { Sparkline, Rail, Topbar, StatusBar };
 
 /* ── Topbar ──────────────────────────────────────────────────────── */
 function Topbar({ crumbs = [], onPalette, user, timeRange, timeRangeLabel, onTimeRange, onSignOut, onNavigate, onOpenInspector, onSync, theme, onToggleTheme }) {
+  const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const [open, setOpen] = useState(null); // 'user' | 'notif' | 'tenant' | 'range' | null
   const [syncing, setSyncing] = useState(false);
@@ -217,6 +218,7 @@ function formatLastSync(iso) {
 }
 
 function StatusBar({ queue = 0, region = 'soc-eu-west-1', env = 'prod', user, dataVersion }) {
+  const { data: LFPM } = useLFPM();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 1000);

@@ -22,6 +22,39 @@ router = APIRouter(prefix="/api/v1/devices", tags=["Firewall Devices"])
 def list_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db_session)):
     return crud.get_all(db, models.FirewallDevice, skip=skip, limit=limit)
 
+# =====================================================================
+# ADMINISTRATOR ENDPOINTS (Co-located since admins manage devices)
+# =====================================================================
+
+@router.get("/admins/all", response_model=List[AdministratorResponse], tags=["Administrators"])
+def list_administrators(skip: int = 0, limit: int = 100, db: Session = Depends(get_db_session)):
+    return crud.get_all(db, models.Administrator, skip=skip, limit=limit)
+
+@router.get("/admins/{admin_id}", response_model=AdministratorResponse, tags=["Administrators"])
+def get_administrator(admin_id: int, db: Session = Depends(get_db_session)):
+    admin = crud.get_by_id(db, models.Administrator, "admin_id", admin_id)
+    if not admin:
+        raise HTTPException(status_code=404, detail="Administrator not found")
+    return admin
+
+@router.post("/admins/", response_model=AdministratorResponse, status_code=201, tags=["Administrators"])
+def create_administrator(admin: AdministratorCreate, db: Session = Depends(get_db_session)):
+    return crud.insert_data(db, models.Administrator, admin.model_dump())
+
+@router.patch("/admins/{admin_id}", response_model=AdministratorResponse, tags=["Administrators"])
+def update_administrator(admin_id: int, admin: AdministratorUpdate, db: Session = Depends(get_db_session)):
+    updated = crud.update_data(db, models.Administrator, "admin_id", admin_id, admin.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Administrator not found")
+    return updated
+
+@router.delete("/admins/{admin_id}", status_code=204, tags=["Administrators"])
+def delete_administrator(admin_id: int, db: Session = Depends(get_db_session)):
+    deleted = crud.delete_data(db, models.Administrator, "admin_id", admin_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Administrator not found")
+    return None
+
 
 @router.get("/{device_id}", response_model=DeviceResponse)
 def get_device(device_id: int, db: Session = Depends(get_db_session)):
@@ -104,39 +137,3 @@ def remove_admin_from_device(device_id: int, admin_id: int, db: Session = Depend
     return None
 
 
-# =====================================================================
-# ADMINISTRATOR ENDPOINTS (Co-located since admins manage devices)
-# =====================================================================
-
-@router.get("/admins/all", response_model=List[AdministratorResponse], tags=["Administrators"])
-def list_administrators(skip: int = 0, limit: int = 100, db: Session = Depends(get_db_session)):
-    return crud.get_all(db, models.Administrator, skip=skip, limit=limit)
-
-
-@router.get("/admins/{admin_id}", response_model=AdministratorResponse, tags=["Administrators"])
-def get_administrator(admin_id: int, db: Session = Depends(get_db_session)):
-    admin = crud.get_by_id(db, models.Administrator, "admin_id", admin_id)
-    if not admin:
-        raise HTTPException(status_code=404, detail="Administrator not found")
-    return admin
-
-
-@router.post("/admins/", response_model=AdministratorResponse, status_code=201, tags=["Administrators"])
-def create_administrator(admin: AdministratorCreate, db: Session = Depends(get_db_session)):
-    return crud.insert_data(db, models.Administrator, admin.model_dump())
-
-
-@router.patch("/admins/{admin_id}", response_model=AdministratorResponse, tags=["Administrators"])
-def update_administrator(admin_id: int, admin: AdministratorUpdate, db: Session = Depends(get_db_session)):
-    updated = crud.update_data(db, models.Administrator, "admin_id", admin_id, admin.model_dump(exclude_unset=True))
-    if not updated:
-        raise HTTPException(status_code=404, detail="Administrator not found")
-    return updated
-
-
-@router.delete("/admins/{admin_id}", status_code=204, tags=["Administrators"])
-def delete_administrator(admin_id: int, db: Session = Depends(get_db_session)):
-    deleted = crud.delete_data(db, models.Administrator, "admin_id", admin_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Administrator not found")
-    return None
