@@ -1,4 +1,3 @@
-
 services:
   # ---------------------------------------------
   # 1. THE DATABASE (PostgreSQL)
@@ -12,7 +11,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -37,7 +36,7 @@ services:
       - "6379:6379"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -68,12 +67,12 @@ services:
       redis:
         condition: service_healthy
     # The command overrides the Dockerfile to ensure live-reload (--reload) is active
-    entrypoint: ["/bin/sh", "-c", "chmod +x ./entrypoint.sh && exec ./entrypoint.sh"]
+    entrypoint: [ "/bin/sh", "-c", "chmod +x ./entrypoint.sh && exec ./entrypoint.sh" ]
     # command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # ---------------------------------------------
-  # 5. THE BACKGROUND WORKER (Celery)
-  # ---------------------------------------------
+    # ---------------------------------------------
+    # 5. THE BACKGROUND WORKER (Celery)
+    # ---------------------------------------------
   celery_worker:
     build:
       context: ./backend
@@ -129,31 +128,29 @@ services:
     environment:
       - CHOKIDAR_USEPOLLING=true # Forces React to detect file changes on Windows hosts
     command: npm run dev -- --host
-
-
   # ── ROBIN (Dark-Web OSINT Tool — kept for testing) ──
-  robin_ui:
-    build: ./backend/services/robin
-    ports:
-      - "8501:8501"
-    command: streamlit run ui.py
-    env_file: .env
-    volumes:
-      - ./backend/services/robin:/app
+  # robin_ui:
+  #   build: ./backend/services/robin
+  #   ports:
+  #     - "8501:8501"
+  #   command: streamlit run ui.py
+  #   env_file: .env
+  #   volumes:
+  #     - ./backend/services/robin:/app
 
-  robin_api:
-    build: ./backend/services/robin
-    ports:
-      - "5000:5000"
-    command: uvicorn api_bridge:app --host 0.0.0.0 --port 5000 
-    env_file: .env
-    volumes:
-      - ./backend/services/robin:/app
+  # robin_api:
+  #   build: ./backend/services/robin
+  #   ports:
+  #     - "5000:5000"
+  #   command: uvicorn api_bridge:app --host 0.0.0.0 --port 5000 
+  #   env_file: .env
+  #   volumes:
+  #     - ./backend/services/robin:/app
 
 
-# ---------------------------------------------
-# PERSISTENT STORAGE
-# ---------------------------------------------
+  # ---------------------------------------------
+  # PERSISTENT STORAGE
+  # ---------------------------------------------
 volumes:
   postgres_data:
   redis_data:

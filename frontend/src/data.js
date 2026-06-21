@@ -16,7 +16,11 @@ LFPM.assets = [];
 LFPM.externalNodes = [];
 LFPM.activityFeed = [];
 LFPM.hits24h = [];
-LFPM.users = [];
+LFPM.users = [
+  { id: 'u-1', name: 'Hamza Al-Mansoori', email: 'hamza@lumina-fpm.local', role: 'admin', dept: 'Security Architecture', avatar: 'H' },
+  { id: 'u-2', name: 'Youssef Eid', email: 'youssef@lumina-fpm.local', role: 'analyst', dept: 'SOC Triage', avatar: 'Y' },
+  { id: 'u-3', name: 'Ali Soliman', email: 'ali@lumina-fpm.local', role: 'viewer', dept: 'Compliance & Audit', avatar: 'A' },
+];
 LFPM.savedSearches = [];
 
 /* ── Helpers ────────────────────────────────────────────────── */

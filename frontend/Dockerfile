@@ -1,11 +1,11 @@
 # Use Node image for development
-FROM node:22-alpine
+FROM node:22-slim
 
 # Set the working directory
 WORKDIR /app
 
 # Copy dependency files first
-COPY package.json package-lock.json ./
+COPY package.json ./
 
 # Install dependencies
 RUN npm install
