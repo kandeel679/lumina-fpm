@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "device_id": "FGT-1",
+    "vendor": "fortinet",
+    "timestamp": "2026-04-28T12:00:00Z",
+    "firmware_version": "7.0.5",
+    "data_type": "policies"
+  },
+  "data": [
+    {
+      "name": "FGT_ALLOW_ANY_TO_DB_ALL",
+      "uuid": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+      "policyid": 1,
+      "srcintf": [{"name": "any"}],
+      "dstintf": [{"name": "port3"}],
+      "srcaddr": [{"name": "all"}],
+      "dstaddr": [{"name": "DB_NET"}],
+      "action": "accept",
+      "schedule": "always",
+      "service": [{"name": "ALL"}],
+      "logtraffic": "all",
+      "status": "enable",
+      "comments": "Anom: 4,7,36 Over-permissive to sensitive DB"
+    },
+    {
+      "name": "FGT_DENY_LAN_TO_DB_ALL",
+      "uuid": "b2c3d4e5-f6g7-8h9i-0j1k-l2m3n4o5p6q7",
+      "policyid": 2,
+      "srcintf": [{"name": "port1"}],
+      "dstintf": [{"name": "port3"}],
+      "srcaddr": [{"name": "LAN_NET"}],
+      "dstaddr": [{"name": "DB_NET"}],
+      "action": "deny",
+      "schedule": "always",
+      "service": [{"name": "ALL"}],
+      "logtraffic": "all",
+      "status": "enable",
+      "comments": "Anom: 1 Shadowed by FGT_ALLOW_ANY_TO_DB_ALL"
+    }
+  ]
+}

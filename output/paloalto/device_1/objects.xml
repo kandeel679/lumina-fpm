@@ -1,0 +1,29 @@
+<response>
+  <metadata>
+    <device_id>PA-1</device_id>
+    <vendor>paloalto</vendor>
+    <timestamp>2026-04-28T12:00:00Z</timestamp>
+    <firmware_version>11.1.6</firmware_version>
+  </metadata>
+  <data>
+    <objects>
+      <address>
+        <entry name="LAN_NET">
+          <ip-netmask>10.10.10.0/24</ip-netmask>
+        </entry>
+        <entry name="DB_NET">
+          <ip-netmask>10.10.30.0/24</ip-netmask>
+        </entry>
+      </address>
+      <service>
+        <entry name="service-http">
+          <protocol>
+            <tcp>
+              <port>80</port>
+            </tcp>
+          </protocol>
+        </entry>
+      </service>
+    </objects>
+  </data>
+</response>

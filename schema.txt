@@ -1,0 +1,361 @@
+Firewall Management System
+Complete Database Schema — Technical Reference
+Version 3.0  |  March 2026
+
+
+1. Schema Overview
+This document defines the complete relational database schema for the Firewall Management System. The schema is the post-parsing storage layer — every field parsed from Fortinet FortiGate and Palo Alto PAN-OS devices is mapped to a specific column here. The model supports multi-vendor, multi-device, multi-VDOM/VSYS deployments.
+
+Legend for the entity tables below:
+PK: Primary key — the unique identifier for each row
+FK: Foreign key — references the primary key of another table
+NEW: Column added in this revision to support full vendor field coverage
+orig: Column present in the original model
+Vendor column: both = applies to Fortinet and PAN-OS | fortinet = Fortinet only | paloalto = PAN-OS only
+
+2. Entity Definitions
+2.1  Vendor
+Stores the companies that manufacture firewall devices. The api_type field drives which protocol the polling engine uses when connecting to devices made by this vendor.
+
+VENDOR
+
+
+2.2  Administrator
+Human operators who are assigned management responsibility over firewall devices. Name is stored as two separate fields to support sorting by surname and role-based reporting.
+
+ADMINISTRATOR
+
+
+2.3  Firewall_Device
+The central entity. Every parsed rule, threat record, and anomaly anchors to a row in this table. vendor_id FK determines which API the polling engine uses. Status is written by the application layer based on last_poll_time — not derived in SQL.
+
+FIREWALL_DEVICE
+
+
+2.4  Admin_Device_Assignment
+Junction table resolving the M:N relationship between administrators and firewall devices. Replaces the bare 'Manages' diamond from the original ERD. Records when the assignment was made and the role granted — critical for security audit trails.
+
+ADMIN_DEVICE_ASSIGNMENT
+
+
+2.5  Policy_Rule
+The core post-parsing storage table. One row per firewall rule per VDOM/VSYS. This table is the primary output of the parser — every field the vendor exposes in their API or config export maps to a column here. The 14 NEW columns were added to achieve full field coverage for both Fortinet and PAN-OS.
+
+POLICY_RULE
+
+
+2.6  Network_Object
+Reusable named network definitions referenced by policy rules. Stores IP addresses, CIDR ranges, ports, protocols, domain names, and PAN-OS App-ID application identifiers. Rules reference objects via Rule_Object_Mapping — never hard-coded values inside rule rows.
+
+NETWORK_OBJECT
+
+
+2.7  Rule_Object_Mapping
+Junction table resolving the M:N relationship between policy rules and network objects. Records the role each object plays in the rule (source, destination, or service) and the traffic direction. The src_negate and dst_negate flags on Policy_Rule drive interpretation of source and destination mappings respectively.
+
+RULE_OBJECT_MAPPING
+
+
+2.8  Rule_Anomaly
+Stores problems detected in policy rules by the anomaly analysis engine. Each anomaly references the exact rule it was found in. The engine writes here after every analysis run — the detected_at timestamp tracks when each problem first appeared.
+
+RULE_ANOMALY
+
+
+2.9  Threat_Intelligence
+External threat intelligence records monitored by a specific firewall device. Renamed from Robin_Threat_Intel. Each record represents a known threat, CVE, or attack campaign. target_version enables matching against the device's firmware_version to surface relevant threats.
+
+THREAT_INTELLIGENCE
+
+
+2.10  Threat_Correlation
+Associative entity connecting policy rules to threat intelligence records. The analysis engine writes here when it finds that a rule matches (or fails to match) a known threat pattern. This is the primary output used to surface coverage gaps in the security posture.
+
+THREAT_CORRELATION
+
+
+
+
+3. Relationship Summary
+
+
+
+
+4. Full SQL DDL — Create Statements
+The following SQL creates all tables in the correct dependency order. Compatible with MySQL 8.0+ and PostgreSQL 14+.
+
+4.1  VENDOR
+CREATE TABLE vendor (
+    vendor_id        INT             NOT NULL AUTO_INCREMENT,
+    name             VARCHAR(100)    NOT NULL,
+    api_type         VARCHAR(50)     NOT NULL,
+    support_contact  VARCHAR(200),
+    PRIMARY KEY (vendor_id)
+);
+ 
+
+4.2  ADMINISTRATOR
+CREATE TABLE administrator (
+    admin_id         INT             NOT NULL AUTO_INCREMENT,
+    first_name       VARCHAR(100)    NOT NULL,
+    last_name        VARCHAR(100)    NOT NULL,
+    PRIMARY KEY (admin_id)
+);
+ 
+
+4.3  FIREWALL_DEVICE
+CREATE TABLE firewall_device (
+    device_id        INT             NOT NULL AUTO_INCREMENT,
+    vendor_id        INT             NOT NULL,
+    hostname         VARCHAR(255)    NOT NULL,
+    firmware_version VARCHAR(50),
+    management_ip    VARCHAR(45)     NOT NULL,
+    last_poll_time   DATETIME,
+    status           VARCHAR(20)     DEFAULT 'unknown',
+    PRIMARY KEY (device_id),
+    CONSTRAINT fk_device_vendor
+        FOREIGN KEY (vendor_id) REFERENCES vendor (vendor_id)
+);
+ 
+
+4.4  ADMIN_DEVICE_ASSIGNMENT
+CREATE TABLE admin_device_assignment (
+    admin_id         INT             NOT NULL,
+    device_id        INT             NOT NULL,
+    assigned_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    role             VARCHAR(50)     NOT NULL,
+    PRIMARY KEY (admin_id, device_id),
+    CONSTRAINT fk_assign_admin
+        FOREIGN KEY (admin_id)   REFERENCES administrator (admin_id),
+    CONSTRAINT fk_assign_device
+        FOREIGN KEY (device_id)  REFERENCES firewall_device (device_id)
+);
+ 
+
+4.5  NETWORK_OBJECT
+-- Created before policy_rule because rule_object_mapping references both
+CREATE TABLE network_object (
+    object_id        INT             NOT NULL AUTO_INCREMENT,
+    name             VARCHAR(100)    NOT NULL,
+    type             VARCHAR(50)     NOT NULL,
+    -- type enum: ip_address | cidr | port | port_range |
+    --            protocol | fqdn | application | url_category
+    value            VARCHAR(255)    NOT NULL,
+    PRIMARY KEY (object_id)
+);
+ 
+
+4.6  POLICY_RULE
+CREATE TABLE policy_rule (
+    -- ── Identity ─────────────────────────────────────────────────
+    rule_id                  INT             NOT NULL AUTO_INCREMENT,
+    device_id                INT             NOT NULL,
+    vendor_rule_id           VARCHAR(50),
+    vendor_uuid              VARCHAR(100),
+    vendor_type              VARCHAR(20)     NOT NULL,
+    -- vendor_type: 'fortinet' | 'paloalto'
+ 
+    -- ── Multi-tenancy ─────────────────────────────────────────────
+    vdom_vsys                VARCHAR(100),
+ 
+    -- ── Core rule definition ──────────────────────────────────────
+    rule_name                VARCHAR(200)    NOT NULL,
+    rule_order               INT             NOT NULL,
+    action                   VARCHAR(20)     NOT NULL,
+    -- action: allow | deny | drop | reset-client | reset-server | ipsec
+    is_active                BOOLEAN         NOT NULL DEFAULT TRUE,
+ 
+    -- ── Traffic direction ─────────────────────────────────────────
+    src_zone_interface       VARCHAR(255),
+    dst_zone_interface       VARCHAR(255),
+ 
+    -- ── PAN-OS specific (NULL for Fortinet rows) ──────────────────
+    rule_type                VARCHAR(20),
+    -- rule_type: universal | intrazone | interzone
+    tags                     VARCHAR(500),
+ 
+    -- ── Negate flags ──────────────────────────────────────────────
+    src_negate               BOOLEAN         NOT NULL DEFAULT FALSE,
+    dst_negate               BOOLEAN         NOT NULL DEFAULT FALSE,
+ 
+    -- ── Security posture ──────────────────────────────────────────
+    nat_enabled              BOOLEAN,
+    -- nat_enabled: Fortinet only, NULL for PAN-OS rows
+    log_setting              VARCHAR(100),
+    security_profile_group   VARCHAR(100),
+    schedule_name            VARCHAR(100),
+    description              TEXT,
+ 
+    -- ── Audit timestamps ──────────────────────────────────────────
+    created_at               DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at               DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                             ON UPDATE CURRENT_TIMESTAMP,
+ 
+    PRIMARY KEY (rule_id),
+    CONSTRAINT fk_rule_device
+        FOREIGN KEY (device_id) REFERENCES firewall_device (device_id),
+    UNIQUE KEY uq_rule_sync (device_id, vdom_vsys, vendor_uuid)
+    -- uq_rule_sync: the re-sync unique key — prevents duplicate rows
+    --               during nightly parser runs
+);
+ 
+
+4.7  RULE_OBJECT_MAPPING
+CREATE TABLE rule_object_mapping (
+    rule_id          INT             NOT NULL,
+    object_id        INT             NOT NULL,
+    mapping_type     VARCHAR(50)     NOT NULL,
+    -- mapping_type: source | destination | service
+    direction        VARCHAR(20)     NOT NULL DEFAULT 'both',
+    -- direction: inbound | outbound | both
+    PRIMARY KEY (rule_id, object_id, mapping_type),
+    CONSTRAINT fk_rom_rule
+        FOREIGN KEY (rule_id)   REFERENCES policy_rule (rule_id),
+    CONSTRAINT fk_rom_object
+        FOREIGN KEY (object_id) REFERENCES network_object (object_id)
+);
+ 
+
+4.8  RULE_ANOMALY
+CREATE TABLE rule_anomaly (
+    anomaly_id       INT             NOT NULL AUTO_INCREMENT,
+    rule_id          INT             NOT NULL,
+    anomaly_type     VARCHAR(100)    NOT NULL,
+    -- anomaly_type: shadowed | conflicting | redundant |
+    --   logging_disabled | unprotected_allow | unused | overly_permissive
+    severity_level   VARCHAR(20)     NOT NULL,
+    -- severity_level: critical | high | medium | low
+    description      TEXT,
+    detected_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (anomaly_id),
+    CONSTRAINT fk_anomaly_rule
+        FOREIGN KEY (rule_id) REFERENCES policy_rule (rule_id)
+);
+ 
+
+4.9  THREAT_INTELLIGENCE
+CREATE TABLE threat_intelligence (
+    threat_id              INT             NOT NULL AUTO_INCREMENT,
+    device_id              INT             NOT NULL,
+    target_version         VARCHAR(50),
+    intelligence_summary   TEXT,
+    risk_score             DECIMAL(4,2),
+    source_url             VARCHAR(500),
+    PRIMARY KEY (threat_id),
+    CONSTRAINT fk_threat_device
+        FOREIGN KEY (device_id) REFERENCES firewall_device (device_id)
+);
+ 
+
+4.10  THREAT_CORRELATION
+CREATE TABLE threat_correlation (
+    rule_id            INT             NOT NULL,
+    threat_id          INT             NOT NULL,
+    match_strength     DECIMAL(4,2),
+    confidence_level   DECIMAL(4,2),
+    correlation_date   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (rule_id, threat_id),
+    CONSTRAINT fk_tc_rule
+        FOREIGN KEY (rule_id)   REFERENCES policy_rule (rule_id),
+    CONSTRAINT fk_tc_threat
+        FOREIGN KEY (threat_id) REFERENCES threat_intelligence (threat_id)
+);
+ 
+
+
+
+5. Recommended Indexes
+These indexes cover the most frequent query patterns — re-sync lookups, anomaly queries per device, and threat correlation searches.
+
+-- Re-sync lookup: parser finds existing rule row by vendor UUID
+CREATE INDEX idx_rule_vendor_uuid
+    ON policy_rule (device_id, vdom_vsys, vendor_uuid);
+ 
+-- Filter all rules for a device in order (anomaly engine main query)
+CREATE INDEX idx_rule_device_order
+    ON policy_rule (device_id, vdom_vsys, rule_order);
+ 
+-- Vendor-type filter (analysis engine splits Fortinet vs PAN-OS)
+CREATE INDEX idx_rule_vendor_type
+    ON policy_rule (vendor_type);
+ 
+-- Anomaly lookup per device (via rule join)
+CREATE INDEX idx_anomaly_rule
+    ON rule_anomaly (rule_id);
+ 
+-- Threat correlation per threat (find all rules covering a threat)
+CREATE INDEX idx_tc_threat
+    ON threat_correlation (threat_id);
+ 
+-- Threat intelligence per device + firmware version
+CREATE INDEX idx_threat_device_version
+    ON threat_intelligence (device_id, target_version);
+ 
+-- Object lookup by type (e.g. find all App-ID objects)
+CREATE INDEX idx_netobj_type
+    ON network_object (type);
+
+6. Parser Re-Sync Logic
+The nightly parser pull follows this upsert logic to keep the database in sync with the live device configuration without destroying anomaly history.
+
+-- Step 1: for each rule pulled from the device API:
+-- Match on the composite sync key (device_id + vdom_vsys + vendor_uuid)
+ 
+INSERT INTO policy_rule (
+    device_id, vendor_rule_id, vendor_uuid, vendor_type, vdom_vsys,
+    rule_name, rule_order, action, is_active,
+    src_zone_interface, dst_zone_interface,
+    rule_type, src_negate, dst_negate,
+    nat_enabled, log_setting, security_profile_group,
+    schedule_name, description, tags
+)
+VALUES (...parsed values...)
+ 
+ON DUPLICATE KEY UPDATE
+    vendor_rule_id          = VALUES(vendor_rule_id),
+    rule_name               = VALUES(rule_name),
+    rule_order              = VALUES(rule_order),
+    action                  = VALUES(action),
+    is_active               = VALUES(is_active),
+    src_zone_interface      = VALUES(src_zone_interface),
+    dst_zone_interface      = VALUES(dst_zone_interface),
+    log_setting             = VALUES(log_setting),
+    security_profile_group  = VALUES(security_profile_group),
+    nat_enabled             = VALUES(nat_enabled),
+    src_negate              = VALUES(src_negate),
+    dst_negate              = VALUES(dst_negate),
+    description             = VALUES(description),
+    updated_at              = CURRENT_TIMESTAMP;
+ 
+-- Step 2: delete rules that no longer exist on the device
+-- (vendor_uuid in DB but not in the current pull set)
+DELETE FROM policy_rule
+WHERE device_id = :device_id
+  AND vdom_vsys = :vdom_vsys
+  AND vendor_uuid NOT IN (:uuids_from_current_pull);
+
+
+7. Anomaly Engine — Automatic Trigger Rules
+The analysis engine evaluates each rule after every parser sync and writes to Rule_Anomaly according to these conditions.
+
+
+
+
+8. Key Design Decisions
+
+8.1  Why vendor_type is not a FK to Vendor
+Policy_Rule already has an indirect path to Vendor through device_id → Firewall_Device → vendor_id. Adding a direct FK to Vendor on Policy_Rule would be redundant. vendor_type serves a different purpose — it is a denormalised semantic tag that lets the analysis engine determine column semantics (which fields are NULL, which are populated) without a two-table join on every query.
+
+8.2  Why vdom_vsys is on Policy_Rule not Firewall_Device
+A single Firewall_Device can have multiple VDOMs (Fortinet) or virtual systems (PAN-OS) active simultaneously. The VDOM is a property of the rule, not the device — the same device hosts rules in VDOM_HQ and VDOM_Branch at the same time. Placing vdom_vsys on Firewall_Device would require one device row per VDOM, which would break the vendor_id relationship and duplicate device metadata.
+
+8.3  The re-sync unique key
+The UNIQUE constraint on (device_id, vdom_vsys, vendor_uuid) is the most operationally critical constraint in the schema. It enables the ON DUPLICATE KEY UPDATE upsert pattern in the parser, guarantees no duplicate rule rows are created during re-sync, and ensures that anomaly history (via rule_id FK in Rule_Anomaly) survives across multiple parser runs without needing to delete and re-insert rules.
+
+8.4  Network_Object value field is always stored, never derived
+In the original ERD, the value attribute on Network_Object was marked as derived (dashed ellipse). This was incorrect. An IP address, CIDR range, or port number is fundamental stored data — there is no formula to compute it. It must be written by the parser when the object is created and updated if the admin changes it on the device.
+
+8.5  Rule_Object_Mapping primary key includes mapping_type
+A single rule can reference the same Network_Object in two different roles — for example, an object representing '10.0.0.0/8' could appear as both the source and the destination of a rule (though unusual, this is valid). Including mapping_type in the composite PK allows this without constraint violation.
+
+Firewall Management System — Database Schema v3.0  |  Confidential  |  March 2026
