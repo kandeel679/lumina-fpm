@@ -25,9 +25,10 @@ python lab/provision_benchmark.py --apply --confirm \
 Then, in LuminaFPM: poll each device → `POST /api/v1/anomalies/run` (all-scope) → review findings.
 
 ## Notes
-- Logical zones map to vendors in `provision_benchmark.py` (`FGT_INTF`, `PAN_ZONE`); adjust if your
-  lab zone/interface names differ (e.g. the Palo Alto `db` zone).
-- Inspection rules reference an FGT `default` AV profile and a PAN `default` profile group; create
-  those (or edit the builders) if absent.
+- Logical zones map to vendors in `provision_benchmark.py` (`FGT_INTF`, `PAN_ZONE`). Confirmed against
+  the lab: Palo Alto zones are `trust` (eth1/1), `dmz` (eth1/2), `db` (eth1/3); FortiGate uses port1/2/3.
+- The lab PAN-OS has no security profile group, so the provisioner **creates** one (`lumina-inspect`,
+  referencing PAN-OS predefined `default` AV/anti-spyware/vulnerability profiles) and the inspection-ON
+  rules reference it. FortiGate inspection rules use the built-in `default` AV profile.
 - All referenced address/service objects already exist in the lab baseline.
 - The design ground truth here is validated by the Phase-6 benchmark runner (precision/recall/F1).

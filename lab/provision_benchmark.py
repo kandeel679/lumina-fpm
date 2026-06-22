@@ -37,10 +37,21 @@ from benchmark_dataset import (  # noqa: E402
 )
 
 # Logical zone -> vendor selector (override here if your lab differs).
+# Confirmed against the lab PAN-OS: zones trust(eth1/1)/dmz(eth1/2)/db(eth1/3).
 FGT_INTF = {"LAN": "port1", "DMZ": "port2", "DB": "port3", "ANY": "any"}
 PAN_ZONE = {"LAN": "trust", "DMZ": "dmz", "DB": "db", "ANY": "any"}
 
 PAN_XPATH = "/config/devices/entry/vsys/entry/rulebase/security/rules/entry[@name='{name}']"
+
+# The lab PAN-OS has NO security profile group, so the provisioner creates one that
+# references PAN-OS predefined profiles, and the inspection-ON benchmark rules use it.
+PAN_PROFILE_GROUP = "lumina-inspect"
+PAN_PROFILE_GROUP_XPATH = "/config/devices/entry/vsys/entry/profile-group/entry[@name='{name}']"
+PAN_PROFILE_GROUP_ELEMENT = (
+    "<virus><member>default</member></virus>"
+    "<spyware><member>default</member></spyware>"
+    "<vulnerability><member>default</member></vulnerability>"
+)
 
 
 # ─────────────────────────── payload builders ───────────────────────────
@@ -83,7 +94,9 @@ def build_pan_element(r: dict) -> str:
         f"<log-end>{'yes' if r['logging'] else 'no'}</log-end>",
     ]
     if r["inspection"]:
-        parts.append("<profile-setting><group><member>default</member></group></profile-setting>")
+        parts.append(
+            f"<profile-setting><group><member>{PAN_PROFILE_GROUP}</member></group></profile-setting>"
+        )
     if r.get("description"):
         parts.append(f"<description>{r['description']}</description>")
     if not r["enabled"]:
@@ -114,6 +127,17 @@ def apply_fortigate(host: str, token: str, verify: bool, replace: bool) -> None:
 def apply_paloalto(host: str, key: str, verify: bool) -> None:
     import requests
     base = f"https://{host}/api/"
+    # Create the inspection profile group first (the lab PAN-OS has none) so the
+    # inspection-ON rules can reference it. Idempotent (set).
+    if any(r["inspection"] for r in PALOALTO_RULES):
+        resp = requests.get(base, params={
+            "type": "config", "action": "set", "key": key,
+            "xpath": PAN_PROFILE_GROUP_XPATH.format(name=PAN_PROFILE_GROUP),
+            "element": PAN_PROFILE_GROUP_ELEMENT,
+        }, headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+        ok = resp.status_code < 400 and 'status="success"' in resp.text
+        print(f"  [PAN] profile-group {PAN_PROFILE_GROUP} {'created' if ok else 'FAILED'} "
+              f"(http {resp.status_code})")
     for r in PALOALTO_RULES:
         params = {"type": "config", "action": "set", "key": key,
                   "xpath": PAN_XPATH.format(name=r["name"]), "element": build_pan_element(r)}
@@ -148,6 +172,8 @@ def dry_run() -> None:
     for r in FORTIGATE_RULES:
         print(f"  {r['name']}: {json.dumps(build_fgt_payload(r))}")
     print("\n# Palo Alto set elements (type=config&action=set ... + commit):")
+    if any(r["inspection"] for r in PALOALTO_RULES):
+        print(f"  [profile-group {PAN_PROFILE_GROUP}]: {PAN_PROFILE_GROUP_ELEMENT}")
     for r in PALOALTO_RULES:
         print(f"  {r['name']}: {build_pan_element(r)}")
 
