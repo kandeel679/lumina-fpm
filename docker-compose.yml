@@ -5,8 +5,12 @@ services:
   db:
     image: postgres:16-alpine
     env_file: .env # 🛑 STOP HARDCODING PASSWORDS. We inject them from a hidden file.
-    ports:
-      - "5432:5432"
+    # PostgreSQL must NOT be exposed to the host (V12 §12, V13 Table 4). Reachable
+    # only on the internal Docker network. Uncomment for local debugging ONLY.
+    # ports:
+    #   - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -32,8 +36,11 @@ services:
   # ---------------------------------------------
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Redis must NOT be exposed to the host (V12 §12, V13 Table 4). Internal only.
+    # ports:
+    #   - "6379:6379"
+    expose:
+      - "6379"
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
@@ -109,6 +116,11 @@ services:
       - celery_app.celery
       - worker
       - --loglevel=info
+      # Consume ALL routed queues (task_routes sends to per-job-type queues).
+      # Without -Q a single worker only drains the default 'celery' queue and
+      # acquisition/normalization/analysis tasks would never run.
+      - -Q
+      - acquisition,normalization,analysis,cti,reporting,celery
     restart: unless-stopped
 
   # ---------------------------------------------

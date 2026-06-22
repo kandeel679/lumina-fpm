@@ -1,0 +1,11 @@
+<response status="success"><result><address>
+  <entry name="LAN_NET"><ip-netmask>10.10.10.0/24</ip-netmask></entry>
+  <entry name="DMZ_NET"><ip-netmask>10.10.20.0/24</ip-netmask></entry>
+  <entry name="DB_NET"><ip-netmask>10.10.30.0/24</ip-netmask></entry>
+  <entry name="WEB_SERVER"><ip-netmask>10.10.20.10/32</ip-netmask></entry>
+  <entry name="WEB_SERVER_2"><ip-netmask>10.10.20.20/32</ip-netmask></entry>
+  <entry name="DB_SERVER"><ip-netmask>10.10.30.10/32</ip-netmask></entry>
+  <entry name="DB_SERVER_2"><ip-netmask>10.10.30.20/32</ip-netmask></entry>
+  <entry name="ADMIN_PC"><ip-netmask>192.168.55.100/32</ip-netmask></entry>
+  <entry name="MALICIOUS_IP"><ip-netmask>185.220.101.1/32</ip-netmask></entry>
+</address></result></response>

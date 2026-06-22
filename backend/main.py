@@ -15,14 +15,20 @@ from models.models import get_db
 from models import crud, models
 from api.routes import vendors, devices, rules, network_objects
 from api.routes import external_nodes, threat_feeds, api_tokens, audit_logs, saved_searches
+from api.routes import jobs
+from api.routes import anomalies
 
 from contextlib import asynccontextmanager
 
+from core.config import settings
+from core.logging import configure_logging
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables if they don't exist
-    engine = models.get_engine()
-    models.Base.metadata.create_all(bind=engine)
+    # Schema is owned by Alembic migrations (run `alembic upgrade head` at deploy;
+    # the container entrypoint does this). create_all is intentionally retired here
+    # per ADR LFPM-IMPL-002 / Volume 5 §14 (no destructive auto-sync).
+    configure_logging()
     yield
     # Shutdown logic can go here
 
@@ -33,10 +39,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS to allow communication with the frontend
+# Configure CORS — restricted origin allowlist (V12 Table 5). A wildcard origin
+# with credentials is invalid/unsafe; origins come from CORS_ALLOWED_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to your frontend URL in production
+    allow_origins=settings.cors_allowed_origins or ["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,6 +73,8 @@ app.include_router(threat_feeds.router)
 app.include_router(api_tokens.router)
 app.include_router(audit_logs.router)
 app.include_router(saved_searches.router)
+app.include_router(jobs.router)
+app.include_router(anomalies.router)
 
 @app.get("/health")
 def health_check():
@@ -83,11 +92,6 @@ def checkdbconnection():
     finally:
         db.close()
 
-
-# =====================================================================
-# REGISTER API ROUTERS
-# =====================================================================
-app.include_router(vendors.router)
-app.include_router(devices.router)
-app.include_router(rules.router)
-app.include_router(network_objects.router)
+# NOTE: routers are registered once above (lines ~60-68). The previous duplicate
+# include_router block here was removed (it double-registered vendors/devices/
+# rules/network_objects). See docs/CODEBASE_GAP_ANALYSIS.md.

@@ -1,0 +1,6 @@
+<response status="success"><result><service-group>
+  <entry name="WEB_ACCESS"><members><member>HTTP</member><member>HTTPS</member></members></entry>
+  <entry name="ADMIN_ACCESS"><members><member>RDP</member><member>SSH</member></members></entry>
+  <entry name="DATABASE_ACCESS"><members><member>MYSQL</member></members></entry>
+  <entry name="EMAIL_ACCESS"><members><member>DNS_TCP</member><member>DNS_UDP</member><member>SMTP</member></members></entry>
+</service-group></result></response>

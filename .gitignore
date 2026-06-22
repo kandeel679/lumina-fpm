@@ -5,5 +5,15 @@ __pycache__
 .lti_budget_state.json
 backend/.lti_budget_state.json
 
+# Derived text extraction of the spec volumes (regenerate from Volumes/*.docx)
+Volumes/_extracted/
+
+# Raw firewall acquisition artifacts (V3 §8) — audit data, not source
+raw_acquisition/
+backend/raw_acquisition/
+
+# Generated benchmark ground truth (derive from lab/benchmark_dataset.py)
+lab/benchmark_ground_truth.json
+
 # Local-only engineering handoff doc for Claude — intentionally NOT committed
 CLAUDE.md

@@ -1,0 +1,15 @@
+{
+  "results":[
+    {"name":"ADMIN_PC","uuid":"45ca0000-6c0e-51f1-3544-79d60513e52b","subnet":"192.168.55.100 255.255.255.255","type":"ipmask"},
+    {"name":"DB_NET","uuid":"a5b6d05c-6c0d-51f1-de52-4513cacdd5c0","subnet":"10.10.30.0 255.255.255.0","type":"ipmask"},
+    {"name":"DB_SERVER","uuid":"112071cc-6c0e-51f1-4add-10f8a85468c3","subnet":"10.10.30.10 255.255.255.255","type":"ipmask"},
+    {"name":"DMZ_NET","uuid":"92327e0a-6c0d-51f1-9b65-c82120311592","subnet":"10.10.20.0 255.255.255.0","type":"ipmask"},
+    {"name":"LAN_NET","uuid":"83f0827e-6c0d-51f1-81f6-10da8d653e95","subnet":"10.10.10.0 255.255.255.0","type":"ipmask"},
+    {"name":"MALICIOUS_IP","uuid":"5d16b762-6c0e-51f1-5164-94c667c1f7ef","subnet":"185.220.101.1 255.255.255.255","type":"ipmask"},
+    {"name":"WEB_SERVER","uuid":"f2fe919c-6c0d-51f1-4479-9cb3a941a8d7","subnet":"10.10.20.10 255.255.255.255","type":"ipmask"},
+    {"name":"SSLVPN_TUNNEL_ADDR1","uuid":"12c98700-6b2a-51f1-3570-d62c36846b1e","type":"iprange","start-ip":"10.212.134.200","end-ip":"10.212.134.210"},
+    {"name":"all","uuid":"12c93b7e-6b2a-51f1-d001-5ef3a40c530d","subnet":"0.0.0.0 0.0.0.0","type":"ipmask"},
+    {"name":"gmail.com","uuid":"124ab16e-6b2a-51f1-d636-c9c578f861b0","type":"fqdn","fqdn":"gmail.com"}
+  ],
+  "vdom":"root","status":"success","version":"v7.0.5"
+}

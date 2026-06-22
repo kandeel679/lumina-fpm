@@ -138,5 +138,5 @@ def analyze_device_rules(device_id: int, db: Session = Depends(get_db_session)):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
-    task = run_anomaly_analysis_task.delay(device_id)
+    task = run_anomaly_analysis_task.delay(device_id=device_id)
     return {"status": "accepted", "task_id": task.id, "message": "Anomaly analysis started in background"}

@@ -1,0 +1,11 @@
+<response status="success"><result><service>
+  <entry name="HTTP"><protocol><tcp><port>80</port></tcp></protocol></entry>
+  <entry name="HTTPS"><protocol><tcp><port>443</port></tcp></protocol></entry>
+  <entry name="SSH"><protocol><tcp><port>22</port></tcp></protocol></entry>
+  <entry name="DNS_TCP"><protocol><tcp><port>53</port></tcp></protocol></entry>
+  <entry name="DNS_UDP"><protocol><udp><port>53</port></udp></protocol></entry>
+  <entry name="MYSQL"><protocol><tcp><port>3306</port></tcp></protocol></entry>
+  <entry name="RDP"><protocol><tcp><port>3389</port></tcp></protocol></entry>
+  <entry name="FTP"><protocol><tcp><port>21</port></tcp></protocol></entry>
+  <entry name="SMTP"><protocol><tcp><port>25</port></tcp></protocol></entry>
+</service></result></response>

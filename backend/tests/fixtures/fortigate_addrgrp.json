@@ -1,0 +1,7 @@
+{
+  "results":[
+    {"name":"G Suite","uuid":"124ab70e-6b2a-51f1-8bb6-24b61011b7b2","member":[{"name":"gmail.com"},{"name":"wildcard.google.com"}]},
+    {"name":"Microsoft Office 365","uuid":"124aba60-6b2a-51f1-b83a-fcff9f979da0","member":[{"name":"login.microsoftonline.com"},{"name":"login.microsoft.com"},{"name":"login.windows.net"}]}
+  ],
+  "vdom":"root","status":"success","version":"v7.0.5"
+}

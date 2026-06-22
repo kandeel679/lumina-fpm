@@ -51,6 +51,7 @@ class AdministratorResponse(AdministratorBase):
 
 class DeviceBase(BaseModel):
     vendor_id: int
+    vendor_type: Optional[str] = None   # 'fortinet' | 'paloalto' (derived from vendor if omitted)
     hostname: str
     management_ip: str
     location: Optional[str] = None

@@ -58,9 +58,24 @@ celery.conf.update(
 
     # Result expiry (24 hours)
     result_expires=86400,
+
+    # Per-job-type queue routing (V2 §14.3, V3 Table 28, V13 Table 5) so slow
+    # firewall polling never blocks analysis/CTI/reporting workloads.
+    task_routes={
+        "acquisition.*": {"queue": "acquisition"},
+        "normalization.*": {"queue": "normalization"},
+        "analysis.*": {"queue": "analysis"},
+        "cti.*": {"queue": "cti"},
+        "reporting.*": {"queue": "reporting"},
+    },
 )
 
 # Explicitly register task modules
-# (autodiscover_tasks expects a 'tasks.py' file inside each package, 
-#  but our module is named 'threat_intel.py')
-celery.conf.include = ["tasks.threat_intel", "tasks.anomaly"]
+# (autodiscover_tasks expects a 'tasks.py' file inside each package,
+#  but our modules are named per-domain)
+celery.conf.include = [
+    "tasks.acquisition",
+    "tasks.normalization",
+    "tasks.threat_intel",
+    "tasks.anomaly",
+]

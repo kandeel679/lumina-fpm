@@ -1,0 +1,7 @@
+{
+  "results":[
+    {"name":"Web Access","member":[{"name":"DNS"},{"name":"HTTP"},{"name":"HTTPS"}]},
+    {"name":"Windows AD","member":[{"name":"DCE-RPC"},{"name":"DNS"},{"name":"KERBEROS"},{"name":"LDAP"},{"name":"SMB"}]}
+  ],
+  "vdom":"root","status":"success","version":"v7.0.5"
+}

@@ -1,54 +1,160 @@
-"""Anomaly analysis tasks."""
+"""Deterministic anomaly analysis task (Volume 5).
+
+Reads the NORMALIZED REPOSITORY (Schema v4) via ``load_normalized_result``, runs
+the deterministic config-only anomaly engine, and persists each Finding as a
+RuleAnomaly row tied to an AnomalyExecutionLog run. There is NO randomness, NO
+mock data, NO LLM, and the engine never touches raw vendor data or the network.
+
+The callable is named ``run_anomaly_analysis_task`` (imported by
+api/routes/rules.py). Celery task name is ``analysis.run_anomaly_analysis`` and it
+runs on the ``analysis`` queue. Signature: ``run_anomaly_analysis_task(device_id=None)``
+— ``device_id=None`` analyzes ALL devices (required for cross-device detectors).
+"""
 from __future__ import annotations
 
-import logging
-import random
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from celery_app import celery
-from models.models import get_db, PolicyRule, RuleAnomaly
-from services.anomaly_engine import run_anomaly_detection
+from core.logging import get_logger
+from models import models
+from models.models import get_db, utcnow
+from services.anomaly import analyze
+from services.normalization.loader import load_normalized_result
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+SessionLocal = get_db()
+
+ENGINE_VERSION = "anomaly-engine/1.0.0"
+
+
+def _rule_index(db, device_ids: Optional[List[int]]) -> Dict[tuple, int]:
+    """Map (device_id, vendor_uuid) -> PolicyRule.rule_id for finding resolution."""
+    q = db.query(
+        models.PolicyRule.rule_id,
+        models.PolicyRule.device_id,
+        models.PolicyRule.vendor_uuid,
+    ).filter(models.PolicyRule.deleted_at.is_(None))
+    if device_ids is not None:
+        q = q.filter(models.PolicyRule.device_id.in_(device_ids))
+    index: Dict[tuple, int] = {}
+    for rule_id, dev_id, vendor_uuid in q.all():
+        if vendor_uuid is None:
+            continue
+        index[(dev_id, vendor_uuid)] = rule_id
+    return index
+
 
 @celery.task(
     bind=True,
-    name="tasks.run_anomaly_analysis",
+    name="analysis.run_anomaly_analysis",
+    queue="analysis",
     max_retries=0,
     acks_late=True,
     time_limit=300,
 )
-def run_anomaly_analysis_task(self, device_id: int) -> dict[str, Any]:
-    logger.info("Anomaly analysis task started for device_id=%d", device_id)
-    SessionLocal = get_db()
-    session = SessionLocal()
+def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str, Any]:
+    """Run the deterministic anomaly engine and persist RuleAnomaly findings.
 
+    Steps:
+      1. Create an AnomalyExecutionLog row (status=running).
+      2. Reconstruct the NormalizationResult from the persisted repository.
+      3. analyze(result) -> deterministic list[Finding].
+      4. Map each Finding (device_id + rule_uuid) -> PolicyRule.rule_id and write
+         a RuleAnomaly row with the full output contract.
+      5. Finalize the log (status=completed, findings_count).
+    """
+    device_ids = [device_id] if device_id is not None else None
+    scope_type = "device" if device_id is not None else "all"
+
+    db = SessionLocal()
+    run: Optional[models.AnomalyExecutionLog] = None
     try:
-        # Run the mock anomaly detection (this will block/sleep for 4 seconds)
-        anomalies_data = run_anomaly_detection(device_id)
+        run = models.AnomalyExecutionLog(
+            scope_type=scope_type,
+            scope_id=device_id,
+            status="running",
+            findings_count=0,
+            engine_version=ENGINE_VERSION,
+        )
+        db.add(run)
+        db.flush()  # assign run_id without committing the whole transaction yet
 
-        # Get actual rules for this device to map anomalies to
-        rules = session.query(PolicyRule).filter(PolicyRule.device_id == device_id).all()
-        rule_ids = [rule.rule_id for rule in rules]
+        result = load_normalized_result(db, device_ids=device_ids)
+        findings = analyze(result)
 
-        inserted_count = 0
-        for anomaly_dict in anomalies_data:
-            # Map to an existing rule if possible, else skip.
-            if rule_ids:
-                anomaly_dict["rule_id"] = random.choice(rule_ids)
-                anomaly_row = RuleAnomaly(**anomaly_dict)
-                session.add(anomaly_row)
-                inserted_count += 1
-            else:
-                logger.warning("No rules found for device_id=%d, skipping anomaly.", device_id)
+        index = _rule_index(db, device_ids)
 
-        session.commit()
-        logger.info("Anomaly analysis complete. Inserted %d anomalies.", inserted_count)
-        return {"status": "success", "inserted_count": inserted_count}
+        inserted = 0
+        skipped = 0
+        for f in findings:
+            rule_id = index.get((f.device_id, f.rule_uuid))
+            if rule_id is None:
+                # Finding references a rule not present in the persisted repository
+                # (e.g. cross-device scope mismatch). Skip rather than guess.
+                skipped += 1
+                logger.warning(
+                    "Anomaly %s references unknown rule device=%s uuid=%s; skipped.",
+                    f.anomaly_type, f.device_id, f.rule_uuid,
+                )
+                continue
 
-    except Exception as exc:
-        logger.exception("Anomaly analysis task failed: %s", exc)
-        session.rollback()
-        return {"status": "error", "message": str(exc)}
+            related_rule_id = None
+            if f.related_rule_uuid is not None:
+                rel_dev = f.related_device_id if f.related_device_id is not None else f.device_id
+                related_rule_id = index.get((rel_dev, f.related_rule_uuid))
+
+            db.add(models.RuleAnomaly(
+                rule_id=rule_id,
+                related_rule_id=related_rule_id,
+                anomaly_type=f.anomaly_type,
+                severity_level=f.severity,
+                confidence=f.confidence,
+                description=f.description,
+                evidence=f.evidence,
+                recommendation=f.recommendation,
+                detection_mode=f.detection_mode,
+                analysis_run_id=run.run_id,
+                status="open",
+            ))
+            inserted += 1
+
+        run.status = "completed"
+        run.findings_count = inserted
+        run.completed_at = utcnow()
+        db.commit()
+
+        logger.info(
+            "Anomaly analysis run %s (scope=%s id=%s) completed: %d findings inserted, %d skipped.",
+            run.run_id, scope_type, device_id, inserted, skipped,
+        )
+        return {
+            "status": "completed",
+            "run_id": run.run_id,
+            "findings_count": inserted,
+            "skipped": skipped,
+        }
+
+    except Exception as exc:  # noqa: BLE001 - record failure on the run log
+        logger.exception("Anomaly analysis failed (scope=%s id=%s): %s", scope_type, device_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        # Best-effort: mark the run failed in a fresh transaction.
+        if run is not None and run.run_id is not None:
+            try:
+                failed = (
+                    db.query(models.AnomalyExecutionLog)
+                    .filter(models.AnomalyExecutionLog.run_id == run.run_id)
+                    .first()
+                )
+                if failed is not None:
+                    failed.status = "failed"
+                    failed.completed_at = utcnow()
+                    failed.error_log = {"error": str(exc)}
+                    db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+        return {"status": "failed", "error": "internal_error"}
     finally:
-        session.close()
+        db.close()

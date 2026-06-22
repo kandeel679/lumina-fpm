@@ -1,7 +1,11 @@
 uvicorn
 fastapi
 sqlalchemy
+alembic                 # schema migrations (V5 §14, V13 §7) — replaces create_all
 pydantic
+pydantic-settings       # typed env-based config (core/config.py, V13 §6)
+cryptography            # Fernet encryption for device credentials (V12 §6)
+defusedxml              # hardened XML parsing for PAN-OS responses (V12 §10)
 psycopg2-binary
 python-dotenv
 celery[redis]
