@@ -47,10 +47,15 @@ PAN_XPATH = "/config/devices/entry/vsys/entry/rulebase/security/rules/entry[@nam
 # references PAN-OS predefined profiles, and the inspection-ON benchmark rules use it.
 PAN_PROFILE_GROUP = "lumina-inspect"
 PAN_PROFILE_GROUP_XPATH = "/config/devices/entry/vsys/entry/profile-group/entry[@name='{name}']"
+# References PAN-OS predefined profiles confirmed present in the lab. If a 'set'
+# rejects one of these names on your PAN-OS version, trim the offending line.
 PAN_PROFILE_GROUP_ELEMENT = (
     "<virus><member>default</member></virus>"
     "<spyware><member>default</member></spyware>"
     "<vulnerability><member>default</member></vulnerability>"
+    "<url-filtering><member>default</member></url-filtering>"
+    "<wildfire-analysis><member>default</member></wildfire-analysis>"
+    "<file-blocking><member>basic file blocking</member></file-blocking>"
 )
 
 
