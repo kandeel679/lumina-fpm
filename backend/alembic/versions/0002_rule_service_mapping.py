@@ -21,6 +21,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # The 0001 baseline builds the schema from live model metadata (create_all),
+    # which already includes this table. Guard so the chain is idempotent on a
+    # fresh DB while remaining a real migration for older DBs.
+    bind = op.get_bind()
+    if "rule_service_mapping" in sa.inspect(bind).get_table_names():
+        return
     op.create_table(
         "rule_service_mapping",
         sa.Column("mapping_id", sa.Integer(), autoincrement=True, nullable=False),
@@ -40,5 +46,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if "rule_service_mapping" not in sa.inspect(bind).get_table_names():
+        return
     op.drop_index("idx_rulesvcmap_rule", table_name="rule_service_mapping")
     op.drop_table("rule_service_mapping")
