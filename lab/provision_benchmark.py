@@ -110,9 +110,9 @@ def build_pan_element(r: dict) -> str:
 
 
 # ─────────────────────────── apply (live) ───────────────────────────
-def apply_fortigate(host: str, token: str, verify: bool, replace: bool) -> None:
+def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: str = "https") -> None:
     import requests
-    base = f"https://{host}/api/v2/cmdb/firewall/policy"
+    base = f"{scheme}://{host}/api/v2/cmdb/firewall/policy"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     existing = requests.get(base, headers=headers, verify=verify, timeout=30).json()
     by_name = {e["name"]: e["policyid"] for e in existing.get("results", [])}
@@ -192,6 +192,8 @@ def main(argv=None) -> int:
     ap.add_argument("--vendor", choices=["fortinet", "paloalto", "both"], default="both")
     ap.add_argument("--fgt-host", default=os.getenv("FGT_HOST", "192.168.55.10"))
     ap.add_argument("--fgt-token", default=os.getenv("FGT_WRITE_TOKEN", ""))
+    ap.add_argument("--fgt-scheme", choices=["https", "http"], default=os.getenv("FGT_SCHEME", "https"),
+                    help="LAB-ONLY: use http when the FortiGate's HTTPS admin service is unavailable")
     ap.add_argument("--pan-host", default=os.getenv("PAN_HOST", "192.168.55.20"))
     ap.add_argument("--pan-key", default=os.getenv("PAN_API_KEY", ""))
     ap.add_argument("--verify-tls", action="store_true", help="verify TLS (lab certs are self-signed)")
@@ -216,8 +218,8 @@ def main(argv=None) -> int:
         if not args.fgt_token:
             print("ERROR: FortiGate write token required (--fgt-token / FGT_WRITE_TOKEN).", file=sys.stderr)
             return 2
-        print(f"Pushing FortiGate rules to {args.fgt_host} ...")
-        apply_fortigate(args.fgt_host, args.fgt_token, verify, args.replace)
+        print(f"Pushing FortiGate rules to {args.fgt_host} ({args.fgt_scheme}) ...")
+        apply_fortigate(args.fgt_host, args.fgt_token, verify, args.replace, args.fgt_scheme)
     if args.vendor in ("paloalto", "both"):
         if not args.pan_key:
             print("ERROR: Palo Alto API key required (--pan-key / PAN_API_KEY).", file=sys.stderr)

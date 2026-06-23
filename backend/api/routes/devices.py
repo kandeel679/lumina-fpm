@@ -126,6 +126,7 @@ def _connector_config(db: Session, device) -> ConnectorConfig:
     vendor_type = resolve_device_vendor_type(device)
     if not vendor_type:
         raise HTTPException(status_code=422, detail="Device vendor_type could not be determined")
+    scheme = "http" if device.management_ip in settings.firewall_insecure_http_hosts else "https"
     return ConnectorConfig(
         device_id=device.device_id,
         vendor_type=vendor_type,
@@ -134,6 +135,7 @@ def _connector_config(db: Session, device) -> ConnectorConfig:
         auth_type=auth_type,
         verify_tls=settings.firewall_tls_verify,
         timeout_seconds=min(15, settings.acquisition_timeout_seconds),
+        scheme=scheme,
     )
 
 

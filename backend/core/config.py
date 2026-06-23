@@ -69,6 +69,12 @@ if _HAVE_PYDANTIC_SETTINGS:
         acquisition_raw_dir: str = Field(default="/app/raw_acquisition")
         acquisition_timeout_seconds: int = 60
         acquisition_max_retries: int = 3
+        # Lab-only escape hatch: management IPs reached over plain HTTP because their
+        # HTTPS admin service is unavailable (e.g. a FortiGate VM whose httpsd won't
+        # bind 443). NEVER set in production — API tokens would traverse unencrypted.
+        firewall_insecure_http_hosts_raw: str = Field(
+            default="", alias="FIREWALL_INSECURE_HTTP_HOSTS"
+        )
 
         # ── LLM / CTI (V9, V10) ──
         llm_provider: str = Field(default="gemini")  # gemini|openai|ollama
@@ -86,6 +92,10 @@ if _HAVE_PYDANTIC_SETTINGS:
         @property
         def cors_allowed_origins(self) -> List[str]:
             return _split_csv(self.cors_allowed_origins_raw)
+
+        @property
+        def firewall_insecure_http_hosts(self) -> List[str]:
+            return _split_csv(self.firewall_insecure_http_hosts_raw)
 
         @property
         def is_production(self) -> bool:
@@ -114,6 +124,7 @@ else:  # pragma: no cover - lightweight fallback
             self.acquisition_raw_dir = g("ACQUISITION_RAW_DIR", "/app/raw_acquisition")
             self.acquisition_timeout_seconds = int(g("ACQUISITION_TIMEOUT_SECONDS", "60"))
             self.acquisition_max_retries = int(g("ACQUISITION_MAX_RETRIES", "3"))
+            self.firewall_insecure_http_hosts_raw = g("FIREWALL_INSECURE_HTTP_HOSTS", "")
             self.llm_provider = g("LLM_PROVIDER", "gemini")
             self.llm_model = g("LLM_MODEL", "gemini-2.5-flash")
             self.llm_api_key = g("LLM_API_KEY", "")
@@ -129,6 +140,10 @@ else:  # pragma: no cover - lightweight fallback
         @property
         def cors_allowed_origins(self) -> List[str]:
             return _split_csv(self.cors_allowed_origins_raw)
+
+        @property
+        def firewall_insecure_http_hosts(self) -> List[str]:
+            return _split_csv(self.firewall_insecure_http_hosts_raw)
 
         @property
         def is_production(self) -> bool:

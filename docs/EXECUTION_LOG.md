@@ -275,3 +275,37 @@ tests/verification · remaining.**
   poll/normalize/analyze tasks would queue forever and the live run would silently stall.
 - **Fix:** worker command now includes `-Q acquisition,normalization,analysis,cti,reporting,celery`.
 - **File:** `docker-compose.yml`.
+
+### E-014 — First live end-to-end run against the lab (both vendors) + benchmark
+- **Brought the stack up against the real lab** (FortiGate 192.168.55.10, Palo Alto 192.168.55.20).
+  Fixed an `.env` mismatch (DATABASE_URL password/db name vs POSTGRES_*); clean `down -v` + migrate.
+- **Lab connectivity (firewall-side, not Lumina):**
+  * FortiGate VM admin **HTTPS never binds 443** on this box. Root causes found in order: SSL-VPN
+    occupying 443 (moved to 10443), then `admin-https-ssl-versions=tlsv1-2` paired with **TLS-1.3-only
+    ciphersuites** (firmware has no `tlsv1-3`), so the admin TLS listener has no usable cipher and drops
+    every handshake (0-byte EOF). The REST API **does** work over **HTTP/80**.
+  * Palo Alto mgmt plane was intermittently unresponsive under host resource contention; revived.
+- **Lab-gated HTTP escape hatch (code):** new setting `FIREWALL_INSECURE_HTTP_HOSTS` (CSV of management
+  IPs reached over plain HTTP because their HTTPS admin is unavailable). `ConnectorConfig.scheme`
+  (`https` default) is honored by the FortiGate connector; wired from the device route + acquisition task;
+  provisioner gained `--fgt-scheme`. **Production stays HTTPS-only** — the host must be explicitly listed.
+  Files: `core/config.py`, `services/acquisition/base.py`, `services/acquisition/fortigate.py`,
+  `api/routes/devices.py`, `tasks/acquisition.py`, `lab/provision_benchmark.py`, `.env.example`.
+- **Cross-vendor correlation proven on live data:** baseline LAN/DMZ/DB objects + WEB/DB/ADMIN/MALICIOUS
+  hosts are defined identically on both vendors and collapse to 9 shared canonical `normalized_object`s
+  (each backed by 2 vendor objects); FortiGate-only objects (FQDN/ISDB/SSLVPN) correctly stay uncorrelated.
+- **Benchmark pushed (Step 5):** FortiGate hit its **unlicensed-VM policy cap (10)** — swapped the
+  redundant `FGT_ADMIN_DB_NOLOG` (missing_logging also covered by `FGT_ANY_DB`) for the cross-device
+  keystone `FGT_DB_ACCESS_XDEV`. Palo Alto: profile-group `lumina-inspect` + 8 rules + commit (OK).
+  Final live policy sets: FGT 10, PA 8.
+- **All-scope analysis (run 9): 38 findings across 12 anomaly types**, deterministic, evidence-backed:
+  unprotected_allow(8), missing_description(6), conflict(5), missing_logging(5), duplicate_rules(4),
+  cross_device_security_posture_inconsistency(2), redundancy(2), any_to_sensitive(2),
+  **cross_device_inconsistency(1)** (FGT allow vs PA deny, same canonical LAN→DB:MYSQL — the keystone),
+  shadowing(1), wide_port_range(1), overly_permissive(1).
+- **Observed gap (to fix next):** FortiGate `shadowing`/`redundancy` did NOT fire while Palo Alto's
+  identical designs did, and FortiGate `conflict` (overlap-based) did fire. Hypothesis: the FortiGate
+  `ALL` service normalizes to a form that passes *overlap* but fails *superset (⊇)* checks (the canonical
+  ANY_SERVICE sentinel), so shadowing/redundancy supersets miss. Needs a normalization fix + unit test.
+  Also `disabled_rule_review` and `object_sprawl` not exercised (DISABLED rule omitted for the policy cap;
+  object count below the sprawl threshold).

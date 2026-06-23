@@ -56,7 +56,7 @@ class FortiGateConnector(ConnectorInterface):
     connector_version = "1.0.0"
 
     def _base_url(self) -> str:
-        return f"https://{self.config.management_ip}"
+        return f"{self.config.scheme}://{self.config.management_ip}"
 
     def _headers(self) -> Dict[str, str]:
         # Bearer token auth (V3 §9.2). The token is held in memory only.

@@ -76,6 +76,9 @@ def poll_device(self, job_id: int) -> dict:
         job.vendor_type = vendor_type
         db.commit()
 
+        scheme = (
+            "http" if device.management_ip in settings.firewall_insecure_http_hosts else "https"
+        )
         config = ConnectorConfig(
             device_id=device.device_id,
             vendor_type=vendor_type,
@@ -84,6 +87,7 @@ def poll_device(self, job_id: int) -> dict:
             auth_type=auth_type,
             verify_tls=settings.firewall_tls_verify,
             timeout_seconds=settings.acquisition_timeout_seconds,
+            scheme=scheme,
         )
         connector = get_connector(config)
         bundle = connector.collect()

@@ -23,6 +23,7 @@ class ConnectorConfig:
     auth_type: str            # fortigate_api_token | panos_api_key | panos_userpass
     verify_tls: bool = True
     timeout_seconds: int = 60
+    scheme: str = "https"     # "http" only as a lab escape hatch (see settings.firewall_insecure_http_hosts)
 
 
 class ConnectorInterface(abc.ABC):
