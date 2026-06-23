@@ -77,12 +77,19 @@ function buildActivityFeed({ threats, firewalls, ruleDetails, meta }) {
 export async function fetchLFPMData() {
   try {
     // 1. Fetch core database collections in parallel
-    const [dbVendors, dbDevices, dbRules, dbObjects] = await Promise.all([
+    const [dbVendors, dbDevices, dbRules, dbObjects, ruleRiskRes, deviceRiskRes] = await Promise.all([
       fetch('/api/v1/vendors/').then(res => res.json()),
       fetch('/api/v1/devices/').then(res => res.json()),
       fetch('/api/v1/rules/').then(res => res.json()),
       fetch('/api/v1/network-objects/').then(res => res.json()),
+      fetch('/api/v1/risk?scope_type=rule&limit=200').then(res => res.json()).catch(() => ({ items: [] })),
+      fetch('/api/v1/risk?scope_type=device&limit=200').then(res => res.json()).catch(() => ({ items: [] })),
     ]);
+
+    // Real deterministic risk (Volume 8) — replaces the old heuristic riskScore.
+    // Keyed by scope_id (rule_id / device_id) from the latest scored analysis run.
+    const ruleRiskById   = new Map((ruleRiskRes.items   || []).map(it => [it.scope_id, it]));
+    const deviceRiskById = new Map((deviceRiskRes.items || []).map(it => [it.scope_id, it]));
 
     // 2. Map Vendors (stable canonical ids)
     const vendors = dbVendors.map(v => {
@@ -149,17 +156,12 @@ export async function fetchLFPMData() {
         }
       }
 
-      // Compute risk score based on status & action
-      let riskScore = 20;
-      if (r.action === 'deny') {
-        riskScore = 5;
-      } else if (status === 'shadowed') {
-        riskScore = 90;
-      } else if (status === 'permissive') {
-        riskScore = 85;
-      } else if (status === 'redundant') {
-        riskScore = 30;
-      }
+      // Real deterministic risk (V8) from /api/v1/risk; the low baseline only
+      // applies if a rule somehow has no assessment row in the latest run.
+      const rr = ruleRiskById.get(r.rule_id);
+      const riskScore   = rr ? rr.risk_score : (r.action === 'deny' ? 5 : 20);
+      const riskTier    = rr ? rr.risk_tier : null;
+      const riskFactors = rr ? rr.factor_breakdown : null;
 
       return {
         id: `POL-${String(r.rule_id).padStart(3, '0')}`,
@@ -174,6 +176,8 @@ export async function fetchLFPMData() {
         status,
         shadowedBy,
         riskScore,
+        riskTier,
+        riskFactors,
         priority: r.rule_order,
         enabled: r.is_active,
         db_id: r.rule_id,
@@ -197,9 +201,11 @@ export async function fetchLFPMData() {
 
       const fwPolicies = policies.filter(p => p.firewallId === String(d.device_id));
       const fwAnomalies = fwPolicies.filter(p => p.status !== 'clean');
-      const avgRisk = fwPolicies.length > 0
-        ? Math.round(fwPolicies.reduce((sum, p) => sum + p.riskScore, 0) / fwPolicies.length)
-        : 30;
+      // Real device risk (V8 blend: 0.6*max + 0.4*avg(top5) + modifier) from the
+      // backend — NOT a mean of rule risks, which would dilute a critical posture.
+      const dr = deviceRiskById.get(d.device_id);
+      const avgRisk = dr ? dr.risk_score
+        : (fwPolicies.length ? Math.round(fwPolicies.reduce((s, p) => s + p.riskScore, 0) / fwPolicies.length) : 0);
 
       return {
         id: String(d.device_id),
@@ -218,6 +224,8 @@ export async function fetchLFPMData() {
         ruleCount: fwPolicies.length,
         anomalyCount: fwAnomalies.length,
         riskScore: avgRisk,
+        riskTier: dr?.risk_tier ?? null,
+        riskFactors: dr?.factor_breakdown ?? null,
         uptime: '99.99%',
         throughput: d.hostname.includes('CORE') ? '16.0 Gbps' : d.hostname.includes('DC') ? '8.2 Gbps' : '940 Mbps',
         db_id: d.device_id,

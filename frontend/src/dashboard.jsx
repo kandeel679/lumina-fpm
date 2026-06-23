@@ -136,7 +136,11 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       devices:     LFPM.firewalls.length,
       online:      LFPM.firewalls.filter(f => f.status === 'online').length,
       degraded:    LFPM.firewalls.filter(f => f.status !== 'online').length,
-      avgRisk:     Math.round(p.reduce((a, x) => a + x.riskScore, 0) / p.length),
+      // Fleet risk = mean of the real per-device risk (V8), not a mean of rule
+      // risks (which would dilute a critical firewall down to "safe").
+      avgRisk:     LFPM.firewalls.length
+                     ? Math.round(LFPM.firewalls.reduce((a, f) => a + (f.riskScore || 0), 0) / LFPM.firewalls.length)
+                     : 0,
     };
   }, [timeRange, LFPM.policies, LFPM.conflicts, LFPM.threats, LFPM.firewalls]);
 
@@ -198,7 +202,8 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       const vfws = LFPM.firewalls.filter(f => f.vendorId === vid);
       const fwIds = new Set(vfws.map(f => f.id));
       const pols  = LFPM.policies.filter(p => fwIds.has(p.firewallId));
-      const avg   = pols.length ? Math.round(pols.reduce((a, p) => a + p.riskScore, 0) / pols.length) : 0;
+      // Vendor risk = mean of that vendor's real device risk (V8), not rule-mean.
+      const avg   = vfws.length ? Math.round(vfws.reduce((a, f) => a + (f.riskScore || 0), 0) / vfws.length) : 0;
       const issues = pols.filter(p => p.status !== 'clean').length;
       const cves  = LFPM.threats.filter(t => (t.vendors || []).includes(vid)).length;
       const kev   = LFPM.threats.filter(t => (t.vendors || []).includes(vid) && t.kev).length;

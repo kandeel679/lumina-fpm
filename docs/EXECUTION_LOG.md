@@ -457,3 +457,15 @@ tests/verification · remaining.**
   FGT-LAB ⇄ POL-003`, "FGT_ANY_ANY allows ANY→ANY"). Known next step (P10.1): the dashboard still shows the
   **fake heuristic risk** (AVG FLEET RISK 18 "safe") instead of the real `/api/v1/risk` device score
   (96–100 critical) — the de-mock target.
+
+### E-021 — Phase 10 (P10.1): Dashboard de-mock — real V8 risk
+- **Removed the fabricated risk:** `api.js` no longer computes `riskScore` from a status/action heuristic.
+  `fetchLFPMData` now fetches `/api/v1/risk?scope_type=rule|device` and attaches the real
+  `risk_score`/`risk_tier`/`factor_breakdown` to each policy (by rule_id) and firewall (by device_id).
+- **Honest fleet headline:** the dashboard "AVG FLEET RISK" + per-vendor tiles now derive from the real
+  **device** risk (V8 blend `0.6*max + 0.4*avg(top5) + modifier`), not a mean of rule risks that diluted a
+  critical firewall to "safe".
+- **VERIFIED (browser):** AVG FLEET RISK **18 "safe" → 98 "critical"**; Vendor Risk PA **100** / FGT **96**;
+  Firewall Fleet table PA-LAB 100 / FGT-LAB 96. No new console/network errors.
+- **Known next (P10.2):** the policy *status* mapping in `api.js` still recognizes only 3 legacy anomaly
+  types, so "% rules flagged" reads 0 despite 440 findings — fixed comprehensively in the Audit/Anomalies wiring.
