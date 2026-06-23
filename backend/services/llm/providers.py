@@ -64,30 +64,51 @@ class GeminiProvider(LLMProvider):
         self.timeout = timeout
 
     def generate(self, system: str, user: str) -> LlmResult:
+        import time
+
         import requests  # lazy
         url = f"{self._BASE}/{self.model}:generateContent?key={self.api_key}"
         payload = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
+            # thinkingBudget=0 keeps the whole token budget for the answer (2.5 models
+            # otherwise spend it on internal reasoning and can return no text part).
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096,
+                                 "thinkingConfig": {"thinkingBudget": 0}},
         }
-        try:
-            resp = requests.post(url, json=payload, timeout=self.timeout)
-        except Exception as exc:  # noqa: BLE001 - LLM failure must not break the platform
-            logger.warning("Gemini request failed: %s", exc)
+
+        def _fail(err: str) -> LlmResult:
             return LlmResult(output="", provider=self.name, model=self.model,
-                             status="failed", error=str(exc))
-        if resp.status_code != 200:
-            logger.warning("Gemini HTTP %s: %s", resp.status_code, resp.text[:200])
-            return LlmResult(output="", provider=self.name, model=self.model,
-                             status="failed", error=f"http {resp.status_code}")
-        try:
-            data = resp.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception as exc:  # noqa: BLE001
-            return LlmResult(output="", provider=self.name, model=self.model,
-                             status="failed", error=f"malformed response: {exc}")
-        return LlmResult(output=text, provider=self.name, model=self.model, status="complete")
+                             status="failed", error=err)
+
+        last_err = "unavailable"
+        for attempt in range(3):
+            try:
+                resp = requests.post(url, json=payload, timeout=self.timeout)
+            except Exception as exc:  # noqa: BLE001 - never break the platform
+                last_err = str(exc)
+                time.sleep(2 * (attempt + 1))
+                continue
+            if resp.status_code in (429, 503):  # transient overload -> retry with backoff
+                last_err = f"http {resp.status_code}"
+                logger.warning("Gemini transient %s (attempt %d)", resp.status_code, attempt + 1)
+                time.sleep(2 * (attempt + 1))
+                continue
+            if resp.status_code != 200:
+                logger.warning("Gemini HTTP %s: %s", resp.status_code, resp.text[:200])
+                return _fail(f"http {resp.status_code}")
+            try:
+                data = resp.json()
+                cand = data["candidates"][0]
+                parts = (cand.get("content") or {}).get("parts") or []
+                text = "".join(p.get("text", "") for p in parts).strip()
+            except Exception as exc:  # noqa: BLE001
+                return _fail(f"malformed response: {exc}")
+            if not text:
+                return _fail(f"empty response (finishReason={cand.get('finishReason')})")
+            return LlmResult(output=text, provider=self.name, model=self.model, status="complete")
+        logger.warning("Gemini failed after retries: %s", last_err)
+        return _fail(last_err)
 
 
 def build_provider(provider_name: str, api_key: str, model: str) -> LLMProvider:

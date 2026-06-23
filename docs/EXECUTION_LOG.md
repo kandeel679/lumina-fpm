@@ -425,3 +425,9 @@ tests/verification · remaining.**
   cites the top risky rules by `risk_id`. Every claim traces to a DB record; CTI is separated from engine
   findings. A valid Gemini key yields AI-written prose over the same grounded evidence.
 - **Guardrail:** the LLM **explains, never detects** — the deterministic engine remains the anomaly authority.
+- **LIVE (valid key):** with a working Gemini key, `gemini-2.5-flash` produced a polished SOC report for
+  `FGT_ALLOW_MALICIOUS` that cites each evidence ID (anomaly_id=440/391/424/410, observation_id=4,
+  risk_id=243), attributes the CTI verdict to `lab_offline`, labels prose as "Analysis", and invents
+  nothing. Hardened `GeminiProvider`: retry on transient 429/503 + `thinkingConfig.thinkingBudget=0`
+  (2.5 "thinking" models otherwise spend the token budget on reasoning and return no text) + join all
+  text parts. The first key the user supplied was `API_KEY_INVALID`; a valid one resolved it.
