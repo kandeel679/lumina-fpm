@@ -494,3 +494,17 @@ tests/verification · remaining.**
 - **VERIFIED (browser, live):** opened FGT_ANY_ANY (POL-009) — risk 98 with factors
   anomaly+43/exposure+20/posture+20/logging+15, 5 findings incl. missing_logging + unprotected_allow;
   a resolve action returned `200 OK` and flipped the finding's status (reverted afterward). No console errors.
+
+### E-023 — Phase 10 (P10.3): Risk Posture screen (new, TSX)
+- **New typed screen `src/risk.tsx`:** the first screen authored entirely in TypeScript against the typed
+  client (`src/lib/api.ts`) — exercising the P10.0 foundation. Fetches `/risk?scope_type=rule|device` +
+  `/devices` and renders device-risk cards and a top-risky-rules table with the real V8 factor breakdown.
+- **Nav:** added a "Risk Posture" rail item (shell.jsx) + route (app.jsx VALID_PAGES/crumbs/render); rows
+  deep-link into Policy Audit by rule.
+- **Typecheck guardrail:** `tsc --noEmit` caught three real type gaps before runtime — `qs()` index
+  signature, and a missing `Device.vendor_type` field — now fixed; full typecheck is green (the .jsx stays
+  un-checked under `allowJs`).
+- **VERIFIED (browser, live):** run #18 · PA-LAB 100 (critical) / FGT-LAB 96 device cards with aggregation
+  factors (max rule risk +99, top rules avg +80.8/72.2, modifier +8, critical rule count +2); top rules
+  PA_ANY_DB/FGT_ANY_DB 99, FGT_ANY_ANY/PA_ANY_ANY 98 with per-rule factors (anomaly/exposure/posture/
+  logging/asset_sensitivity). No console errors.

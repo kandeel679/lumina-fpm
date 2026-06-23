@@ -11,6 +11,7 @@ import { Inspector } from './inspector';
 import { Login } from './login';
 import { Dashboard } from './dashboard';
 import { PolicyAudit } from './audit';
+import { RiskPosture } from './risk';
 import { Topology } from './topology';
 import { ThreatIntelligence } from './threats';
 import { Settings } from './settings';
@@ -37,7 +38,7 @@ applyTheme(readTheme());
 /* ===============================================================
  *  Hash-routed navigation
  * =============================================================== */
-const VALID_PAGES = new Set(['dashboard','audit','topology','threats','settings']);
+const VALID_PAGES = new Set(['dashboard','audit','risk','topology','threats','settings']);
 
 function parseHash() {
   const raw = (window.location.hash || '').replace(/^#\/?/, '');
@@ -238,6 +239,7 @@ export default function App() {
   const crumbs = ({
     dashboard: ['Overview'],
     audit:     ['Policy', 'Audit'],
+    risk:      ['Risk Posture'],
     topology:  ['Topology'],
     threats:   ['Threat Intelligence'],
     settings:  ['Settings'],
@@ -267,6 +269,7 @@ export default function App() {
       <main className="shell-main">
         {page === 'dashboard' && <Dashboard            user={user} openInspector={openInspector} goTo={goTo} timeRange={timeRange} onTimeRange={setTimeRange} refreshData={refreshData} />}
         {page === 'audit'     && <PolicyAudit          user={user} openInspector={openInspector} goTo={goTo} intent={intent} selectedRuleId={inspector?.kind === 'rule' ? inspector.data.id : null} refreshData={refreshData} />}
+        {page === 'risk'      && <RiskPosture          goTo={goTo} />}
         {page === 'topology'  && <Topology             user={user} openInspector={openInspector} goTo={goTo} intent={intent} />}
         {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} refreshData={refreshData} />}
         {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshData} />}

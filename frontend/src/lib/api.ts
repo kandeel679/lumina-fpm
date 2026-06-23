@@ -65,6 +65,7 @@ export interface Vendor {
 export interface Device {
   device_id: number;
   vendor_id: number;
+  vendor_type: string;
   hostname: string;
   firmware_version: string | null;
   management_ip: string;
@@ -147,7 +148,7 @@ export interface AnomalyFilters {
   page_size?: number;
 }
 
-function qs(params: Record<string, string | number | undefined>): string {
+function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
@@ -157,7 +158,7 @@ function qs(params: Record<string, string | number | undefined>): string {
 }
 
 export const anomalies = {
-  list: (f: AnomalyFilters = {}) => get<Paged<Anomaly>>(`/anomalies${qs(f)}`),
+  list: (f: AnomalyFilters = {}) => get<Paged<Anomaly>>(`/anomalies${qs(f as Record<string, unknown>)}`),
   get: (id: number) => get<Anomaly>(`/anomalies/${id}`),
   runs: (limit = 20) => get<{ items: AnomalyRun[] }>(`/anomalies/runs${qs({ limit })}`),
   run: (device_id?: number) =>

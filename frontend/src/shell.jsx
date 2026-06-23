@@ -37,6 +37,7 @@ function Rail({ current, onNav, criticalCount }) {
   const items = [
     { id: 'dashboard', icon: I.Dashboard, label: 'Overview' },
     { id: 'audit',     icon: I.Audit,     label: 'Policy Audit',         badge: criticalCount },
+    { id: 'risk',      icon: I.Activity,  label: 'Risk Posture' },
     { id: 'topology',  icon: I.Network,   label: 'Topology' },
     { id: 'threats',   icon: I.Threat,    label: 'Threat Intelligence' },
     { id: 'settings',  icon: I.Settings,  label: 'Settings' },
