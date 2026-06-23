@@ -41,7 +41,10 @@ def _actual_findings(db: Session, run_id: int) -> Dict[str, Dict[str, dict]]:
             models.PolicyRule.rule_name,
         )
         .join(models.PolicyRule, models.RuleAnomaly.rule_id == models.PolicyRule.rule_id)
-        .filter(models.RuleAnomaly.analysis_run_id == run_id)
+        # the config_only benchmark scores config_only findings only; cti/conditional/
+        # simulated findings (e.g. threat_exposure) are evaluated separately.
+        .filter(models.RuleAnomaly.analysis_run_id == run_id,
+                models.RuleAnomaly.detection_mode == "config_only")
         .all()
     )
     actual: Dict[str, Dict[str, dict]] = {}

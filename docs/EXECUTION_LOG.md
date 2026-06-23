@@ -387,9 +387,16 @@ tests/verification · remaining.**
   verdict severity; V9 §10).
 - **Tests:** `tests/test_cti.py` (public/private classification, data-minimization, offline verdict,
   provider registry, threat_exposure→cti risk). Full suite (7 files) green.
-- **LIVE:** CTI enriched `MALICIOUS_IP 185.220.101.1` as **malicious** (`lab_offline`, tor_exit, high,
-  conf 0.85); `internal_indicators_sent=false` — the RFC1918 lab objects were correctly **withheld**.
-  `threat_exposure` correlates malicious indicators to ALLOW rules that reference them (unit-tested; the
-  full live firing needs a rule referencing the bad IP — added via a Palo Alto `PA_ALLOW_MALICIOUS` rule).
+- **LIVE (full path):** CTI enriched `MALICIOUS_IP 185.220.101.1` as **malicious** (`lab_offline`,
+  tor_exit, high, conf 0.85); `internal_indicators_sent=false` — RFC1918 lab objects **withheld**. Added a
+  FortiGate rule `FGT_ALLOW_MALICIOUS` (allow LAN→MALICIOUS_IP) → CTI raised a `threat_exposure` finding
+  (`detection_mode=cti`, high, with provider evidence), and the risk recalc lifted that rule from medium
+  to **76 high** (factors `cti 28` + `anomaly 28` + `security_posture 20`).
+- **Benchmark separation:** the config_only benchmark now filters to `detection_mode='config_only'`, so
+  the cti-mode `threat_exposure` is **not** scored against config_only ground truth. After adding the
+  rule's real config findings to the ground truth (incl. `redundancy`, covered by `FGT_ANY_ANY`), the
+  scorecard holds at **44 cases → precision 1.0, recall 1.0, F1 1.0, severity-match 1.0, FP 0, FN 0**.
+- **Note:** the same demo was attempted on Palo Alto first, but PA's mgmt-plane config-lock contention
+  (from slow/interrupted commits) blocked the write; the FortiGate REST path (instant, no commit) was used.
 - **Scope:** API-based CTI only (dark-web is future). CTI is **not an anomaly by default** — it
   contributes risk + a labeled `threat_exposure` finding, never presented as a `config_only` anomaly.

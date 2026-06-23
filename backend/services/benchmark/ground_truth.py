@@ -43,6 +43,10 @@ INTRA = {
                         "missing_description", "conflict"],
         "FGT_WIDE_PORTS": ["wide_port_range", "redundancy"],
         "FGT_DB_ACCESS_XDEV": ["redundancy"],
+        # CTI demo rule: permits LAN -> MALICIOUS_IP (known-bad indicator). config_only
+        # findings only here (threat_exposure is a separate cti-mode finding).
+        # also redundant: covered by the earlier any->any allow (FGT_ANY_ANY)
+        "FGT_ALLOW_MALICIOUS": ["unprotected_allow", "missing_description", "redundancy"],
         # not deployed on the eval FGT (10-policy cap) — kept for documentation:
         "FGT_ADMIN_DB_NOLOG": ["missing_logging"],
         "FGT_DISABLED_RISKY": ["disabled_rule_review"],
