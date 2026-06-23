@@ -582,3 +582,12 @@ real CTI threat vectors), and the lab login is retained per scope. A pre-existin
 - **Known synthetic-but-honest remainders (need backend telemetry, out of scope):** the dashboard "risk
   trend" sparkline and firmware timeline have no time-series source yet; the lab login users are the
   intentional mock gate (per scope). None fabricate firewall facts.
+
+### E-029 — Bug fixes from UX review (dropdowns + topology labels)
+- **Topbar dropdowns dead (tenant / profile / notifications / time-range):** `menus.jsx` exported the menu
+  components but never assigned them to `window.*`, while `shell.jsx`'s Topbar renders them via
+  `window.TenantMenu` etc. → all four silently rendered nothing. Registered them on `window` (matching the
+  codebase's `window.Icons`/`window.toast` pattern). All four now open — verified.
+- **Topology band labels overlapping:** each vendor band drew two labels (`"<vendor> · N firewalls"` at the
+  left + a `"firewall · zone · asset"` legend at the right) that collided in a single-firewall lane.
+  Removed the redundant right legend. Labels now read cleanly — verified.

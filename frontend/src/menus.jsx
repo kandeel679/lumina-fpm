@@ -85,6 +85,11 @@ function ToastHost() {
 }
 export { ToastHost, UserMenu, NotifMenu, TenantMenu, TimeRangeMenu };
 
+// The Topbar (shell.jsx) renders these via window.* (matching the codebase's
+// window.Icons / window.toast pattern). Register them or the dropdowns silently
+// render nothing.
+Object.assign(window, { UserMenu, NotifMenu, TenantMenu, TimeRangeMenu });
+
 /* ── Outside-click hook ─────────────────────────────────────────── */
 function useOutsideClick(ref, onClose, active) {
   useEffectM(() => {

@@ -224,13 +224,6 @@ function SectionBand({ lanePositions, firewalls }) {
           <text x={g.start - 4} y={bandY} style={{ ...lblStyle, fill: g.color, opacity: 0.85 }}>
             {g.label} · {g.count} firewall{g.count === 1 ? '' : 's'}
           </text>
-          <text
-            x={g.end + 4} y={bandY}
-            textAnchor="end"
-            style={{ fontFamily:'var(--f-mono)', fontSize: 10, fill:'var(--fg-muted)' }}
-          >
-            firewall · zone · asset
-          </text>
         </g>
       ))}
     </g>
