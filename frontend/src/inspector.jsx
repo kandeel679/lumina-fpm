@@ -1,6 +1,7 @@
 import React from "react";
 import { Icons } from "./icons";
 import { useLFPM } from "./context/LFPMContext";
+import { updateAnomalyStatus } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * Inspector — right-side detail pane for rule / firewall / cve / host
  * Triggered from any table row or from the command palette
@@ -23,22 +24,98 @@ function KV({ k, v, mono = false }) {
   );
 }
 
+/* ── Anomaly finding (with analyst lifecycle) ───────────────────── */
+const DETECTION_LABEL = {
+  config_only: 'config', conditional: 'conditional', simulated: 'simulated',
+  benchmark_simulated: 'simulated', cti: 'threat-intel', future_enhanced: 'future',
+};
+
+function SeverityChip({ sev }) {
+  const s = (sev || 'low').toLowerCase();
+  const cls = ['critical', 'high', 'medium', 'low'].includes(s) ? s : 'low';
+  return <span className={`chip ${cls}`}>{s}</span>;
+}
+
+function AnomalyCard({ anomaly }) {
+  const [busy, setBusy] = React.useState(false);
+  const [status, setStatus] = React.useState(anomaly.status || 'open');
+  const mode = DETECTION_LABEL[anomaly.detection_mode] || anomaly.detection_mode || 'config';
+  const resolved = status !== 'open';
+
+  const act = async (next, needReason) => {
+    let reason = null;
+    if (needReason) {
+      reason = window.prompt(`Reason to mark this finding "${next.replace(/_/g, ' ')}":`);
+      if (reason == null || !reason.trim()) return; // cancelled
+    }
+    setBusy(true);
+    try {
+      await updateAnomalyStatus(anomaly.anomaly_id, next, reason);
+      setStatus(next);
+      window.toast(`Finding ${next.replace(/_/g, ' ')}`, {
+        kind: 'ok', sub: `${(anomaly.anomaly_type || '').replace(/_/g, ' ')} · #${anomaly.anomaly_id}`,
+      });
+    } catch (e) {
+      window.toast('Update failed', { kind: 'crit', sub: String(e.message || e) });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{
+      background: 'var(--bg-2)', border: '1px solid var(--bd-1)', borderRadius: 5,
+      padding: '9px 11px', opacity: resolved ? 0.65 : 1,
+    }}>
+      <div className="row" style={{ justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
+        <span className="mono strong" style={{ fontSize: 12, color: 'var(--fg-0)' }}>
+          {(anomaly.anomaly_type || '').replace(/_/g, ' ')}
+        </span>
+        <span className="row gap-2" style={{ alignItems: 'center' }}>
+          <SeverityChip sev={anomaly.severity_level} />
+          <span className="chip" style={{ fontSize: 10 }}>{mode}</span>
+        </span>
+      </div>
+      {anomaly.description && (
+        <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.5 }}>{anomaly.description}</p>
+      )}
+      <div className="row gap-3" style={{ marginTop: 6, fontSize: 10.5, color: 'var(--fg-3)', flexWrap: 'wrap' }}>
+        <span>#{anomaly.anomaly_id}</span>
+        {anomaly.confidence != null && <span>confidence {Math.round(anomaly.confidence * 100)}%</span>}
+        {resolved && <span className="stat-text safe"><span className="dot" />{status.replace(/_/g, ' ')}</span>}
+      </div>
+      {anomaly.recommendation && (
+        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--fg-3)', lineHeight: 1.5 }}>
+          <span style={{ color: 'var(--accent)' }}>→ </span>{anomaly.recommendation}
+        </p>
+      )}
+      {anomaly.evidence && Object.keys(anomaly.evidence).length > 0 && (
+        <details style={{ marginTop: 6 }}>
+          <summary style={{ fontSize: 10.5, color: 'var(--fg-3)', cursor: 'pointer' }}>evidence</summary>
+          <pre style={{
+            margin: '4px 0 0', fontSize: 10.5, color: 'var(--fg-2)', background: 'var(--bg-1)',
+            padding: '6px 8px', borderRadius: 4, overflow: 'auto', maxHeight: 160,
+          }}>{JSON.stringify(anomaly.evidence, null, 2)}</pre>
+        </details>
+      )}
+      {!resolved && (
+        <div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+          <button className="btn" disabled={busy} onClick={() => act('resolved', false)}>resolve</button>
+          <button className="btn ghost" disabled={busy} onClick={() => act('false_positive', true)}>false positive</button>
+          <button className="btn ghost" disabled={busy} onClick={() => act('accepted_risk', true)}>accept risk</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Rule detail ────────────────────────────────────────────────── */
 function RuleDetail({ rule }) {
   const { data: LFPM } = useLFPM();
   const I = window.Icons;
   const fw = LFPM.firewalls.find(f => f.id === rule.firewallId);
-  const shadowedBy = rule.shadowedBy ? LFPM.policies.find(p => p.id === rule.shadowedBy) : null;
-  const sev = LFPM.fmt.riskLabel(rule.riskScore);
-  const insight = {
-    shadowed:    `This rule is fully shadowed by ${shadowedBy?.id || 'an earlier rule'} and never evaluated. Disabling it has no operational impact and removes ${rule.riskScore} risk points from the audit baseline.`,
-    redundant:   `This rule duplicates the effect of ${shadowedBy?.id || 'another rule'}. Both match the same traffic class. Consolidate into a single, documented rule to reduce policy debt.`,
-    permissive:  `Rule uses an overly broad scope (any/any). Restrict to the minimum required IP ranges and service ports; this eliminates ~${Math.round(rule.riskScore * 0.6)} risk points.`,
-    clean:       `No anomalies detected. Rule conforms to least-privilege and is not shadowed by any higher-priority rule.`,
-  }[rule.status];
-
-  /* Local state so toggle is immediately visible without a full refresh. */
-  const [enabled, setEnabled] = React.useState(Boolean(rule.enabled));
+  const relatedRule = rule.shadowedBy ? LFPM.policies.find(p => p.id === rule.shadowedBy) : null;
+  const tier = rule.riskTier || LFPM.fmt.riskLabel(rule.riskScore);
+  const factors = rule.riskFactors || {};
+  const anomalies = rule.anomalies || [];
 
   return (
     <>
@@ -51,7 +128,7 @@ function RuleDetail({ rule }) {
           <KV k="vendor"    v={fw?.vendor || '—'} />
           <KV k="priority"  v={`#${rule.priority}`}  mono />
           <KV k="action"    v={<span className={`verb ${rule.action}`}>{rule.action}</span>} />
-          <KV k="enabled"   v={enabled
+          <KV k="enabled"   v={rule.enabled
             ? <span className="stat-text safe"><span className="dot" /> enabled</span>
             : <span className="stat-text dim"><span className="dot" /> disabled</span>} />
         </div>
@@ -85,51 +162,60 @@ function RuleDetail({ rule }) {
               }} />
             </div>
             <div className="row" style={{ justifyContent: 'space-between', fontSize: 10.5, marginTop: 4, color: 'var(--fg-3)' }}>
-              <span>0</span><span>{sev}</span><span>100</span>
+              <span>0</span><span>{tier}</span><span>100</span>
             </div>
           </div>
-          <span className={`chip ${rule.status === 'permissive' ? 'high' : rule.status === 'clean' ? 'safe' : rule.status === 'shadowed' ? 'critical' : 'medium'}`}>
-            {rule.status}
-          </span>
+          <span className={`chip ${rule.status === 'clean' ? 'safe' : rule.status}`}>{tier}</span>
         </div>
+        {Object.keys(factors).length > 0 && (
+          <div className="col" style={{ gap: 3, marginTop: 4 }}>
+            {Object.entries(factors)
+              .filter(([, v]) => typeof v === 'number')
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, v]) => (
+                <div key={k} className="row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
+                  <span className="muted">{k.replace(/_/g, ' ')}</span>
+                  <span className="mono" style={{ color: 'var(--fg-1)' }}>+{v}</span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
-      {shadowedBy && (
+      {relatedRule && (
         <div className="inspector-section">
-          <h4>{rule.status === 'shadowed' ? 'shadowed by' : 'redundant with'}</h4>
+          <h4>related rule</h4>
           <div style={{
             background: 'var(--bg-2)', border: '1px solid var(--bd-1)',
             padding: '8px 10px', borderRadius: 4, fontSize: 12,
           }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <span className="mono" style={{ color: 'var(--fg-0)' }}>{shadowedBy.id}</span>
-              <span className="muted mono">priority #{shadowedBy.priority}</span>
+              <span className="mono" style={{ color: 'var(--fg-0)' }}>{relatedRule.id}</span>
+              <span className="muted mono">priority #{relatedRule.priority}</span>
             </div>
-            <div style={{ color: 'var(--fg-2)', marginTop: 4 }}>{shadowedBy.name}</div>
+            <div style={{ color: 'var(--fg-2)', marginTop: 4 }}>{relatedRule.name}</div>
             <div className="row" style={{ marginTop: 6, fontSize: 11 }}>
               <span className="muted">match</span>
-              <span className="mono">{shadowedBy.srcZone} → {shadowedBy.dstZone}</span>
-              <span className="mono muted">{shadowedBy.service}</span>
+              <span className="mono">{relatedRule.srcZone} → {relatedRule.dstZone}</span>
+              <span className="mono muted">{relatedRule.service}</span>
             </div>
           </div>
         </div>
       )}
 
       <div className="inspector-section">
-        <h4><I.Code size={11} /> analyzer notes</h4>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.55 }}>{insight}</p>
-        <div className="row" style={{ marginTop: 10, gap: 6, flexWrap: 'wrap' }}>
-          <button
-            className="btn primary"
-            onClick={() => {
-              const next = !enabled;
-              rule.enabled = next; /* optimistic mutation into the shared data object */
-              setEnabled(next);
-              window.toast(`Rule ${rule.id} ${next ? 'enabled' : 'disabled'}`, {
-                kind: 'ok', sub: 'change queued · sync to apply',
-              });
-            }}
-          >{enabled ? 'disable rule' : 'enable rule'}</button>
+        <h4><I.AlertTri size={11} /> findings ({anomalies.length})</h4>
+        {anomalies.length === 0
+          ? <div className="muted" style={{ fontSize: 12 }}>
+              No anomalies — rule conforms to least-privilege and is not shadowed.
+            </div>
+          : <div className="col" style={{ gap: 8 }}>
+              {anomalies.map(a => <AnomalyCard key={a.anomaly_id} anomaly={a} />)}
+            </div>}
+      </div>
+
+      <div className="inspector-section">
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button
             className="btn"
             onClick={() => navTo('audit', { firewall: rule.firewallId })}
@@ -387,7 +473,7 @@ function ZoneDetail({ zone }) {
               }}>
                 <div className="row" style={{ justifyContent:'space-between', gap: 6 }}>
                   <span className="mono" style={{ color:'var(--fg-0)' }}>{p.id}</span>
-                  <span className={`stat-text ${p.status === 'permissive' ? 'high' : p.status === 'shadowed' ? 'critical' : p.status === 'redundant' ? 'medium' : 'safe'}`}>
+                  <span className={`stat-text ${p.status === 'clean' ? 'safe' : p.status}`}>
                     <span className="dot" />{p.status}
                   </span>
                 </div>
@@ -523,7 +609,7 @@ function PathDetail({ edge, ext, fw }) {
     p.firewallId === fw.id &&
     (p.srcZone.toUpperCase() === 'UNTRUST' || p.srcZone.toUpperCase() === 'WAN' || p.srcIp === 'any')
   );
-  const exposedRules = relevantRules.filter(p => p.action === 'allow' && p.status === 'permissive');
+  const exposedRules = relevantRules.filter(p => p.action === 'allow' && p.status !== 'clean');
 
   const recommendation = severity === 'critical'
     ? `Immediate review required. ${exposedRules.length} permissive ingress rule${exposedRules.length === 1 ? '' : 's'} could expose ${fw.display} to this source.`

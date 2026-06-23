@@ -103,19 +103,44 @@ export async function fetchLFPMData() {
       };
     });
 
-    // 3. Fetch detailed mapped objects and anomalies per rule in parallel
+    // 3a. Current findings = the latest ALL-scope completed analysis run. The
+    // cross-device detectors only run in all-scope, and scoping to one run avoids
+    // summing duplicate findings across every historical run. Use the rich
+    // /anomalies endpoint (detection_mode, evidence, recommendation, status) — not
+    // the slim per-rule route — and group by rule_id.
+    let latestRunId = null;
+    try {
+      const runs = await fetch('/api/v1/anomalies/runs?limit=20').then(res => res.json());
+      const allScope = (runs.items || []).filter(r => r.scope_type === 'all' && r.status === 'completed');
+      latestRunId = (allScope[0] || (runs.items || [])[0] || {}).run_id ?? null;
+    } catch (err) {
+      console.error('Failed to load anomaly runs:', err);
+    }
+
+    const anomsByRule = new Map();
+    if (latestRunId != null) {
+      try {
+        const res = await fetch(`/api/v1/anomalies?analysis_run_id=${latestRunId}&page_size=200`).then(r => r.json());
+        for (const a of (res.items || [])) {
+          if (!anomsByRule.has(a.rule_id)) anomsByRule.set(a.rule_id, []);
+          anomsByRule.get(a.rule_id).push(a);
+        }
+      } catch (err) {
+        console.error('Failed to load anomalies for run', latestRunId, err);
+      }
+    }
+
+    // 3b. Per-rule object mappings (src/dst resolution); anomalies come from the
+    // grouped map above so each rule carries its real, current findings.
     const ruleDetails = await Promise.all(
       dbRules.map(async r => {
+        let objs = [];
         try {
-          const [objs, anoms] = await Promise.all([
-            fetch(`/api/v1/rules/${r.rule_id}/objects`).then(res => res.json()),
-            fetch(`/api/v1/rules/${r.rule_id}/anomalies`).then(res => res.json()),
-          ]);
-          return { ruleId: r.rule_id, objs, anoms };
+          objs = await fetch(`/api/v1/rules/${r.rule_id}/objects`).then(res => res.json());
         } catch (err) {
-          console.error(`Failed to fetch details for rule ${r.rule_id}:`, err);
-          return { ruleId: r.rule_id, objs: [], anoms: [] };
+          console.error(`Failed to fetch objects for rule ${r.rule_id}:`, err);
         }
+        return { ruleId: r.rule_id, objs, anoms: anomsByRule.get(r.rule_id) || [] };
       })
     );
 
@@ -140,21 +165,22 @@ export async function fetchLFPMData() {
       const srcIp = resolveValues(srcObjects);
       const dstIp = resolveValues(dstObjects);
 
-      // Determine policy anomaly status
-      let status = 'clean';
-      let shadowedBy = '';
-      if (details.anoms.length > 0) {
-        const mainAnom = details.anoms[0];
-        if (mainAnom.anomaly_type === 'shadowed_rule') {
-          status = 'shadowed';
-          // Find any rule that could shadow it, otherwise fallback
-          shadowedBy = 'POL-002';
-        } else if (mainAnom.anomaly_type === 'overly_permissive') {
-          status = 'permissive';
-        } else if (mainAnom.anomaly_type === 'stale_rule') {
-          status = 'redundant';
-        }
+      // Real status from the engine's current findings (severity-based health).
+      // `status` doubles as a severity CSS class (critical|high|medium|low);
+      // 'clean' maps to 'safe' at render time. We no longer invent a status from
+      // a single anomaly type — the worst open finding's severity drives it.
+      const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+      const openAnoms = (details.anoms || []).filter(a => (a.status || 'open') === 'open');
+      let severity = null, worst = -1;
+      for (const a of openAnoms) {
+        const rank = SEV_RANK[a.severity_level] ?? 0;
+        if (rank > worst) { worst = rank; severity = a.severity_level; }
       }
+      const status = openAnoms.length ? (severity || 'low') : 'clean';
+      const anomalyTypes = [...new Set(openAnoms.map(a => a.anomaly_type))];
+      // Real pairing for shadowing/redundancy/cross-device findings.
+      const pairAnom = openAnoms.find(a => a.related_rule_id != null);
+      const shadowedBy = pairAnom ? `POL-${String(pairAnom.related_rule_id).padStart(3, '0')}` : '';
 
       // Real deterministic risk (V8) from /api/v1/risk; the low baseline only
       // applies if a rule somehow has no assessment row in the latest run.
@@ -174,6 +200,9 @@ export async function fetchLFPMData() {
         service: r.security_profile_group || 'any',
         action: r.action,
         status,
+        severity,
+        anomalyTypes,
+        anomalyCount: openAnoms.length,
         shadowedBy,
         riskScore,
         riskTier,
@@ -232,25 +261,36 @@ export async function fetchLFPMData() {
       };
     });
 
-    // 6. Map Conflicts (from active shadowing anomalies)
+    // 6. Map Conflicts — relational anomalies that pair two rules (shadowing,
+    // redundancy, duplicate, conflict, cross-device). Uses the real related_rule_id
+    // so cross-device pairs span two firewalls (genuine cross-vendor conflicts).
+    const RELATIONAL = new Set([
+      'shadowing', 'shadowed_rule', 'redundancy', 'duplicate_rules', 'conflict',
+      'cross_device_inconsistency', 'cross_device_security_posture_inconsistency',
+    ]);
+    const CONFLICT_LABEL = {
+      shadowing: 'shadowing', shadowed_rule: 'shadowing', redundancy: 'redundant',
+      duplicate_rules: 'duplicate', conflict: 'conflict',
+      cross_device_inconsistency: 'cross-device',
+      cross_device_security_posture_inconsistency: 'cross-device',
+    };
     const conflicts = [];
     ruleDetails.forEach(details => {
-      details.anoms.forEach(a => {
-        if (a.anomaly_type === 'shadowed_rule' || (a.anomaly_type === 'overly_permissive' && a.severity_level === 'critical')) {
-          const r = policies.find(p => p.db_id === details.ruleId);
-          if (r) {
-            conflicts.push({
-              id: `CONF-${String(a.anomaly_id).padStart(3, '0')}`,
-              type: a.anomaly_type === 'shadowed_rule' ? 'asymmetric' : 'transitive',
-              ruleA: r.id,
-              ruleB: a.anomaly_type === 'shadowed_rule' ? 'POL-002' : 'POL-003',
-              firewallA: r.firewallId,
-              firewallB: r.firewallId,
-              severity: a.severity_level === 'critical' ? 'critical' : 'high',
-              description: a.description || 'Rule conflicts with configured baseline policies.',
-            });
-          }
-        }
+      (details.anoms || []).forEach(a => {
+        if (!RELATIONAL.has(a.anomaly_type)) return;
+        const rA = policies.find(p => p.db_id === a.rule_id);
+        const rB = a.related_rule_id != null ? policies.find(p => p.db_id === a.related_rule_id) : null;
+        if (!rA) return;
+        conflicts.push({
+          id: `CONF-${String(a.anomaly_id).padStart(3, '0')}`,
+          type: CONFLICT_LABEL[a.anomaly_type] || a.anomaly_type.replace(/_/g, ' '),
+          ruleA: rA.id,
+          ruleB: rB ? rB.id : '—',
+          firewallA: rA.firewallId,
+          firewallB: rB ? rB.firewallId : rA.firewallId,
+          severity: a.severity_level,
+          description: a.description || 'Relational policy anomaly.',
+        });
       });
     });
 
@@ -432,6 +472,19 @@ export async function triggerRulesSync(deviceId) {
 
 export async function triggerDeviceAnalysis(deviceId) {
   const res = await fetch(`/api/v1/rules/device/${deviceId}/analyze`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// Analyst lifecycle on a finding (V6 §12): resolved | suppressed | accepted_risk
+// | false_positive. Suppressing/accepting/dismissing requires a reason (kept in
+// history — never deletes). Read-only w.r.t. firewalls; updates Lumina's DB only.
+export async function updateAnomalyStatus(anomalyId, status, reason) {
+  const body = { status };
+  if (reason) body.reason = reason;
+  const res = await fetch(`/api/v1/anomalies/${anomalyId}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

@@ -469,3 +469,28 @@ tests/verification · remaining.**
   Firewall Fleet table PA-LAB 100 / FGT-LAB 96. No new console/network errors.
 - **Known next (P10.2):** the policy *status* mapping in `api.js` still recognizes only 3 legacy anomaly
   types, so "% rules flagged" reads 0 despite 440 findings — fixed comprehensively in the Audit/Anomalies wiring.
+
+### E-022 — Phase 10 (P10.2): Audit + Anomalies wired to real findings
+- **Run-scoped, rich findings:** `api.js` now resolves the latest **all-scope** completed analysis run and
+  pulls the rich `/api/v1/anomalies?analysis_run_id=<run>` payload (detection_mode, evidence,
+  recommendation, confidence, status) grouped by rule — replacing 20 slim per-rule calls and the
+  cross-run inflation (440 historical → 54 current findings).
+- **Severity-based status (de-mock):** policy `status` is derived from the worst open finding
+  (critical|high|medium|low|clean) instead of inventing one from a single legacy type. Added
+  `severity`, `anomalyTypes`, `anomalyCount`. Conflicts now use the real relational types
+  (shadowing/redundancy/duplicate/conflict/cross-device) and the real `related_rule_id` pairing.
+- **Audit page:** saved views + severity filters + counts + status column all driven by real data
+  ("20 rules · 17 flagged · 54 findings"; severity critical 5 / high 8 / medium 4 / clean 3).
+- **Dashboard:** OPEN ISSUES + "anomalies by type" now show the real taxonomy (unprotected_allow 10,
+  redundancy 9, missing_description 8, conflict 6, …) colored by worst severity; "% rules flagged"
+  0% → 85%.
+- **Inspector — analyst lifecycle (V6 §12):** each finding renders type, severity badge,
+  detection-mode chip, confidence, description, recommendation, and an evidence expander, with
+  **resolve / false-positive / accept-risk** actions that PATCH `/api/v1/anomalies/{id}` (reason
+  required for suppress/accept/dismiss). Also shows the real V8 risk **factor breakdown** per rule.
+  Removed the old "enable/disable rule" button — that implied a firewall write, which violates the
+  read-only mandate.
+- **Backend reuse:** the lifecycle uses the existing PATCH route; no firewall is ever written.
+- **VERIFIED (browser, live):** opened FGT_ANY_ANY (POL-009) — risk 98 with factors
+  anomaly+43/exposure+20/posture+20/logging+15, 5 findings incl. missing_logging + unprotected_allow;
+  a resolve action returned `200 OK` and flipped the finding's status (reverted afterward). No console errors.

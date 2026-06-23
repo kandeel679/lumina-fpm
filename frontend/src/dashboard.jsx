@@ -126,10 +126,10 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
     return {
       rules:       p.length,
       issues:      p.filter(x => x.status !== 'clean').length,
-      shadowed:    p.filter(x => x.status === 'shadowed').length,
-      redundant:   p.filter(x => x.status === 'redundant').length,
-      permissive:  p.filter(x => x.status === 'permissive').length,
+      critical:    p.filter(x => x.status === 'critical').length,
+      high:        p.filter(x => x.status === 'high').length,
       clean:       p.filter(x => x.status === 'clean').length,
+      findings:    p.reduce((a, x) => a + (x.anomalyCount || 0), 0),
       conflicts:   LFPM.conflicts.length,
       critCves:    LFPM.threats.filter(t => t.severity === 'critical').length,
       kev:         LFPM.threats.filter(t => t.kev).length,
@@ -185,13 +185,23 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       return Math.round(Math.max(35, Math.min(95, 35 + (hit / peakHit) * 60)));
     });
 
-    const anomalyTypes = [
-      { id:'permissive', label:'permissive', count: stats.permissive, color:'var(--sev-high)' },
-      { id:'shadowed',   label:'shadowed',   count: stats.shadowed,   color:'var(--sev-critical)' },
-      { id:'conflicts',  label:'conflicts',  count: stats.conflicts,  color:'var(--sev-low)',
-        intent:{ page:'audit', params:{ filter:'anomalies' } } },
-      { id:'redundant',  label:'redundant',  count: stats.redundant,  color:'var(--sev-medium)' },
-    ].sort((a, b) => b.count - a.count);
+    // Real anomaly-type distribution from the engine's current findings, colored
+    // by each type's worst severity. Replaces the old fixed 4-bucket heuristic.
+    const SEVCOLOR = { critical:'var(--sev-critical)', high:'var(--sev-high)', medium:'var(--sev-medium)', low:'var(--sev-low)' };
+    const SEVRANK  = { critical:4, high:3, medium:2, low:1, info:0 };
+    const typeAgg = {};
+    LFPM.policies.forEach(p => (p.anomalies || []).forEach(a => {
+      if ((a.status || 'open') !== 'open') return;
+      const t = a.anomaly_type || 'unknown';
+      if (!typeAgg[t]) typeAgg[t] = { count: 0, rank: -1, sev: 'low' };
+      typeAgg[t].count += 1;
+      const rk = SEVRANK[a.severity_level] ?? 0;
+      if (rk > typeAgg[t].rank) { typeAgg[t].rank = rk; typeAgg[t].sev = a.severity_level; }
+    }));
+    const anomalyTypes = Object.entries(typeAgg)
+      .map(([id, v]) => ({ id, label: id.replace(/_/g, ' '), count: v.count, color: SEVCOLOR[v.sev] || 'var(--sev-low)' }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
 
     /* Build vendor tiles from the vendors ACTUALLY present in the fleet
      * (no longer hardcoded to PA/FT — Cisco now shows), and guard the average
@@ -259,7 +269,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         <HeroKpi
           label="open issues"
           value={stats.issues}
-          sub={`${stats.shadowed} shadowed · ${stats.permissive} permissive`}
+          sub={`${stats.critical} critical · ${stats.high} high · ${stats.findings} findings`}
           color="var(--sev-critical)"
           kind="crit"
           onClick={() => navigate('audit', { filter:'anomalies' })}
@@ -347,10 +357,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                     label: t.label,
                     value: t.count,
                     color: t.color,
-                    onClick: () => navigate('audit',
-                      t.id === 'conflicts'
-                        ? { filter:'anomalies' }
-                        : { filter: t.id }),
+                    onClick: () => navigate('audit', { filter: 'anomalies' }),
                   }))}
                   max={Math.max(...charts.anomalyTypes.map(t => t.count), 1)}
                 />
@@ -525,10 +532,9 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                         </td>
                         <td className="mono dim">{fw?.display || '—'}</td>
                         <td>
-                          <span className={`stat-text ${
-                            r.status === 'permissive' ? 'high' :
-                            r.status === 'shadowed'   ? 'critical' : 'medium'}`}>
-                            <span className="dot" />{r.status}
+                          <span className={`stat-text ${r.status === 'clean' ? 'safe' : r.status}`}
+                                title={(r.anomalyTypes || []).join(', ')}>
+                            <span className="dot" />{r.status === 'clean' ? 'clean' : `${r.status} · ${r.anomalyCount}`}
                           </span>
                         </td>
                         <td className="num" style={{ color: LFPM.fmt.riskColor(r.riskScore), fontWeight: 600 }}>

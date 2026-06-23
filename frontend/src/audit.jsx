@@ -10,10 +10,10 @@ const { useState: useStateA, useMemo: useMemoA } = React;
 
 const VIEWS = [
   { id: 'all',          label: 'all rules',                       count: (LFPM) => LFPM.policies.length },
-  { id: 'anomalies',    label: 'anomalies',           highlight: true, count: (LFPM) => LFPM.policies.filter(p => p.status !== 'clean').length },
-  { id: 'critical',     label: 'risk ≥ 80',                       count: (LFPM) => LFPM.policies.filter(p => p.riskScore >= 80).length },
-  { id: 'permissive',   label: 'overly permissive',               count: (LFPM) => LFPM.policies.filter(p => p.status === 'permissive').length },
-  { id: 'shadowed',     label: 'shadowed',                        count: (LFPM) => LFPM.policies.filter(p => p.status === 'shadowed').length },
+  { id: 'anomalies',    label: 'flagged',             highlight: true, count: (LFPM) => LFPM.policies.filter(p => p.status !== 'clean').length },
+  { id: 'critical',     label: 'critical',                        count: (LFPM) => LFPM.policies.filter(p => p.status === 'critical').length },
+  { id: 'high',         label: 'high',                            count: (LFPM) => LFPM.policies.filter(p => p.status === 'high').length },
+  { id: 'highrisk',     label: 'risk ≥ 80',                       count: (LFPM) => LFPM.policies.filter(p => p.riskScore >= 80).length },
   { id: 'disabled',     label: 'disabled rules',                  count: (LFPM) => LFPM.policies.filter(p => !p.enabled).length },
 ];
 
@@ -69,9 +69,9 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
 
     /* saved view */
     if (view === 'anomalies')  data = data.filter(p => p.status !== 'clean');
-    if (view === 'critical')   data = data.filter(p => p.riskScore >= 80);
-    if (view === 'permissive') data = data.filter(p => p.status === 'permissive');
-    if (view === 'shadowed')   data = data.filter(p => p.status === 'shadowed');
+    if (view === 'critical')   data = data.filter(p => p.status === 'critical');
+    if (view === 'high')       data = data.filter(p => p.status === 'high');
+    if (view === 'highrisk')   data = data.filter(p => p.riskScore >= 80);
     if (view === 'disabled')   data = data.filter(p => !p.enabled);
 
     if (vendor.size > 0)   data = data.filter(p => vendor.has(LFPM.firewalls.find(f => f.id === p.firewallId)?.vendorId));
@@ -107,10 +107,12 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
   const counts = useMemoA(() => {
     const all = LFPM.policies;
     return {
-      shadowed:   all.filter(p => p.status === 'shadowed').length,
-      redundant:  all.filter(p => p.status === 'redundant').length,
-      permissive: all.filter(p => p.status === 'permissive').length,
+      critical:   all.filter(p => p.status === 'critical').length,
+      high:       all.filter(p => p.status === 'high').length,
+      medium:     all.filter(p => p.status === 'medium').length,
+      low:        all.filter(p => p.status === 'low').length,
       clean:      all.filter(p => p.status === 'clean').length,
+      flagged:    all.filter(p => p.status !== 'clean').length,
       allow:      all.filter(p => p.action === 'allow').length,
       deny:       all.filter(p => p.action === 'deny').length,
       pa:         all.filter(p => LFPM.firewalls.find(f => f.id === p.firewallId)?.vendorId === 'palo-alto').length,
@@ -147,7 +149,7 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
         <div>
           <h1 className="page-title">Policy Audit</h1>
           <p className="page-sub">
-            {filtered.length} of {LFPM.policies.length} rules · {counts.shadowed + counts.permissive + counts.redundant} anomalies · last analyzer pass 14:24 UTC
+            {filtered.length} of {LFPM.policies.length} rules · {counts.flagged} flagged · {LFPM.policies.reduce((a, p) => a + (p.anomalyCount || 0), 0)} findings
           </p>
         </div>
         <div className="row gap-2" style={{ marginLeft: 'auto' }}>
@@ -239,15 +241,16 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
             </div>
           </div>
 
-          <FilterGroup title="status">
+          <FilterGroup title="severity">
             {[
-              { v:'permissive', count: counts.permissive },
-              { v:'shadowed',   count: counts.shadowed },
-              { v:'redundant',  count: counts.redundant },
-              { v:'clean',      count: counts.clean },
+              { v:'critical', count: counts.critical },
+              { v:'high',     count: counts.high },
+              { v:'medium',   count: counts.medium },
+              { v:'low',      count: counts.low },
+              { v:'clean',    count: counts.clean },
             ].map(s => (
               <FilterCheck key={s.v} on={statuses.has(s.v)} onChange={() => toggle(statuses, s.v, setStat)} count={s.count}>
-                <span className={`stat-text ${s.v === 'permissive' ? 'high' : s.v === 'shadowed' ? 'critical' : s.v === 'redundant' ? 'medium' : 'safe'}`}>
+                <span className={`stat-text ${s.v === 'clean' ? 'safe' : s.v}`}>
                   <span className="dot" />
                   {s.v}
                 </span>
@@ -389,8 +392,10 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
                       <td className="mono dim" style={{ fontSize: 11 }}>{rule.service}</td>
                       <td><span className={`verb ${rule.action}`}>{rule.action}</span></td>
                       <td>
-                        <span className={`stat-text ${rule.status === 'permissive' ? 'high' : rule.status === 'shadowed' ? 'critical' : rule.status === 'redundant' ? 'medium' : 'safe'}`}>
-                          <span className="dot" />{rule.status}
+                        <span className={`stat-text ${rule.status === 'clean' ? 'safe' : rule.status}`}
+                              title={(rule.anomalyTypes || []).join(', ')}>
+                          <span className="dot" />
+                          {rule.status === 'clean' ? 'clean' : `${rule.status} · ${rule.anomalyCount}`}
                         </span>
                       </td>
                       <td className="num dim">{rule.priority}</td>
