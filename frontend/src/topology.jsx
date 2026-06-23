@@ -369,23 +369,18 @@ function Topology({ openInspector, intent, goTo }) {
     return out;
   }, [lanes, LFPM.threats, LFPM.policies]);
 
-  /* Build edges (one per external → fw, with severity from external threat level) */
+  /* Build edges (one per external → fw). Targets are the real devices the engine
+   * correlated the malicious indicator to (CTI threat_exposure), not a mock map. */
   const edges = useMemoT(() => {
-    const targetMap = {
-      'ext-internet':  ['fw-001','fw-002','fw-003','fw-004','fw-005'],
-      'ext-susp':      ['fw-001','fw-002'],
-      'ext-c2':        ['fw-004','fw-001'],
-      'ext-tor':       ['fw-001'],
-    };
     const out = [];
     externals.forEach(ext => {
-      (targetMap[ext.id] || []).forEach(fwId => {
+      (ext.targetFwIds || []).forEach(fwId => {
         out.push({
           id: `${ext.id}->${fwId}`,
           sourceId: ext.id,
           targetFwId: fwId,
           severity: ext.threat,
-          kind: ext.kind === 'internet' ? 'structure' : 'threat',
+          kind: 'threat',
         });
       });
     });
@@ -476,7 +471,7 @@ function Topology({ openInspector, intent, goTo }) {
         <div>
           <h1 className="page-title">Network Topology</h1>
           <p className="page-sub">
-            {LFPM.firewalls.length} firewalls · {LFPM.zones.length} zones · {LFPM.assets.length} monitored assets · 3 active threat vectors
+            {LFPM.firewalls.length} firewalls · {LFPM.zones.length} zones · {LFPM.assets.length} monitored assets · {LFPM.externalNodes.length} active threat vector{LFPM.externalNodes.length === 1 ? '' : 's'}
           </p>
         </div>
         <div className="row gap-2" style={{ marginLeft: 'auto' }}>

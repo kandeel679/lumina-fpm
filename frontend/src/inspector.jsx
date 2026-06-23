@@ -515,13 +515,8 @@ function ZoneDetail({ zone }) {
 function ExternalDetail({ node }) {
   const { data: LFPM } = useLFPM();
   const I = window.Icons;
-  const targetMap = {
-    'ext-internet':  ['fw-001','fw-002','fw-003','fw-004','fw-005'],
-    'ext-susp':      ['fw-001','fw-002'],
-    'ext-c2':        ['fw-004','fw-001'],
-    'ext-tor':       ['fw-001'],
-  };
-  const affected = (targetMap[node.id] || [])
+  // Real devices the engine correlated this malicious indicator to (CTI).
+  const affected = (node.targetFwIds || [])
     .map(id => LFPM.firewalls.find(f => f.id === id))
     .filter(Boolean);
   const isMalicious = node.threat === 'critical' || node.threat === 'high';

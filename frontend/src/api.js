@@ -345,13 +345,41 @@ export async function fetchLFPMData() {
         };
       });
 
-    // 8. Fetch real Threat Findings + scan stats (in parallel)
-    const [threatFindings, tiStats] = await Promise.all([
+    // 8. Fetch real Threat Findings + scan stats + CTI indicators (in parallel)
+    const [threatFindings, tiStats, ctiData] = await Promise.all([
       fetch('/api/v1/threat-intel/findings?page_size=100').then(res => res.json()).catch(() => ({ items: [] })),
       fetch('/api/v1/threat-intel/dashboard/stats').then(res => res.json()).catch(() => null),
+      fetch('/api/v1/cti').then(res => res.json()).catch(() => ({ indicators: [] })),
     ]);
 
     const deviceById = new Map(firewalls.map(fw => [fw.id, fw]));
+
+    // 8b. External threat vectors (Volume 9 CTI) — real malicious indicators that
+    // the engine correlated to a permitting rule. Affected devices come from the
+    // run's threat_exposure findings (the indicator value is in the evidence).
+    const devicesByIndicator = {};
+    anomsByRule.forEach(anoms => anoms.forEach(a => {
+      if (a.anomaly_type === 'threat_exposure' && a.evidence && a.evidence.indicator) {
+        (devicesByIndicator[a.evidence.indicator] ||= new Set()).add(String(a.device_id));
+      }
+    }));
+    const externalNodes = (ctiData.indicators || [])
+      .filter(ind => ind.malicious)
+      .map(ind => {
+        const obs = (ind.observations && ind.observations[0]) || {};
+        const devs = devicesByIndicator[ind.value]
+          || new Set(ind.source_device_id != null ? [String(ind.source_device_id)] : []);
+        return {
+          id: `cti-${ind.indicator_id}`,
+          name: ind.value,
+          ip: ind.value,
+          kind: obs.threat_type || 'threat',
+          threat: obs.severity || 'high',
+          description: obs.summary || `${obs.threat_type || 'malicious'} indicator · ${obs.provider || 'cti'}`,
+          provider: obs.provider || null,
+          targetFwIds: [...devs],
+        };
+      });
 
     /* Derive the affected vendor(s) for a finding from its matched devices,
      * falling back to product keywords in the title/description/tags. Keeps the
@@ -450,7 +478,7 @@ export async function fetchLFPMData() {
       zones,
       assets,
       firmwareTimeline: mockLFPM.firmwareTimeline || [],
-      externalNodes: mockLFPM.externalNodes || [],
+      externalNodes,
       activityFeed: liveFeed,
       hits24h: mockLFPM.hits24h || [],
       users: mockLFPM.users || [],

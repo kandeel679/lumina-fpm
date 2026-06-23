@@ -508,3 +508,17 @@ tests/verification · remaining.**
   factors (max rule risk +99, top rules avg +80.8/72.2, modifier +8, critical rule count +2); top rules
   PA_ANY_DB/FGT_ANY_DB 99, FGT_ANY_ANY/PA_ANY_ANY 98 with per-rule factors (anomaly/exposure/posture/
   logging/asset_sensitivity). No console errors.
+
+### E-024 — Phase 10 (P10.4): Topology verified + de-mocked against live data
+- **Verified live:** the Cytoscape policy/topology view renders real devices (FGT-LAB risk 96, PA-LAB risk
+  100 from V8), real firmware/IPs, and real zones derived from rule interfaces (PORT1-3 / TRUST-DMZ-DB).
+  No console errors.
+- **De-mock — external threat vectors:** the header's hardcoded "3 active threat vectors" and the dead mock
+  `targetMap` (`fw-001`…, which never matched real device ids) are gone. `externalNodes` now comes from the
+  real `/api/v1/cti` malicious indicators; each node's affected devices are the engine's `threat_exposure`
+  targets (indicator value in the finding evidence). Edges + `ExternalDetail` use the real `targetFwIds`.
+- **VERIFIED (browser, live):** "1 active threat vector" → node `185.220.101.1` (TOR_EXIT, high) with edges
+  to **both** FGT-LAB and PA-LAB (both carry a threat_exposure finding for the indicator). Backend confirms
+  2 threat_exposure findings (rule 19/device 1 + rule 20/device 2) reference 185.220.101.1.
+- **Note:** "monitored assets" reads 0 — the lab's normalized objects have no host-typed entries to enrich;
+  not fabricated. The CTI fetch added here is reused by the Threat Center panel (P10.6).
