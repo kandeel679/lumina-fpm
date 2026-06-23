@@ -349,3 +349,23 @@ tests/verification · remaining.**
   precision 1.0, recall 1.0, F1 1.0, severity-match 1.0, FP 0, FN 0.** Persisted to `benchmark_result`.
 - **Scope:** `config_only` taxonomy only (Bucket A). Conditional/simulated/future detectors (Bucket C)
   and the not-yet-implemented config_only types (Bucket B) are out of this scorecard by design.
+
+### E-017 — Phase 7: deterministic risk scoring (0-100) engine
+- **Built the risk subsystem (V8):** pure scorer + DB runner + API — a deterministic, versioned 0-100
+  score per rule and device with a factor breakdown.
+  * `services/risk/scorer.py` — `risk = min(100, anomaly + exposure + asset_sensitivity +
+    security_posture + logging + cross_vendor + cti + lifecycle)`; factors derived from the rule's
+    findings, each bounded to its V8 Table 4 range; tiers 90/70/40/1 (V8 Table 2). Device risk = a
+    max-weighted blend of the top-5 rule risks + a critical-count modifier (V8 §8). `RISK_VERSION 1.0.0`.
+  * `services/risk/runner.py` — scores every deployed rule from `rule_anomaly` for a run, aggregates per
+    device, persists `risk_assessment` (rule + device scopes). Idempotent per run; keeps history.
+  * `api/routes/risk.py` — `POST /api/v1/risk/run`, `GET /api/v1/risk?scope_type=rule|device`.
+- **Wired lifecycle step 8 (V6 §11):** the anomaly analysis task now triggers risk recalculation for the
+  run (best-effort — a risk failure never fails the analysis). `tasks/anomaly.py`.
+- **Tests:** `tests/test_risk.py` — tier bands, clean→informational, governance→low, unprotected→medium,
+  broad-unprotected-unlogged→critical, cross-device cross_vendor factor, cap at 100, device blend.
+- **LIVE RESULT (run 13):** device risk FortiGate 92 / Palo Alto 99 (critical). Top rules: `ANY_DB`/
+  `ANY_ANY` 98-99 critical; cross-device XDEV/posture rules 64-67 medium; plain unprotected web allows
+  44 medium; redundant/governance low. Factor breakdown stored per rule (why it scored high).
+- **Scope:** config_only factors. `cti_score` and `lifecycle_score` are stubs until Phase 8 (CTI) and
+  the Bucket-C lifecycle data (snapshots/telemetry) land.

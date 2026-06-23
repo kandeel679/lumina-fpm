@@ -127,6 +127,17 @@ def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str
             "Anomaly analysis run %s (scope=%s id=%s) completed: %d findings inserted, %d skipped.",
             run.run_id, scope_type, device_id, inserted, skipped,
         )
+
+        # Lifecycle step 8 (V6 §11): trigger risk recalculation for this run.
+        # Best-effort — a risk failure must never fail the anomaly analysis.
+        try:
+            from services.risk.runner import run_risk
+            risk_summary = run_risk(db, run.run_id)
+            logger.info("Risk recalculated for run %s: tiers=%s",
+                        run.run_id, risk_summary.get("tier_counts"))
+        except Exception as risk_exc:  # noqa: BLE001
+            logger.warning("Risk recalculation failed for run %s: %s", run.run_id, risk_exc)
+
         return {
             "status": "completed",
             "run_id": run.run_id,
