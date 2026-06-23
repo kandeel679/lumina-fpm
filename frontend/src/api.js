@@ -5,6 +5,28 @@
 
 import { LFPM as mockLFPM } from './data';
 
+/* ── IPv4 helpers (topology asset↔zone placement by real subnet containment) ── */
+function ipToInt(ip) {
+  const p = String(ip || '').split('.').map(Number);
+  if (p.length !== 4 || p.some(n => Number.isNaN(n) || n < 0 || n > 255)) return null;
+  return ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+}
+function subnetContains(cidr, ip) {
+  if (!cidr || !ip) return false;
+  const [net, bitsRaw] = String(cidr).split('/');
+  const bits = Number(bitsRaw);
+  const ni = ipToInt(net), hi = ipToInt(ip);
+  if (ni == null || hi == null || Number.isNaN(bits)) return false;
+  if (bits <= 0) return true;
+  const mask = bits >= 32 ? 0xffffffff : (~((1 << (32 - bits)) - 1)) >>> 0;
+  return ((ni & mask) >>> 0) === ((hi & mask) >>> 0);
+}
+function isPrivateIp(ip) {
+  const n = ipToInt(ip);
+  if (n == null) return false;
+  return subnetContains('10.0.0.0/8', ip) || subnetContains('172.16.0.0/12', ip) || subnetContains('192.168.0.0/16', ip);
+}
+
 /* Canonical vendor identity. Keeps UI vendor ids STABLE ('palo-alto',
  * 'fortinet', 'cisco') regardless of the DB display name, and provides the
  * correct firmware-OS prefix per vendor (PAN-OS / FortiOS / ASA). Previously
@@ -312,37 +334,55 @@ export async function fetchLFPMData() {
       else if (nameLower.includes('dr')) type = 'dr';
       else if (nameLower.includes('server')) type = 'server';
       
+      // Real subnet from a matching *_NET object (by name token), with the
+      // common trust→LAN convention. No fabricated fallback — null when the
+      // interface's subnet isn't derivable from config (e.g. FortiGate PORTx).
+      const subnetObjs = dbObjects.filter(o => o.type === 'cidr' && /\/(8|16|2\d)$/.test(o.value || ''));
+      const up = z.name.toUpperCase();
+      let subnetMatch = subnetObjs.find(o => o.name.toUpperCase().includes(up));
+      if (!subnetMatch && (up === 'TRUST' || up === 'LAN')) {
+        subnetMatch = subnetObjs.find(o => o.name.toUpperCase().includes('LAN'));
+      }
+
       return {
         id: `z-${z.name.toLowerCase()}`,
         fwId: z.fwId,
         name: z.name,
         type,
-        subnet: dbObjects.find(o => o.name === z.name)?.value || '10.0.0.0/24',
+        subnet: subnetMatch ? subnetMatch.value : null,
       };
     });
 
+    // Monitored assets = real internal single-host (/32) objects. Placement is by
+    // real subnet containment against the zone subnets above; hosts whose zone
+    // can't be derived (e.g. behind an un-mapped PORTx) are left unzoned. OS is
+    // NOT fabricated — the firewall config doesn't carry it.
+    const HOST_RE = /\/(32|128)$/;
+    const _assetSeen = new Set();   // shared-network lab syncs each host from BOTH devices — dedupe by IP
     const assets = dbObjects
-      .filter(o => o.type === 'host')
-      .map((o, idx) => {
-        // Resolve zone logically matching the host's subnet prefix
-        let zoneId = 'z-trust';
-        if (o.name.includes('WEB') || o.name.includes('MAIL')) zoneId = 'z-dmz';
-        else if (o.name.includes('DB') || o.name.includes('AD') || o.name.includes('SERVERS')) zoneId = 'z-server';
-        else if (o.name.includes('BRANCH')) zoneId = 'z-branch';
-
+      .filter(o => o.type === 'cidr' && HOST_RE.test(o.value || '') && !String(o.value).startsWith('0.0.0.0'))
+      .map(o => {
+        const ip = String(o.value).replace(HOST_RE, '');
+        if (!isPrivateIp(ip)) return null;   // external indicators aren't "assets"
+        const n = o.name.toUpperCase();
         let kind = 'host';
-        if (o.name.includes('SERVER') || o.name.includes('WEB') || o.name.includes('AD')) kind = 'app';
-        if (o.name.includes('DB')) kind = 'db';
-        if (o.name.includes('MAIL')) kind = 'mail';
-
+        if (n.includes('DB')) kind = 'db';
+        else if (n.includes('WEB') || n.includes('MAIL') || n.includes('SERVER')) kind = 'app';
+        else if (n.includes('PC') || n.includes('ADMIN') || n.includes('WORK')) kind = 'workstation';
+        const zone = zones.find(z => subnetContains(z.subnet, ip));
         return {
-          id: `a-${o.name.toLowerCase()}`,
-          zoneId,
+          id: `a-${ip.replace(/\./g, '-')}`,   // keyed by IP (unique post-dedupe), not name
+          zoneId: zone ? zone.id : null,
           name: o.name,
           kind,
-          ip: o.value,
-          os: o.name.includes('SERVER') || o.name.includes('DB') ? 'RHEL 8.6' : 'Windows Server 2022',
+          ip,
+          os: null,
         };
+      })
+      .filter(a => {
+        if (!a || _assetSeen.has(a.ip)) return false;
+        _assetSeen.add(a.ip);
+        return true;
       });
 
     // 8. Fetch real Threat Findings + scan stats + CTI indicators (in parallel)

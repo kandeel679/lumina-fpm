@@ -569,3 +569,16 @@ TypeScript-migrated incrementally (typed API client + 4 new TSX screens: Risk, R
 `tsc --noEmit` green), de-mocked end-to-end (real V8 risk, real run-scoped findings + analyst lifecycle,
 real CTI threat vectors), and the lab login is retained per scope. A pre-existing backend bug
 (`related_rule_id` 500) was fixed along the way. Whole pipeline now has a working dashboard.
+
+### E-028 — Phase 10 final pass: topology assets/zones de-mocked
+- **Fixed "0 monitored assets":** the normalizer types single hosts as `/32` cidr (no `host` type), so the
+  old `o.type === 'host'` filter matched nothing. Assets now derive from real internal `/32` objects with
+  IP-based ids (deduped — the shared-network lab syncs each host from BOTH devices), placed under zones by
+  real **subnet containment**. Dropped the fabricated OS (`'RHEL 8.6'`) and the fake `'10.0.0.0/24'` zone
+  subnet — zone subnets now come from matching `*_NET` objects (trust→LAN), else `null`/`—`.
+- **VERIFIED (browser, live):** "5 monitored assets" (WEB_SERVER×2 under DMZ 10.10.20.0/24, DB_SERVER×2
+  under DB 10.10.30.0/24, ADMIN_PC unzoned/mgmt); FortiGate PORTx honestly show `—` (interface subnet not
+  config-derivable — the deferred topology-input gap). No duplicate-key warnings on re-render.
+- **Known synthetic-but-honest remainders (need backend telemetry, out of scope):** the dashboard "risk
+  trend" sparkline and firmware timeline have no time-series source yet; the lab login users are the
+  intentional mock gate (per scope). None fabricate firewall facts.

@@ -832,7 +832,7 @@ function Topology({ openInspector, intent, goTo }) {
                       head: z.name,
                       badge: z.type,
                       rows: [
-                        { k:'subnet', v: z.subnet },
+                        { k:'subnet', v: z.subnet || '—' },
                         { k:'firewall', v: fw.display },
                         { k:'assets', v: z.assets.length },
                         { k:'max risk', v: zRisk || '—' },
@@ -871,7 +871,7 @@ function Topology({ openInspector, intent, goTo }) {
                           {z.name}
                         </text>
                         <text x={lane.x + TOPO.laneW - 14} y={z.y + 21} fontSize="11" fill="var(--fg-3)" textAnchor="end" style={{ fontFamily:'var(--f-mono)' }}>
-                          {z.subnet.length > 16 ? z.subnet.slice(0, 16) + '…' : z.subnet}
+                          {z.subnet ? (z.subnet.length > 16 ? z.subnet.slice(0, 16) + '…' : z.subnet) : '—'}
                         </text>
                       </g>
 
