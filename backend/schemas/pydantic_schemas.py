@@ -202,7 +202,7 @@ class RuleAnomalyBase(BaseModel):
     rule_id: int
     anomaly_type: str
     severity_level: str
-    related_rule_id: Optional[str] = None
+    related_rule_id: Optional[int] = None   # FK to policy_rule.rule_id (cross-device/shadowing pair)
     description: Optional[str] = None
 
 class RuleAnomalyCreate(RuleAnomalyBase):
@@ -211,7 +211,7 @@ class RuleAnomalyCreate(RuleAnomalyBase):
 class RuleAnomalyUpdate(BaseModel):
     anomaly_type: Optional[str] = None
     severity_level: Optional[str] = None
-    related_rule_id: Optional[str] = None
+    related_rule_id: Optional[int] = None
     description: Optional[str] = None
 
 class RuleAnomalyResponse(RuleAnomalyBase):

@@ -139,6 +139,7 @@ services:
       - api
     environment:
       - CHOKIDAR_USEPOLLING=true # Forces React to detect file changes on Windows hosts
+      - VITE_API_PROXY=http://api:8000 # In Compose, reach the backend by service name
     command: npm run dev -- --host
   # ── ROBIN (Dark-Web OSINT Tool — kept for testing) ──
   # robin_ui:

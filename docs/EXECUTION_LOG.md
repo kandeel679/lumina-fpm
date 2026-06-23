@@ -431,3 +431,29 @@ tests/verification · remaining.**
   nothing. Hardened `GeminiProvider`: retry on transient 429/503 + `thinkingConfig.thinkingBudget=0`
   (2.5 "thinking" models otherwise spend the token budget on reasoning and return no text) + join all
   text parts. The first key the user supplied was `API_KEY_INVALID`; a valid one resolved it.
+
+---
+
+### E-020 — Phase 10 (P10.0): Frontend TS foundation + typed API client + live preview
+- **Decision (scoped with the user):** rebuild the existing `frontend/` in place (not scaffold fresh) —
+  it is already on the spec stack (Vite + React 19 + Cytoscape + dagre + recharts + react-router +
+  tailwind); the only spec gap is TypeScript + the missing Phase 6–9 screens. Keep the cosmetic lab
+  login (backend has no auth route). Build core-first.
+- **TS tooling (incremental migration):** `frontend/tsconfig.json` with `allowJs`/`checkJs:false` so the
+  existing `.jsx` keeps working while new code is authored in `.ts/.tsx`; `src/vite-env.d.ts`; added
+  `typescript` devDep + `typecheck` script; renamed package `testfrontend` → `lumina-fpm-frontend`.
+  Vite/esbuild transpiles TS, so the build never depends on the `typescript` package.
+- **Typed API client `src/lib/api.ts`:** single source of truth for the backend — typed wrappers + response
+  types for anomalies, risk, benchmark, cti, reports, and core inventory. New screens consume this.
+- **Dev/preview:** made the Vite proxy target env-overridable (`VITE_API_PROXY`); Compose sets it to
+  `http://api:8000`, host dev defaults to `http://localhost:8000`. Brought up the dockerized `frontend`
+  service (real deployment); ran a host dev server on :5175 for browser verification against the live backend.
+- **Backend bug found via the live load + FIXED:** `GET /api/v1/rules/{id}/anomalies` returned **500** for
+  every rule whose anomalies reference another rule — `RuleAnomalyBase.related_rule_id` was typed
+  `Optional[str]` but the column is an int FK, so `ResponseValidationError` fired. Changed to
+  `Optional[int]` in `schemas/pydantic_schemas.py` (Base + Update). All 20 rule-anomaly endpoints now 200.
+- **VERIFIED (browser, live data):** dashboard loads against the live backend (2 devices, 20 rules, 440
+  anomalies); the Cross-Vendor Conflicts panel renders real findings (e.g. `CONF-108 critical · POL-009 on
+  FGT-LAB ⇄ POL-003`, "FGT_ANY_ANY allows ANY→ANY"). Known next step (P10.1): the dashboard still shows the
+  **fake heuristic risk** (AVG FLEET RISK 18 "safe") instead of the real `/api/v1/risk` device score
+  (96–100 critical) — the de-mock target.

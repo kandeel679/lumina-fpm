@@ -4,8 +4,8 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "frontend", "--port", "5173"],
-      "port": 5173,
+      "runtimeArgs": ["vite", "frontend", "--port", "5175"],
+      "port": 5175,
       "autoPort": false
     }
   ]
