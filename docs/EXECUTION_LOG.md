@@ -325,3 +325,27 @@ tests/verification · remaining.**
   must fire) in `tests/test_anomaly.py`. Full backend suite green.
 - **Verified live:** all-scope run now reports FortiGate `shadowing`(1) + `redundancy`(5); total
   findings 38 → 46. The detector engine treats FortiGate and Palo Alto `all`/`any` services identically.
+
+### E-016 — Phase 6: benchmark scoring (precision/recall/F1) — the acceptance gate
+- **Built the benchmark subsystem (V7):** pure scorer + DB runner + API, scoring the deterministic
+  engine against the ground-truth matrix.
+  * `services/benchmark/scorer.py` — pure TP/FP/FN + precision/recall/F1 + severity-match. Matches at
+    (rule, anomaly_type) granularity; **cross-device cases match if the anomaly appears on EITHER
+    paired rule** (the engine attributes a cross-device finding to one side).
+  * `services/benchmark/ground_truth.py` — the `benchmark_case` seed (mirrors `lab/benchmark_dataset.py`),
+    **completed** so every expected anomaly per rule is enumerated; expected severity per TYPE (V6 Table 7).
+  * `services/benchmark/runner.py` — resolves ground truth to the **deployed** rules, loads `rule_anomaly`
+    for a run, scores, persists `benchmark_case` + `benchmark_result`. Cap-dropped rules are excluded
+    (not counted as false negatives).
+  * `api/routes/benchmark.py` — `POST /api/v1/benchmark/run`, `GET /report` (mounted in `main.py`).
+- **Completed the design ground truth** (`lab/benchmark_dataset.py`): added design-derived incidental
+  anomalies (`conflict`/`redundancy`/`duplicate_rules`) + the cross-device posture pairs, so precision
+  is meaningful (the engine's real extra findings are recognized as true positives, not FPs).
+- **Engine fix surfaced by the benchmark:** `cross_device_inconsistency` severity `high` → `critical`
+  (V6 Table 7 / V7 §8 — a conflicting access decision is critical).
+- **Tests:** `tests/test_benchmark.py` (perfect match, FN→recall, FP→precision, cross-device pair match,
+  severity mismatch). Full backend suite green.
+- **LIVE RESULT (run 12, FGT 10 + PA 8 deployed):** **41 expected cases across 12 anomaly types →
+  precision 1.0, recall 1.0, F1 1.0, severity-match 1.0, FP 0, FN 0.** Persisted to `benchmark_result`.
+- **Scope:** `config_only` taxonomy only (Bucket A). Conditional/simulated/future detectors (Bucket C)
+  and the not-yet-implemented config_only types (Bucket B) are out of this scorecard by design.

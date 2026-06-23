@@ -17,6 +17,7 @@ from api.routes import vendors, devices, rules, network_objects
 from api.routes import external_nodes, threat_feeds, api_tokens, audit_logs, saved_searches
 from api.routes import jobs
 from api.routes import anomalies
+from api.routes import benchmark
 
 from contextlib import asynccontextmanager
 
@@ -75,6 +76,7 @@ app.include_router(audit_logs.router)
 app.include_router(saved_searches.router)
 app.include_router(jobs.router)
 app.include_router(anomalies.router)
+app.include_router(benchmark.router)
 
 @app.get("/health")
 def health_check():

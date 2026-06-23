@@ -491,7 +491,7 @@ def detect_cross_device_inconsistency(result: NormalizationResult) -> List[Findi
             rule_uuid=b.vendor_uuid,
             related_device_id=a.device_id,
             related_rule_uuid=a.vendor_uuid,
-            severity="high",
+            severity="critical",  # conflicting access decision across devices (V6 Table 7; V7 §8)
             confidence=0.85,
             description=(
                 f"Equivalent access (same source/destination/service) is handled "

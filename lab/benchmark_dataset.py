@@ -33,14 +33,16 @@ FORTIGATE_RULES = [
     dict(name="FGT_REDUNDANT_WEB", src_zone="LAN", dst_zone="DMZ", src=["LAN_NET"], dst=["WEB_SERVER"],
          service=["HTTPS"], action="allow", logging=True, inspection=True, schedule="always",
          description="redundant; covered by FGT_BROAD_WEB", enabled=True,
-         expected=["redundancy"], severity="medium"),
+         # also an exact duplicate of FGT_ALLOW_WEB / FGT_DUP_WEB (identical LAN->WEB HTTPS allow)
+         expected=["redundancy", "duplicate_rules"], severity="medium"),
     dict(name="FGT_BLOCK_WEB2", src_zone="LAN", dst_zone="DMZ", src=["LAN_NET"], dst=["WEB_SERVER_2"],
          service=["ALL"], action="deny", logging=True, inspection=False, schedule="always",
          description="block all to web2", enabled=True, expected=[], severity="low"),
     dict(name="FGT_SHADOWED_WEB2", src_zone="LAN", dst_zone="DMZ", src=["LAN_NET"], dst=["WEB_SERVER_2"],
          service=["HTTPS"], action="allow", logging=True, inspection=True, schedule="always",
          description="shadowed by FGT_BLOCK_WEB2", enabled=True,
-         expected=["shadowing"], severity="high"),
+         # earlier FGT_BLOCK_WEB2 (deny) overlaps this allow with opposite action -> conflict
+         expected=["shadowing", "conflict"], severity="high"),
     dict(name="FGT_ANY_DB", src_zone="ANY", dst_zone="DB", src=["all"], dst=["DB_SERVER"],
          service=["ALL"], action="allow", logging=False, inspection=False, schedule="always",
          description="", enabled=True,
@@ -49,12 +51,15 @@ FORTIGATE_RULES = [
     dict(name="FGT_ANY_ANY", src_zone="ANY", dst_zone="ANY", src=["all"], dst=["all"],
          service=["ALL"], action="allow", logging=False, inspection=False, schedule="always",
          description="", enabled=True,
-         expected=["overly_permissive", "unprotected_allow", "missing_logging", "missing_description"],
+         # FGT_ANY_ANY (allow) overlaps the earlier FGT_BLOCK_WEB2 (deny LAN->WEB2) -> conflict
+         expected=["overly_permissive", "unprotected_allow", "missing_logging", "missing_description",
+                   "conflict"],
          severity="critical"),
     dict(name="FGT_WIDE_PORTS", src_zone="LAN", dst_zone="DB", src=["LAN_NET"], dst=["DB_SERVER"],
          service=["ALL_TCP"], action="allow", logging=True, inspection=True, schedule="always",
          description="wide tcp port range", enabled=True,
-         expected=["wide_port_range"], severity="medium"),
+         # match set is covered by the earlier any->DB / any->any allows -> redundancy
+         expected=["wide_port_range", "redundancy"], severity="medium"),
     dict(name="FGT_ADMIN_DB_NOLOG", src_zone="ANY", dst_zone="DB", src=["ADMIN_PC"], dst=["DB_SERVER"],
          service=["MYSQL"], action="allow", logging=False, inspection=True, schedule="always",
          description="admin db access, logging off", enabled=True,
@@ -66,7 +71,9 @@ FORTIGATE_RULES = [
     dict(name="FGT_DB_ACCESS_XDEV", src_zone="LAN", dst_zone="DB", src=["LAN_NET"], dst=["DB_SERVER"],
          service=["MYSQL"], action="allow", logging=True, inspection=True, schedule="always",
          description="cross-device pair: FGT allows, PAN denies", enabled=True,
-         expected=["cross_device_inconsistency"], severity="high"),
+         # cross_device_inconsistency is scored as a PAIR (see CROSS_DEVICE_PAIRS); per-rule this
+         # allow is also covered by the earlier any->DB / any->any allows -> redundancy
+         expected=["redundancy"], severity="high"),
 ]
 
 # ── Palo Alto phase-1 rules (order = rule_order) ──
@@ -85,7 +92,8 @@ PALOALTO_RULES = [
     dict(name="PA_SHADOWED_WEB2", src_zone="LAN", dst_zone="DMZ", src=["LAN_NET"], dst=["WEB_SERVER_2"],
          service=["service-https"], action="allow", logging=True, inspection=True, schedule=None,
          description="shadowed by PA_BLOCK_WEB2", enabled=True,
-         expected=["shadowing"], severity="high"),
+         # earlier PA_BLOCK_WEB2 (deny) overlaps this allow with opposite action -> conflict
+         expected=["shadowing", "conflict"], severity="high"),
     dict(name="PA_ANY_DB", src_zone="ANY", dst_zone="DB", src=["any"], dst=["DB_SERVER"],
          service=["any"], action="allow", logging=False, inspection=False, schedule=None,
          description="", enabled=True,
@@ -94,7 +102,9 @@ PALOALTO_RULES = [
     dict(name="PA_ANY_ANY", src_zone="ANY", dst_zone="ANY", src=["any"], dst=["any"],
          service=["any"], action="allow", logging=False, inspection=False, schedule=None,
          description="", enabled=True,
-         expected=["overly_permissive", "unprotected_allow", "missing_logging", "missing_description"],
+         # PA_ANY_ANY (allow) overlaps the earlier PA_BLOCK_WEB2 (deny LAN->WEB2) -> conflict
+         expected=["overly_permissive", "unprotected_allow", "missing_logging", "missing_description",
+                   "conflict"],
          severity="critical"),
     dict(name="PA_ADMIN_DB_NOLOG", src_zone="ANY", dst_zone="DB", src=["ADMIN_PC"], dst=["DB_SERVER"],
          service=["MYSQL"], action="allow", logging=False, inspection=True, schedule=None,
@@ -103,7 +113,9 @@ PALOALTO_RULES = [
     dict(name="PA_DB_ACCESS_XDEV", src_zone="LAN", dst_zone="DB", src=["LAN_NET"], dst=["DB_SERVER"],
          service=["MYSQL"], action="deny", logging=True, inspection=True, schedule=None,
          description="cross-device pair: PAN denies what FGT allows", enabled=True,
-         expected=["cross_device_inconsistency"], severity="high"),
+         # cross_device_inconsistency is scored as a PAIR (see CROSS_DEVICE_PAIRS); per-rule this
+         # deny overlaps the earlier any->DB / any->any allows with opposite action -> conflict
+         expected=["conflict"], severity="high"),
 ]
 
 # Cross-device ground-truth pairs (by rule name) — informational for the Phase-6 runner.
@@ -111,4 +123,12 @@ CROSS_DEVICE_PAIRS = [
     {"fortinet": "FGT_DB_ACCESS_XDEV", "paloalto": "PA_DB_ACCESS_XDEV",
      "expected": "cross_device_inconsistency",
      "reason": "Same canonical LAN_NET->DB_SERVER MYSQL access; FortiGate allows, Palo Alto denies."},
+    # Equivalent LAN->WEB HTTPS allow on both vendors, but FGT_REDUNDANT_WEB is inspected while the
+    # Palo Alto web-allow rules are unprotected -> posture inconsistency (engine attributes it to PA).
+    {"fortinet": "FGT_REDUNDANT_WEB", "paloalto": "PA_ALLOW_WEB",
+     "expected": "cross_device_security_posture_inconsistency",
+     "reason": "Equivalent LAN_NET->WEB_SERVER HTTPS allow; FortiGate inspected, Palo Alto unprotected."},
+    {"fortinet": "FGT_REDUNDANT_WEB", "paloalto": "PA_DUP_WEB",
+     "expected": "cross_device_security_posture_inconsistency",
+     "reason": "Equivalent LAN_NET->WEB_SERVER HTTPS allow; FortiGate inspected, Palo Alto unprotected."},
 ]
