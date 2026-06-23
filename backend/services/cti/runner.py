@@ -53,11 +53,19 @@ def _upsert_indicator(db: Session, ind) -> models.CtiIndicator:
     return row
 
 
-def _correlate_threat(db: Session, object_id: int, verdict, run_id: int) -> int:
-    """Raise threat_exposure on ALLOW rules that reference a malicious object."""
+def _correlate_threat(db: Session, ind, verdict, run_id: int) -> int:
+    """Raise threat_exposure on ALLOW rules (across all devices) that reference an
+    object whose value matches the malicious indicator."""
+    candidates = [ind.value, f"{ind.value}/32", f"{ind.value}/128"]
+    obj_ids = [
+        oid for (oid,) in db.query(models.NetworkObject.object_id)
+        .filter(models.NetworkObject.value.in_(candidates)).all()
+    ]
+    if not obj_ids:
+        return 0
     rule_ids = [
         rid for (rid,) in db.query(models.RuleObjectMapping.rule_id)
-        .filter(models.RuleObjectMapping.object_id == object_id).distinct().all()
+        .filter(models.RuleObjectMapping.object_id.in_(obj_ids)).distinct().all()
     ]
     created = 0
     for rule_id in rule_ids:
@@ -74,10 +82,9 @@ def _correlate_threat(db: Session, object_id: int, verdict, run_id: int) -> int:
                 f"indicator ({verdict.summary})."
             ),
             evidence={
-                "indicator": db.query(models.CtiIndicator.value)
-                .filter(models.CtiIndicator.source_object_id == object_id).scalar(),
-                "provider": verdict.provider, "confidence": verdict.confidence,
-                "threat_type": verdict.threat_type, "reference": verdict.reference,
+                "indicator": ind.value, "provider": verdict.provider,
+                "confidence": verdict.confidence, "threat_type": verdict.threat_type,
+                "reference": verdict.reference,
             },
             recommendation="Block or restrict access to the malicious indicator; review for compromise.",
             detection_mode="cti",
@@ -133,7 +140,7 @@ def run_cti(db: Session, run_id: Optional[int] = None) -> dict:
         worst = max(verdicts, key=lambda x: (x.malicious, _SEV_RANK.get(x.severity, 0), x.confidence))
         if worst.malicious:
             malicious += 1
-            threat_exposures += _correlate_threat(db, ind.object_id, worst, run_id)
+            threat_exposures += _correlate_threat(db, ind, worst, run_id)
 
     db.commit()
 

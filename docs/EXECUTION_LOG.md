@@ -400,3 +400,28 @@ tests/verification · remaining.**
   (from slow/interrupted commits) blocked the write; the FortiGate REST path (instant, no commit) was used.
 - **Scope:** API-based CTI only (dark-web is future). CTI is **not an anomaly by default** — it
   contributes risk + a labeled `threat_exposure` finding, never presented as a `config_only` anomaly.
+
+### E-019 — Phase 9: AI/LLM SOC reporting (evidence-grounded)
+- **Built the LLM subsystem (V10):** provider abstraction + prompts + reporter + API.
+  * `services/llm/providers.py` — `LLMProvider` interface; `GeminiProvider` (real generativelanguage
+    API, key-gated, temp 0.2) + `OfflineProvider` (deterministic, network-free). `build_provider()`
+    falls back to offline when unkeyed or the LLM fails (V10 §11).
+  * `services/llm/prompts.py` — guardrail `SYSTEM_PROMPT` (use ONLY supplied evidence; never invent
+    CVEs/verdicts/remediations; the deterministic engine — not the LLM — decides anomalies) + pure
+    evidence renderers (rule + executive) that embed DB IDs.
+  * `services/llm/reporter.py` — assembles findings + risk + CTI for a scope WITH their DB IDs, calls the
+    provider, stores `llm_report` (`evidence_refs`, `prompt_version`, provider/model, status). On LLM
+    failure the report is stored `status=failed` and deterministic data is untouched.
+  * `api/routes/reports.py` — `POST /reports/generate` (rule|executive), `GET /reports`, `GET /{id}`.
+- **PA retest:** the earlier config-lock cleared — `PA_ALLOW_MALICIOUS` committed. **Cross-vendor CTI fix:**
+  `threat_exposure` correlation now matches the indicator VALUE across all devices' objects (was deduped to
+  one), so it fires on **both** `FGT_ALLOW_MALICIOUS` and `PA_ALLOW_MALICIOUS`. Benchmark holds at **47
+  cases, precision/recall/F1 = 1.0**.
+- **Tests:** `tests/test_llm.py` (guardrail prompt, provider fallback, deterministic offline, evidence-ID
+  embedding). Full suite (8 files) green.
+- **LIVE:** the configured Gemini key returned `API_KEY_INVALID`, so the platform used the **offline
+  fallback** (exactly V10 §11). Rule report for `FGT_ALLOW_MALICIOUS` carries
+  `evidence_refs {anomaly_ids:[391,410,424,440], risk_id:243, cti_observation_ids:[4]}`; executive summary
+  cites the top risky rules by `risk_id`. Every claim traces to a DB record; CTI is separated from engine
+  findings. A valid Gemini key yields AI-written prose over the same grounded evidence.
+- **Guardrail:** the LLM **explains, never detects** — the deterministic engine remains the anomaly authority.

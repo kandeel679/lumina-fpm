@@ -62,8 +62,9 @@ INTRA = {
         "PA_ADMIN_DB_NOLOG": ["missing_logging", "redundancy"],
         "PA_DB_ACCESS_XDEV": ["conflict"],
         # CTI demo rule: permits LAN -> MALICIOUS_IP (a known-bad indicator).
-        # config_only findings (threat_exposure is a separate cti-mode finding):
-        "PA_ALLOW_MALICIOUS": ["unprotected_allow", "missing_description"],
+        # config_only findings (threat_exposure is a separate cti-mode finding);
+        # also redundant, covered by the earlier any->any allow (PA_ANY_ANY):
+        "PA_ALLOW_MALICIOUS": ["unprotected_allow", "missing_description", "redundancy"],
     },
 }
 

@@ -20,6 +20,7 @@ from api.routes import anomalies
 from api.routes import benchmark
 from api.routes import risk
 from api.routes import cti
+from api.routes import reports
 
 from contextlib import asynccontextmanager
 
@@ -81,6 +82,7 @@ app.include_router(anomalies.router)
 app.include_router(benchmark.router)
 app.include_router(risk.router)
 app.include_router(cti.router)
+app.include_router(reports.router)
 
 @app.get("/health")
 def health_check():
