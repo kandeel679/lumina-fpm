@@ -115,6 +115,41 @@ def service_key(protocol: Optional[str], port_start: Optional[int], port_end: Op
     return f"{p}:{port_start}-{port_end}"
 
 
+# ── "All services" canonicalization (V4 Table 13, service axis) ──
+# Vendor service objects that mean "all services". FortiGate's predefined "ALL"
+# carries NO port range, so without this it keys as 'unknown:any' and the coverage
+# logic (shadowing/redundancy) would not treat it as the ANY sentinel — while PAN's
+# 'any' resolves correctly via PREDEFINED_SERVICES. We also map the FortiGate
+# ALL_TCP/ALL_UDP/ALL_ICMP predefined services to full ranges.
+_ANY_SERVICE_NAMES = {"all", "any"}
+_BROAD_SERVICES = {
+    "all": ("any", None, None),
+    "all_tcp": ("tcp", 1, 65535),
+    "all_udp": ("udp", 1, 65535),
+    "all_icmp": ("icmp", None, None),
+    "all_icmp6": ("icmp6", None, None),
+}
+
+
+def is_any_service(name: Optional[str]) -> bool:
+    return (name or "").strip().lower() in _ANY_SERVICE_NAMES
+
+
+def canonical_service(name: Optional[str], protocol: Optional[str],
+                      port_start: Optional[int], port_end: Optional[int]
+                      ) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+    """Canonicalize a service's (protocol, port_start, port_end).
+
+    Maps vendor 'all'/'any' services to the canonical ANY service and the FortiGate
+    ALL_TCP/ALL_UDP/ALL_ICMP predefined services to full ranges, so the deterministic
+    coverage and wide-port logic recognize them. Other services pass through unchanged.
+    """
+    n = (name or "").strip().lower()
+    if n in _BROAD_SERVICES:
+        return _BROAD_SERVICES[n]
+    return (protocol, port_start, port_end)
+
+
 def object_key(canonical_type: str, canonical_value: str) -> str:
     return f"{canonical_type}:{canonical_value}"
 

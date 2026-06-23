@@ -309,3 +309,19 @@ tests/verification · remaining.**
   ANY_SERVICE sentinel), so shadowing/redundancy supersets miss. Needs a normalization fix + unit test.
   Also `disabled_rule_review` and `object_sprawl` not exercised (DISABLED rule omitted for the policy cap;
   object count below the sprawl threshold).
+
+### E-015 — Fix: FortiGate `ALL` service must normalize to canonical ANY (closes E-014 gap)
+- **Root cause:** FortiGate's predefined `ALL` service carries no tcp/udp port range, so the parser
+  yielded `protocol=None, ports=None` → `service_key(None,None,None)` = `unknown:any`, NOT the
+  `ANY_SERVICE_KEY` (`any:any`). Superset-based `detect_shadowing`/`detect_redundancy` (`_covers`) never
+  saw the ANY sentinel, so every FortiGate pair using `ALL` was missed; overlap-based `detect_conflict`
+  (`_sets_overlap`) still fired via the shared `unknown:any` key, which masked the bug. PAN's `any`
+  resolved correctly via `PREDEFINED_SERVICES`, so only FortiGate was affected.
+- **Fix:** `canonical.canonical_service()` + `is_any_service()` map `ALL`/`any` → ANY service and
+  `ALL_TCP`/`ALL_UDP`/`ALL_ICMP` → full ranges; applied in `engine._correlate_services` (canonical key
+  AND stored protocol/ports, so the loader stays consistent) and as an `is_any_service` fallback in
+  `_resolve_services`. Files: `services/normalization/canonical.py`, `services/normalization/engine.py`.
+- **Tests:** canonical unit test + a normalization regression (FortiGate `ALL` shadowing + redundancy
+  must fire) in `tests/test_anomaly.py`. Full backend suite green.
+- **Verified live:** all-scope run now reports FortiGate `shadowing`(1) + `redundancy`(5); total
+  findings 38 → 46. The detector engine treats FortiGate and Palo Alto `all`/`any` services identically.

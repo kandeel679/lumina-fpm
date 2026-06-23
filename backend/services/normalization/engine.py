@@ -81,10 +81,11 @@ def _correlate_services(payloads, result: NormalizationResult,
     by_key: Dict[str, List[dict]] = {}
     for p in payloads:
         for s in p.service_objects:
-            key = C.service_key(s.protocol, s.port_start, s.port_end, s.app_id)
+            proto, ps, pe = C.canonical_service(s.name, s.protocol, s.port_start, s.port_end)
+            key = C.service_key(proto, ps, pe, s.app_id)
             by_key.setdefault(key, []).append(
                 {"device_id": p.device_id, "vendor": p.vendor, "name": s.name,
-                 "proto": s.protocol, "ps": s.port_start, "pe": s.port_end, "app": s.app_id}
+                 "proto": proto, "ps": ps, "pe": pe, "app": s.app_id}
             )
             svc_index[(p.device_id, s.name)] = key
         for g in p.service_groups:
@@ -145,6 +146,11 @@ def _resolve_services(device_id: int, names, svc_index, result) -> List[str]:
     keys = []
     for name in names:
         key = svc_index.get((device_id, name)) or _ensure_predefined_service(name, result)
+        if key is None and C.is_any_service(name):
+            key = C.service_key("any", None, None)
+            result.normalized_services.setdefault(key, NormalizedServiceRec(
+                key=key, canonical_name="any", protocol="any", port_start=None,
+                port_end=None, app_id=None))
         if key is None:
             key = C.service_key("unknown", None, None)
             result.normalized_services.setdefault(key, NormalizedServiceRec(

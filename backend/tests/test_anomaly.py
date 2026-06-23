@@ -16,6 +16,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("ENCRYPTION_KEY", "lab-dev-passphrase")
 
 from services.parsing import parse_artifacts
+from services.parsing.models import (
+    ParsedAddressObject,
+    ParsedDevicePayload,
+    ParsedRule,
+    ParsedServiceObject,
+)
 from services.normalization import normalize_payloads
 from services.normalization import canonical as C
 from services.normalization.model import (
@@ -226,6 +232,54 @@ def test_cross_device_inconsistency_fires_on_action_diff():
     assert finds[0].anomaly_type == "cross_device_inconsistency"
 
 
+# ───────────────── FortiGate "ALL" service normalization (regression) ─────────────────
+def test_canonical_service_all_maps_to_any():
+    assert C.canonical_service("ALL", None, None, None) == ("any", None, None)
+    assert C.canonical_service("all", None, None, None) == ("any", None, None)
+    assert C.is_any_service("ALL") and C.is_any_service("any")
+    assert C.canonical_service("ALL_TCP", None, None, None) == ("tcp", 1, 65535)
+    # ordinary services pass through unchanged
+    assert C.canonical_service("HTTPS", "tcp", 443, 443) == ("tcp", 443, 443)
+
+
+def test_fortigate_all_service_fires_shadowing_and_redundancy():
+    """The FortiGate predefined 'ALL' service carries no port range; it must normalize
+    to the canonical ANY service so superset-based shadowing/redundancy fire (E-014)."""
+    fgt = ParsedDevicePayload(
+        device_id=1, vendor="fortinet",
+        address_objects=[
+            ParsedAddressObject(name="LAN_NET", type="cidr", value="10.10.10.0/24"),
+            ParsedAddressObject(name="WEB2", type="cidr", value="10.10.20.20/32"),
+            ParsedAddressObject(name="WEBSRV", type="cidr", value="10.10.20.10/32"),
+        ],
+        service_objects=[
+            ParsedServiceObject(name="ALL"),  # predefined: no protocol/port range
+            ParsedServiceObject(name="HTTPS", protocol="tcp", port_start=443, port_end=443),
+        ],
+        rules=[
+            # shadowing: earlier DENY ALL ⊇ later allow HTTPS (same src/dst)
+            ParsedRule(vendor="fortinet", rule_name="BLOCK_WEB2", rule_order=1, action="deny",
+                       src_addrs=["LAN_NET"], dst_addrs=["WEB2"], services=["ALL"]),
+            ParsedRule(vendor="fortinet", rule_name="SHADOWED_WEB2", rule_order=2, action="accept",
+                       src_addrs=["LAN_NET"], dst_addrs=["WEB2"], services=["HTTPS"]),
+            # redundancy: earlier allow ALL covers later allow HTTPS (same src/dst, same action)
+            ParsedRule(vendor="fortinet", rule_name="BROAD_WEB", rule_order=3, action="accept",
+                       src_addrs=["LAN_NET"], dst_addrs=["WEBSRV"], services=["ALL"]),
+            ParsedRule(vendor="fortinet", rule_name="REDUNDANT_WEB", rule_order=4, action="accept",
+                       src_addrs=["LAN_NET"], dst_addrs=["WEBSRV"], services=["HTTPS"]),
+        ],
+    )
+    res = normalize_payloads([fgt])
+    by_name = {r.rule_name: r.vendor_uuid for r in res.rules}
+    block = next(r for r in res.rules if r.rule_name == "BLOCK_WEB2")
+    assert ANY_SVC in block.service_keys, block.service_keys
+
+    shad = D.detect_shadowing(res)
+    assert any(f.rule_uuid == by_name["SHADOWED_WEB2"] for f in shad), [f.rule_uuid for f in shad]
+    red = D.detect_redundancy(res)
+    assert any(f.rule_uuid == by_name["REDUNDANT_WEB"] for f in red), [f.rule_uuid for f in red]
+
+
 if __name__ == "__main__":
     test_fixtures_ground_truth()
     test_determinism_on_fixtures()
@@ -236,4 +290,6 @@ if __name__ == "__main__":
     test_overly_permissive()
     test_no_cross_device_when_same_action_and_posture()
     test_cross_device_inconsistency_fires_on_action_diff()
+    test_canonical_service_all_maps_to_any()
+    test_fortigate_all_service_fires_shadowing_and_redundancy()
     print("OK: all anomaly tests passed")
