@@ -15,6 +15,7 @@ import { RiskPosture } from './risk';
 import { Topology } from './topology';
 import { ThreatIntelligence } from './threats';
 import { Reports } from './reports';
+import { BenchmarkCenter } from './benchmark';
 import { Settings } from './settings';
 
 /* Bump this when login flow changes so existing sessions are invalidated. */
@@ -39,7 +40,7 @@ applyTheme(readTheme());
 /* ===============================================================
  *  Hash-routed navigation
  * =============================================================== */
-const VALID_PAGES = new Set(['dashboard','audit','risk','topology','threats','reports','settings']);
+const VALID_PAGES = new Set(['dashboard','audit','risk','topology','threats','reports','benchmark','settings']);
 
 function parseHash() {
   const raw = (window.location.hash || '').replace(/^#\/?/, '');
@@ -244,6 +245,7 @@ export default function App() {
     topology:  ['Topology'],
     threats:   ['Threat Intelligence'],
     reports:   ['SOC Reports'],
+    benchmark: ['Benchmark'],
     settings:  ['Settings'],
   })[page] || [];
 
@@ -275,6 +277,7 @@ export default function App() {
         {page === 'topology'  && <Topology             user={user} openInspector={openInspector} goTo={goTo} intent={intent} />}
         {page === 'threats'   && <ThreatIntelligence   user={user} openInspector={openInspector} goTo={goTo} intent={intent} refreshData={refreshData} />}
         {page === 'reports'   && <Reports />}
+        {page === 'benchmark' && <BenchmarkCenter />}
         {page === 'settings'  && <Settings             user={user} openInspector={openInspector} goTo={goTo} refreshData={refreshData} />}
       </main>
       <div className="shell-status">

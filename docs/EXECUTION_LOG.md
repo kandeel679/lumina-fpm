@@ -548,3 +548,24 @@ tests/verification · remaining.**
 - **VERIFIED (browser, live):** indicators 1 · malicious 1 · exposures 3; row `185.220.101.1` (ip_address,
   malicious, provider lab_offline, tor_exit, conf 85%) with affected rules **POL-019 + POL-020** (both
   devices). Typecheck green, no console errors.
+
+### E-027 — Phase 10 (P10.7): Benchmark Center (new, TSX) — the acceptance gate
+- **New typed screen `src/benchmark.tsx`:** the Volume-7 acceptance-gate dashboard. Headline metrics
+  (precision / recall / F1 / severity-match + TP/FP/FN/cases), a coverage-by-anomaly-type table, and the
+  per-case detail (expected severity, TP/FN result, severity match, rule pair). Added `BenchmarkMetrics`
+  + `BenchmarkRunResult` types to the client.
+- **Concurrency fix:** the first cut ran `benchmark.run()` (which deletes + reinserts the benchmark rows)
+  concurrently with `benchmark.report()` (which reads them) — a race that 500'd under React StrictMode's
+  dev double-mount. Now sequential (run → then report), the per-case fetch is non-fatal, and a `useRef`
+  guard prevents the StrictMode double re-score.
+- **Nav/route:** "Benchmark" rail item + app.jsx wiring. Typecheck green.
+- **VERIFIED (browser, live):** run #18 → **precision 100% · recall 100% · F1 100% · severity-match 100% ·
+  TP 47 · FP 0 · FN 0 · 47 cases**; coverage-by-type (unprotected_allow 10, missing_description 8,
+  redundancy 6, …) all detected; 47 per-case rows each TP/exact. No console errors, no error banner.
+
+### Phase 10 complete
+All 8 sub-phases (P10.0–P10.7) shipped and verified live against the running backend. The frontend is
+TypeScript-migrated incrementally (typed API client + 4 new TSX screens: Risk, Reports, CTI, Benchmark;
+`tsc --noEmit` green), de-mocked end-to-end (real V8 risk, real run-scoped findings + analyst lifecycle,
+real CTI threat vectors), and the lab login is retained per scope. A pre-existing backend bug
+(`related_rule_id` 500) was fixed along the way. Whole pipeline now has a working dashboard.

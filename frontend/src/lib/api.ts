@@ -232,10 +232,27 @@ export interface BenchmarkReport {
   detail?: string;
 }
 
+export interface BenchmarkMetrics {
+  tp: number;
+  fp: number;
+  fn: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  severity_match_rate: number;
+  expected_cases: number;
+}
+
+export interface BenchmarkRunResult {
+  analysis_run_id: number;
+  metrics: BenchmarkMetrics;
+  by_type: Record<string, { expected: number; detected: number }>;
+}
+
 export const benchmark = {
   report: () => get<BenchmarkReport>('/benchmark/report'),
   run: (analysis_run_id?: number) =>
-    post<Record<string, unknown>>('/benchmark/run', { analysis_run_id: analysis_run_id ?? null }),
+    post<BenchmarkRunResult>('/benchmark/run', { analysis_run_id: analysis_run_id ?? null }),
 };
 
 /* ──────────────────────────────────── cti ───────────────────────────────── */

@@ -41,6 +41,7 @@ function Rail({ current, onNav, criticalCount }) {
     { id: 'topology',  icon: I.Network,   label: 'Topology' },
     { id: 'threats',   icon: I.Threat,    label: 'Threat Intelligence' },
     { id: 'reports',   icon: I.Code,      label: 'SOC Reports' },
+    { id: 'benchmark', icon: I.CheckCirc, label: 'Benchmark' },
     { id: 'settings',  icon: I.Settings,  label: 'Settings' },
   ];
   return (
