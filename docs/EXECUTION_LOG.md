@@ -535,3 +535,16 @@ tests/verification · remaining.**
   anomaly_ids 391/410/424/440, cti_observation_id 4) — body cites each claim by id. Then **generated a new
   executive report live** → Gemini `complete` (report #8), citing risk_ids 247/239/240/248/243 and
   analysis_run_id 18 over a prioritized remediation list. No console errors.
+
+### E-026 — Phase 10 (P10.6): CTI / Threat Center panel (new, TSX)
+- **New typed component `src/cti.tsx`:** a Volume-9 CTI panel added as a third **"indicators"** tab in the
+  Threat Intelligence page (alongside the existing CVE scan/advisories, which are a separate feature).
+  Lists enriched indicators with provider verdict, threat type, confidence, and the ALLOW rules the engine
+  flagged (`threat_exposure`), plus a **run-enrichment** action and the V9 data-minimization notice.
+- **Affected rules** are resolved by cross-referencing `/api/v1/anomalies?anomaly_type=threat_exposure`
+  (indicator value in evidence) — deduped across runs.
+- **Guardrail surfaced in UI:** "API-based providers only · internal (RFC1918) indicators are never sent to
+  external services" — and CTI is presented as exposure/indicator data, not as a config anomaly.
+- **VERIFIED (browser, live):** indicators 1 · malicious 1 · exposures 3; row `185.220.101.1` (ip_address,
+  malicious, provider lab_offline, tor_exit, conf 85%) with affected rules **POL-019 + POL-020** (both
+  devices). Typecheck green, no console errors.

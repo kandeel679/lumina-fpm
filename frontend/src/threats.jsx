@@ -7,6 +7,7 @@ import {
   triggerThreatScan,
   subscribeThreatScanProgress,
 } from "./api";
+import { CtiCenter } from "./cti";
 /* ─────────────────────────────────────────────────────────────────
  * Threat Intelligence — latest scan report + advisories feed
  * ───────────────────────────────────────────────────────────────── */
@@ -59,6 +60,7 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
   React.useEffect(() => {
     if (!intent) return;
     if (intent.tab === 'advisories') setTab('advisories');
+    else if (intent.tab === 'cti') setTab('cti');
     else if (intent.tab === 'scan') setTab('scan');
     if (intent.relevance === 'high') {
       setHighRelOnly(true);
@@ -262,6 +264,10 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
               className={tab === 'advisories' ? 'active' : ''}
               onClick={() => setTabAndHash('advisories')}
             >advisories</button>
+            <button
+              className={tab === 'cti' ? 'active' : ''}
+              onClick={() => setTabAndHash('cti')}
+            >indicators</button>
           </div>
           {tab === 'scan' && (
             <button
@@ -314,7 +320,9 @@ function ThreatIntelligence({ openInspector, intent, goTo, refreshData }) {
         </div>
       )}
 
-      {tab === 'scan' ? (
+      {tab === 'cti' ? (
+        <CtiCenter />
+      ) : tab === 'scan' ? (
         <LatestScanPanel
           I={I}
           reportDetail={reportDetail}
