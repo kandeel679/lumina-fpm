@@ -522,3 +522,16 @@ tests/verification · remaining.**
   2 threat_exposure findings (rule 19/device 1 + rule 20/device 2) reference 185.220.101.1.
 - **Note:** "monitored assets" reads 0 — the lab's normalized objects have no host-typed entries to enrich;
   not fabricated. The CTI fetch added here is reused by the Threat Center panel (P10.6).
+
+### E-025 — Phase 10 (P10.5): SOC Reports screen (new, TSX)
+- **New typed screen `src/reports.tsx`:** generate + list + view evidence-grounded LLM SOC reports via the
+  typed client (`/api/v1/reports`). Executive or per-rule scope (rule picker from the live ruleset); a
+  dependency-free markdown renderer formats the report body (headings/bold/bullets).
+- **Evidence-first:** every report shows its `evidence_refs` as DB-ID chips (risk_id / anomaly_ids /
+  cti_observation_ids / analysis_run_id) and the confidence note, reinforcing V10's rule — the LLM
+  explains, it never detects; a `failed` status surfaces the graceful-offline note (V10 §11).
+- **Nav/route:** "SOC Reports" rail item + app.jsx wiring. Typecheck green.
+- **VERIFIED (browser, live):** opened the existing Gemini rule report for POL-019 (evidence risk_id 243,
+  anomaly_ids 391/410/424/440, cti_observation_id 4) — body cites each claim by id. Then **generated a new
+  executive report live** → Gemini `complete` (report #8), citing risk_ids 247/239/240/248/243 and
+  analysis_run_id 18 over a prioritized remediation list. No console errors.
