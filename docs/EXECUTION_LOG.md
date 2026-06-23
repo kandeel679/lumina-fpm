@@ -369,3 +369,27 @@ tests/verification · remaining.**
   44 medium; redundant/governance low. Factor breakdown stored per rule (why it scored high).
 - **Scope:** config_only factors. `cti_score` and `lifecycle_score` are stubs until Phase 8 (CTI) and
   the Bucket-C lifecycle data (snapshots/telemetry) land.
+
+### E-018 — Phase 8: API-based CTI enrichment
+- **Built the CTI subsystem (V9):** provider abstraction + indicator extraction + runner + API.
+  * `services/cti/providers.py` — `CtiProvider` interface; `AbuseIPDBProvider` (real REST, key-gated) +
+    `LabOfflineProvider` (deterministic, network-free, small known-bad lab list). `build_providers()`
+    from `CTI_PROVIDER_KEYS`; the offline provider is always present as a baseline, real providers added
+    when keyed.
+  * `services/cti/extract.py` — public-indicator extraction with **DATA MINIMIZATION**: RFC1918 /
+    loopback / link-local / the ANY sentinel are never sent externally (V9 §4, V12 §10); single-host
+    indicators canonicalized to bare IP; FQDN detection.
+  * `services/cti/runner.py` — extract → enrich via providers → persist `cti_indicator` +
+    `cti_observation` → correlate malicious indicators to ALLOW rules (raise a labeled `threat_exposure`,
+    `detection_mode=cti`) → trigger risk recalc so `cti_score` lands.
+  * `api/routes/cti.py` — `POST /cti/run`, `GET /cti` (Threat Center).
+- **Risk integration:** `threat_exposure` → `cti_score` factor (V8 Table 4: 10-40, scaled by the provider
+  verdict severity; V9 §10).
+- **Tests:** `tests/test_cti.py` (public/private classification, data-minimization, offline verdict,
+  provider registry, threat_exposure→cti risk). Full suite (7 files) green.
+- **LIVE:** CTI enriched `MALICIOUS_IP 185.220.101.1` as **malicious** (`lab_offline`, tor_exit, high,
+  conf 0.85); `internal_indicators_sent=false` — the RFC1918 lab objects were correctly **withheld**.
+  `threat_exposure` correlates malicious indicators to ALLOW rules that reference them (unit-tested; the
+  full live firing needs a rule referencing the bad IP — added via a Palo Alto `PA_ALLOW_MALICIOUS` rule).
+- **Scope:** API-based CTI only (dark-web is future). CTI is **not an anomaly by default** — it
+  contributes risk + a labeled `threat_exposure` finding, never presented as a `config_only` anomaly.

@@ -62,6 +62,13 @@ def score_rule(findings: List[Dict[str, str]]) -> dict:
     if any(f.get("anomaly_type") == "any_to_sensitive" for f in findings):
         factors["exposure"] = max(factors.get("exposure", 0), 8)
 
+    # CTI: a threat_exposure finding contributes cti_score scaled by the provider
+    # verdict severity (V8 Table 4: CTI match 10-40; V9 §10).
+    _CTI_POINTS = {"critical": 38, "high": 28, "medium": 18, "low": 10}
+    for f in findings:
+        if f.get("anomaly_type") == "threat_exposure":
+            factors["cti"] = max(factors.get("cti", 0), _CTI_POINTS.get(f.get("severity"), 18))
+
     score = min(100, sum(factors.values()))
     return {
         "risk_score": score,
