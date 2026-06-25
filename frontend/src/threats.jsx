@@ -626,7 +626,6 @@ function AdvisoriesPanel({
           <div className="seg">
             <button className={vendFilter.has('palo-alto') ? 'active' : ''} onClick={() => toggle(vendFilter, 'palo-alto', setVend)}>palo alto</button>
             <button className={vendFilter.has('fortinet') ? 'active' : ''}  onClick={() => toggle(vendFilter, 'fortinet', setVend)}>fortinet</button>
-            <button className={vendFilter.has('cisco') ? 'active' : ''}     onClick={() => toggle(vendFilter, 'cisco', setVend)}>cisco</button>
           </div>
           <button
             className={`chip ${kevOnly ? 'critical' : ''}`}
@@ -699,7 +698,7 @@ function AdvisoriesPanel({
                   <td>
                     <div className="row gap-2">
                       {(t.vendors || []).map(v => (
-                        <span key={v} className="chip" style={{ fontSize: 10 }}>{v === 'palo-alto' ? 'PA' : v === 'fortinet' ? 'FT' : 'CS'}</span>
+                        <span key={v} className="chip" style={{ fontSize: 10 }}>{v === 'palo-alto' ? 'PA' : v === 'fortinet' ? 'FT' : v.slice(0, 2).toUpperCase()}</span>
                       ))}
                     </div>
                   </td>

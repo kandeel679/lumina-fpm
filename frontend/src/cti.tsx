@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { cti, anomalies } from './lib/api';
-import type { CtiIndicator, Anomaly } from './lib/api';
+import { cti, anomalies, inventory } from './lib/api';
+import type { CtiIndicator, Anomaly, Device } from './lib/api';
 
 /* ─────────────────────────────────────────────────────────────────
  * CTI / Threat Center (Volume 9) — API-based indicator enrichment.
@@ -16,9 +16,15 @@ function sevClass(sev: string): string {
   return ['critical', 'high', 'medium', 'low'].includes(s) ? s : 'safe';
 }
 
+function cveId(ref: string | null): string {
+  const m = (ref || '').match(/CVE-\d{4}-\d{4,}/i);
+  return m ? m[0].toUpperCase() : (ref || '').split('/').pop() || '';
+}
+
 export function CtiCenter() {
   const [indicators, setIndicators] = useState<CtiIndicator[]>([]);
   const [exposures, setExposures] = useState<Anomaly[]>([]);
+  const [devices, setDevices] = useState<Record<number, Device>>({});
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +32,16 @@ export function CtiCenter() {
   const toast = (window as unknown as { toast?: (m: string, o?: unknown) => void }).toast;
 
   const load = useCallback(async () => {
-    const [c, a] = await Promise.all([
+    const [c, a, devs] = await Promise.all([
       cti.list(),
       anomalies.list({ anomaly_type: 'threat_exposure', page_size: 200 }),
+      inventory.devices(),
     ]);
     setIndicators(c.indicators);
     setExposures(a.items);
+    const meta: Record<number, Device> = {};
+    devs.forEach((d) => { meta[d.device_id] = d; });
+    setDevices(meta);
   }, []);
 
   useEffect(() => {
@@ -50,9 +60,9 @@ export function CtiCenter() {
     try {
       const r = await cti.run();
       await load();
-      toast?.('CTI enrichment complete', {
+      toast?.('Threat enrichment complete', {
         kind: 'ok',
-        sub: `${r.malicious_indicators} malicious · ${r.indicators_enriched} enriched · ${r.threat_exposure_findings} exposures · [${r.providers.join(', ')}]`,
+        sub: `${r.cti.malicious_indicators} malicious · ${r.cti.threat_exposure_findings} exposures · ${r.vuln.devices_vulnerable} devices vulnerable · ${r.vuln.cve_observations} CVEs`,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -72,6 +82,7 @@ export function CtiCenter() {
   });
 
   const malicious = indicators.filter((i) => i.malicious).length;
+  const firmwareCount = indicators.filter((i) => i.type === 'firmware_version').length;
 
   return (
     <div className="col" style={{ gap: 12, minHeight: 0, overflow: 'auto' }}>
@@ -80,6 +91,7 @@ export function CtiCenter() {
           <span className="muted">indicators <strong style={{ color: 'var(--fg-0)' }}>{indicators.length}</strong></span>
           <span className="muted">malicious <strong style={{ color: malicious ? 'var(--sev-critical)' : 'var(--fg-0)' }}>{malicious}</strong></span>
           <span className="muted">exposures <strong style={{ color: 'var(--fg-0)' }}>{exposures.length}</strong></span>
+          <span className="muted">firmware CVEs <strong style={{ color: firmwareCount ? 'var(--sev-high)' : 'var(--fg-0)' }}>{firmwareCount}</strong></span>
         </div>
         <button className="btn primary" style={{ marginLeft: 'auto' }} disabled={running} onClick={runEnrichment}>
           {running ? 'enriching…' : 'run enrichment'}
@@ -101,7 +113,7 @@ export function CtiCenter() {
             <th>provider</th>
             <th>threat</th>
             <th>conf.</th>
-            <th>affected rules</th>
+            <th>affected</th>
           </tr>
         </thead>
         <tbody>
@@ -117,23 +129,33 @@ export function CtiCenter() {
           )}
           {indicators.map((ind) => {
             const obs = ind.observations[0];
+            const isFw = ind.type === 'firmware_version';
+            const dev = ind.source_device_id != null ? devices[ind.source_device_id] : undefined;
             const rules = [...(rulesByIndicator[ind.value] || [])];
+            const statusLabel = isFw ? 'vulnerable' : 'malicious';
             return (
               <tr key={ind.indicator_id}>
-                <td className="mono strong">{ind.value}</td>
+                <td className="mono strong">{ind.value}{isFw && dev ? <span className="mono dim" style={{ fontSize: 10.5, marginLeft: 6 }}>{dev.vendor_type}</span> : null}</td>
                 <td className="mono dim" style={{ fontSize: 11 }}>{ind.type}</td>
                 <td>
                   {ind.malicious
-                    ? <span className={`stat-text ${sevClass(obs?.severity || 'high')}`}><span className="dot" />malicious</span>
+                    ? <span className={`stat-text ${sevClass(obs?.severity || 'high')}`}><span className="dot" />{statusLabel}</span>
                     : <span className="stat-text safe"><span className="dot" />clean</span>}
                 </td>
                 <td className="mono dim" style={{ fontSize: 11 }}>{obs?.provider || '—'}</td>
                 <td className="dim" style={{ fontSize: 11.5 }}>{obs?.threat_type || '—'}</td>
                 <td className="num dim">{obs?.confidence != null ? `${Math.round(obs.confidence * 100)}%` : '—'}</td>
                 <td>
-                  {rules.length
-                    ? <span className="row gap-2" style={{ flexWrap: 'wrap' }}>{rules.map((r) => <span key={r} className="chip" style={{ fontSize: 10.5 }}>{r}</span>)}</span>
-                    : <span className="muted">—</span>}
+                  {isFw
+                    ? <span className="row gap-2" style={{ flexWrap: 'wrap' }}>
+                        <span className="chip high" style={{ fontSize: 10.5 }}>{dev?.hostname || `device ${ind.source_device_id}`}</span>
+                        {ind.observations.map((o, i) => (
+                          <span key={i} className="chip" style={{ fontSize: 10.5 }} title={o.summary || ''}>{cveId(o.reference)}</span>
+                        ))}
+                      </span>
+                    : rules.length
+                      ? <span className="row gap-2" style={{ flexWrap: 'wrap' }}>{rules.map((r) => <span key={r} className="chip" style={{ fontSize: 10.5 }}>{r}</span>)}</span>
+                      : <span className="muted">—</span>}
                 </td>
               </tr>
             );

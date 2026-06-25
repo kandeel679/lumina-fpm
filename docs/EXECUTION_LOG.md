@@ -591,3 +591,50 @@ real CTI threat vectors), and the lab login is retained per scope. A pre-existin
 - **Topology band labels overlapping:** each vendor band drew two labels (`"<vendor> · N firewalls"` at the
   left + a `"firewall · zone · asset"` legend at the right) that collided in a single-firewall lane.
   Removed the redundant right legend. Labels now read cleanly — verified.
+
+---
+
+## 2026-06-25
+
+### E-030 — Firmware-CVE intelligence re-integrated into the live pipeline (device axis)
+- **What:** Revived the working clearnet-CVE logic from the retired LTI island as a clean, free/deterministic
+  module that feeds the LIVE pipeline as a SECOND threat axis: **CVE = "your firmware is vulnerable" (device
+  scope)** alongside the existing **CTI threat_exposure = "your rules touch bad actors" (rule scope)**.
+  A confirmed firmware CVE is persisted as DEVICE-scoped CTI evidence — `cti_indicator(type='firmware_version',
+  source_device_id)` + `cti_observation(threat_type='vulnerability', provider='nvd'|'vendor_advisory')` — and
+  raises device risk via a new device **firmware modifier** (Vol8 §8 device-risk modifiers). It raises **zero
+  `rule_anomaly`**, so the 47/47 config-anomaly benchmark is untouched **by construction**.
+- **Design provenance:** Selected via a dynamic discovery + adversarial-design workflow (Option 2, the
+  least-invasive resolution of the device-vs-rule scope gap: reuse the CTI tables, which the schema already
+  models for `cve`/`firmware_version`/`vulnerability`; no migration). Two adversarial concerns were folded in:
+  (a) use a device **modifier**, not a coined 9th risk factor (V8 seals 8 factors; Vol8 L57-61 names a
+  "firmware modifier"); (b) **retire the live dark-web Tor scan route** (was still reachable).
+- **Provider:** `VULN_PROVIDER=offline` (v1, default) uses a curated, network-free lab dataset (real CVE
+  ids/CVSS/KEV, ranges curated to the lab firmware), mirroring `cti.providers.LabOfflineProvider`. The live
+  CISA-KEV + NVD fetchers ship but are DORMANT (`VULN_PROVIDER=live` enables them in v2). Cisco-free
+  (v1 = Fortinet + Palo Alto only); keyed off `FirewallDevice.vendor_type`. No LLM, no Tor, no API key, $0.
+- **Files (new):** `backend/services/cti/vuln_intel.py` (lifted version/CVSS helpers + KEV/NVD fetch [dormant]
+  + offline lab dataset + `decide_vulnerable_devices`), `backend/services/cti/vuln_runner.py` (`run_vuln`),
+  `backend/tests/test_vuln.py` (pure). **Files (changed):** `risk/scorer.py` (`_VULN_POINTS` + backward-compatible
+  `score_device(device_factors=)` firmware modifier, cap-over-sum, empty-rules guard), `risk/runner.py`
+  (`_device_firmware_factors` in try/except → {}, union iteration), `api/routes/cti.py` (`POST /cti/run` now runs
+  both axes — no new public route), `core/config.py` (`VULN_PROVIDER`), `main.py` (dark-web `threat_intel_router`
+  gated behind `ENABLE_DARKWEB_INTEL`, default off → Tor scan route retired), frontend `lib/api.ts`
+  (`VulnRunResult`/`CtiRunResponse`, `firmware_modifier`), `cti.tsx` (firmware-CVE rows show affected device +
+  CVE chips, "firmware CVEs" counter), `api.js`/`threats.jsx`/`topology.jsx` (Cisco strip; guard
+  `externalNodes` against `firmware_version` indicators).
+- **Verification (live, run #18, 2 devices):**
+  - Pure tests green: `test_vuln`, `test_risk`, `test_cti`, `test_benchmark`, `test_anomaly`. Frontend `tsc --noEmit` exit 0.
+  - **Benchmark unchanged:** 47 TP / 0 FP / 0 FN, precision/recall/F1 = 1.0 **before AND after** `run_vuln` (proven, not asserted).
+  - **Two real version-accurate matches:** FGT-LAB FortiOS `v7.0.5` → **CVE-2024-21762** (critical, CISA-KEV);
+    PA-LAB PAN-OS `11.1.6-h7` → **CVE-2025-0108** (high). Both surfaced in `GET /cti` as `firmware_version`
+    indicators with `vulnerability` observations.
+  - **Risk raised:** device `factor_breakdown` now carries `firmware_modifier` 40 (FGT-LAB) / 30 (PA-LAB);
+    both devices → 100 (already critical from rules, so the modifier is capped but explicit in the breakdown).
+  - **Idempotent:** re-running `/cti/run` keeps firmware indicators/observations at 2/2; **zero** CVE `rule_anomaly`.
+  - **Dark-web retired:** `POST /api/v1/threat-intel/scans` → 404. UI verified: Threat Center "indicators" tab
+    shows the two-axis table; Risk Posture shows the firmware-modifier chips.
+- **Remaining (deferred, documented):** the legacy `threats.jsx` LTI-scan wrapper (latest-scan/advisories tabs,
+  "DARK WEB"/Tor KPIs) now reads the retired endpoints and renders empty zeros — a separate cleanup (label/remove
+  the LTI-scan UI; optionally fold `/cti` firmware indicators into the dashboard KPIs). v2: enable live NVD/KEV
+  (`VULN_PROVIDER=live`). Branch: `feature/cve-firmware-intel` (uncommitted, pending review).

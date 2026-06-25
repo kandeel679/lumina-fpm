@@ -56,8 +56,14 @@ app.add_middleware(
 # Database session factory
 SessionLocal = get_db()
 
-# Mount the Threat Intel router
-app.include_router(threat_intel_router)
+# Legacy LTI dark-web threat-intel router is RETIRED in v1 (ADR LFPM-IMPL-005):
+# its only live trigger, POST /threat-intel/scans, launches a Tor/Robin dark-web
+# scan that never produced firewall-relevant content. It is mounted only when
+# ENABLE_DARKWEB_INTEL=true (default false), so the Tor trigger is unreachable in v1.
+# Firmware-CVE intelligence now lives in the LIVE pipeline as device-scoped CTI
+# evidence (services/cti/vuln_runner.py), surfaced via /api/v1/cti and the risk score.
+if settings.enable_darkweb_intel:
+    app.include_router(threat_intel_router)
 
 
 # =====================================================================

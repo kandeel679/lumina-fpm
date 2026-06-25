@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from api.deps import get_db_session
 from models import models
 from services.cti.runner import run_cti
+from services.cti.vuln_runner import run_vuln
 
 router = APIRouter(prefix="/api/v1/cti", tags=["CTI"])
 
@@ -23,8 +24,16 @@ class RunRequest(BaseModel):
 
 @router.post("/run")
 def run(req: RunRequest, db: Session = Depends(get_db_session)):
-    """Enrich indicators, persist observations, correlate threats, recalc risk."""
-    return run_cti(db, req.analysis_run_id)
+    """Two-axis threat enrichment for an analysis run, then recalc risk:
+
+    - CTI (rule axis): malicious-indicator exposure -> threat_exposure findings.
+    - VULN (device axis): firmware CVEs -> device-scoped firmware_version evidence.
+
+    Both persist to the CTI tables and trigger a risk recalculation (idempotent).
+    """
+    cti_res = run_cti(db, req.analysis_run_id)
+    vuln_res = run_vuln(db, req.analysis_run_id)
+    return {"cti": cti_res, "vuln": vuln_res}
 
 
 @router.get("")

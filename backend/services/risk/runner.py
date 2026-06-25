@@ -16,13 +16,44 @@ from sqlalchemy.orm import Session
 from core.logging import get_logger
 from models import models
 
-from .scorer import RISK_VERSION, score_device, score_rule
+from .scorer import RISK_VERSION, _VULN_POINTS, score_device, score_rule
 
 logger = get_logger(__name__)
 
 
 def _latest_run_id(db: Session) -> Optional[int]:
     return db.query(func.max(models.RuleAnomaly.analysis_run_id)).scalar()
+
+
+def _device_firmware_factors(db: Session) -> Dict[int, Dict[str, int]]:
+    """device_id -> {'firmware_modifier': pts} from firmware-CVE CTI evidence.
+
+    Derived from cti_indicator(type='firmware_version') + cti_observation
+    (threat_type='vulnerability'); the worst observed severity sets the modifier.
+    Best-effort: any failure degrades to {} so the proven device-risk path never
+    breaks when no firmware CVEs are present.
+    """
+    out: Dict[int, Dict[str, int]] = {}
+    try:
+        rows = (
+            db.query(models.CtiIndicator.source_device_id,
+                     models.CtiObservation.severity)
+            .join(models.CtiObservation,
+                  models.CtiObservation.indicator_id == models.CtiIndicator.indicator_id)
+            .filter(models.CtiIndicator.type == "firmware_version",
+                    models.CtiObservation.threat_type == "vulnerability",
+                    models.CtiIndicator.source_device_id.isnot(None))
+            .all()
+        )
+    except Exception as exc:  # noqa: BLE001 — never break the proven risk path
+        logger.warning("device firmware-CVE risk lookup failed: %s", exc)
+        return out
+    worst: Dict[int, int] = {}
+    for dev_id, severity in rows:
+        pts = _VULN_POINTS.get((severity or "").lower(), 0)
+        if pts > worst.get(dev_id, 0):
+            worst[dev_id] = pts
+    return {dev_id: {"firmware_modifier": pts} for dev_id, pts in worst.items() if pts}
 
 
 def _findings_by_rule(db: Session, run_id: int) -> Dict[int, List[dict]]:
@@ -76,9 +107,14 @@ def run_risk(db: Session, run_id: Optional[int] = None) -> dict:
             "factor_breakdown": res["factor_breakdown"],
         })
 
+    # Device firmware-CVE modifiers (Vol8 §8): a device with vulnerable firmware but
+    # only clean rules still earns a device score, so iterate the UNION of rule-scored
+    # devices and firmware-vulnerable devices.
+    device_vuln = _device_firmware_factors(db)
     device_scores = []
-    for device_id, scores in by_device.items():
-        res = score_device(scores)
+    for device_id in set(by_device) | set(device_vuln):
+        scores = by_device.get(device_id, [])
+        res = score_device(scores, device_factors=device_vuln.get(device_id))
         db.add(models.RiskAssessment(
             scope_type="device", scope_id=device_id,
             risk_score=res["risk_score"], risk_tier=res["risk_tier"],

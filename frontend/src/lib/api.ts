@@ -180,6 +180,8 @@ export interface RiskFactorBreakdown {
   cross_vendor?: number;
   cti?: number;
   lifecycle?: number;
+  // device-scope modifiers (present on scope_type === 'device')
+  firmware_modifier?: number;   // confirmed firmware-CVE contribution (V8 §8)
   [factor: string]: number | undefined;
 }
 
@@ -286,10 +288,26 @@ export interface CtiRunResult {
   internal_indicators_sent: boolean;
 }
 
+// Device-axis firmware-CVE run summary (services/cti/vuln_runner.run_vuln).
+export interface VulnRunResult {
+  provider: string;             // 'offline' (v1) | 'live' (v2)
+  analysis_run_id: number | null;
+  devices_scanned: number;
+  devices_vulnerable: number;
+  cve_observations: number;
+  vendors: string[];
+}
+
+// POST /cti/run runs both axes: CTI (rule) + VULN (device).
+export interface CtiRunResponse {
+  cti: CtiRunResult;
+  vuln: VulnRunResult;
+}
+
 export const cti = {
   list: () => get<{ indicators: CtiIndicator[]; count: number }>('/cti'),
   run: (analysis_run_id?: number) =>
-    post<CtiRunResult>('/cti/run', { analysis_run_id: analysis_run_id ?? null }),
+    post<CtiRunResponse>('/cti/run', { analysis_run_id: analysis_run_id ?? null }),
 };
 
 /* ─────────────────────────────────── reports ────────────────────────────── */

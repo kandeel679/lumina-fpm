@@ -9,12 +9,19 @@ so SOC engineers see *why* a rule scored high. cti/lifecycle land in later phase
 """
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 RISK_VERSION = "1.0.0"
 
 # Anomaly-severity base points (V8 Table 4: critical 30-45, high 20-30, medium 10-20, low 1-9).
 _SEVERITY_POINTS = {"critical": 35, "high": 22, "medium": 12, "low": 4}
+
+# Device firmware-CVE modifier (V8 §8 device-risk modifiers). A confirmed firmware
+# vulnerability raises device risk by these points, scaled by the worst matched CVE
+# severity. Kept inside the V8 Table 4 "CTI match 10-40" band (no dedicated CVE band
+# is defined in V8; this reuses the sanctioned 10-40 range). This is a device-scope
+# *modifier* (alongside the critical-rule modifier), NOT a new top-level risk factor.
+_VULN_POINTS = {"critical": 40, "high": 30, "medium": 18, "low": 10}
 
 # finding type -> (factor, points). Each factor is taken as a MAX across findings,
 # so it stays inside its V8 Table 4 range regardless of how many findings hit it.
@@ -78,12 +85,29 @@ def score_rule(findings: List[Dict[str, str]]) -> dict:
     }
 
 
-def score_device(rule_scores: List[int]) -> dict:
-    """Device risk = weighted avg of the top-5 rule risks + a critical-count modifier (V8 §8)."""
+def score_device(rule_scores: List[int],
+                 device_factors: Optional[Dict[str, int]] = None) -> dict:
+    """Device risk = weighted avg of the top-5 rule risks + critical-count modifier
+    + an optional firmware-CVE modifier (V8 §8 device-risk modifiers).
+
+    ``device_factors`` is an optional device-scope add-on map, currently
+    ``{'firmware_modifier': <points>}`` from a confirmed firmware CVE. When omitted
+    (the default), this returns byte-identical output to the pre-firmware behavior,
+    so existing callers and the benchmark are unaffected.
+    """
+    firmware_pts = int((device_factors or {}).get("firmware_modifier", 0) or 0)
+
     if not rule_scores:
+        # No scored rules (e.g. clean rules but vulnerable firmware): the device
+        # still earns a score from its firmware modifier alone.
+        score = min(100, firmware_pts)
+        breakdown: Dict[str, float] = {"top_rules_avg": 0, "critical_rule_count": 0, "modifier": 0}
+        if firmware_pts:
+            breakdown["firmware_modifier"] = firmware_pts
         return {
-            "risk_score": 0, "risk_tier": "informational",
-            "factor_breakdown": {"top_rules_avg": 0, "critical_rule_count": 0, "modifier": 0},
+            "risk_score": score,
+            "risk_tier": tier_of(score),
+            "factor_breakdown": breakdown,
             "calculation_version": RISK_VERSION,
         }
     top = sorted(rule_scores, reverse=True)[:5]
@@ -93,15 +117,20 @@ def score_device(rule_scores: List[int]) -> dict:
     blend = 0.6 * max_rule + 0.4 * avg
     crit_count = sum(1 for s in rule_scores if s >= 90)
     modifier = min(10, crit_count * 4)
-    score = min(100, round(blend + modifier))
+    # cap over the FULL sum (blend + modifier + firmware) so a vulnerable device
+    # never exceeds 100 and is never double-clamped.
+    score = min(100, round(blend + modifier) + firmware_pts)
+    breakdown = {
+        "max_rule_risk": max_rule,
+        "top_rules_avg": round(avg, 1),
+        "critical_rule_count": crit_count,
+        "modifier": modifier,
+    }
+    if firmware_pts:
+        breakdown["firmware_modifier"] = firmware_pts
     return {
         "risk_score": score,
         "risk_tier": tier_of(score),
-        "factor_breakdown": {
-            "max_rule_risk": max_rule,
-            "top_rules_avg": round(avg, 1),
-            "critical_rule_count": crit_count,
-            "modifier": modifier,
-        },
+        "factor_breakdown": breakdown,
         "calculation_version": RISK_VERSION,
     }

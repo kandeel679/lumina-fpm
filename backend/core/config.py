@@ -84,6 +84,10 @@ if _HAVE_PYDANTIC_SETTINGS:
         cti_provider_keys_raw: str = Field(default="", alias="CTI_PROVIDER_KEYS")
         # Data minimization (V9 §4 / V12 §10): never send internal indicators out by default.
         cti_allow_internal_indicators: bool = Field(default=False)
+        # Firmware-CVE intelligence source (device axis). 'offline' (default) uses a
+        # curated, network-free lab dataset; 'live' enables the CISA-KEV + NVD fetchers
+        # (free, no key) — deferred to v2.
+        vuln_provider: str = Field(default="offline", alias="VULN_PROVIDER")
 
         # ── Feature flags ──
         # Dark-web / Tor / Robin is future/optional only (ADR LFPM-IMPL-005); off by default.
@@ -133,6 +137,7 @@ else:  # pragma: no cover - lightweight fallback
             self.cti_allow_internal_indicators = (
                 g("CTI_ALLOW_INTERNAL_INDICATORS", "false").lower() == "true"
             )
+            self.vuln_provider = g("VULN_PROVIDER", "offline")
             self.enable_darkweb_intel = (
                 g("ENABLE_DARKWEB_INTEL", "false").lower() == "true"
             )

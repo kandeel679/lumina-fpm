@@ -199,9 +199,9 @@ function SectionBand({ lanePositions, firewalls }) {
     const end = lanePositions[fws[fws.length - 1].id] + laneW;
     const color = vId === 'palo-alto' ? 'var(--vendor-paloalto)'
       : vId === 'fortinet' ? 'var(--vendor-fortinet)'
-      : vId === 'cisco' ? 'var(--vendor-cisco)' : 'var(--vendor-unknown)';
+      : 'var(--vendor-unknown)';
     const label = vId === 'palo-alto' ? 'palo alto networks'
-      : vId === 'fortinet' ? 'fortinet' : vId === 'cisco' ? 'cisco' : vId;
+      : vId === 'fortinet' ? 'fortinet' : vId;
     return { vId, start, end, color, label, count: fws.length };
   }).filter(Boolean);
 
@@ -701,7 +701,7 @@ function Topology({ openInspector, intent, goTo }) {
             const meta = laneMeta[fw.id];
             const vendorAccent = fw.vendorId === 'palo-alto' ? 'var(--vendor-paloalto)'
               : fw.vendorId === 'fortinet' ? 'var(--vendor-fortinet)'
-              : fw.vendorId === 'cisco' ? 'var(--vendor-cisco)' : 'var(--vendor-unknown)';
+              : 'var(--vendor-unknown)';
             const isSel = selected?.id === fw.id;
             const tipData = {
               kind: 'firewall',

@@ -28,15 +28,14 @@ function isPrivateIp(ip) {
 }
 
 /* Canonical vendor identity. Keeps UI vendor ids STABLE ('palo-alto',
- * 'fortinet', 'cisco') regardless of the DB display name, and provides the
- * correct firmware-OS prefix per vendor (PAN-OS / FortiOS / ASA). Previously
- * the id was a slug of the name ("Palo Alto Networks" -> "palo-alto-networks"),
- * which broke the dashboard's vendor filters (NaN risk) and mislabelled Cisco. */
+ * 'fortinet') regardless of the DB display name, and provides the correct
+ * firmware-OS prefix per vendor (PAN-OS / FortiOS). v1 = Fortinet + Palo Alto
+ * only. Previously the id was a slug of the name ("Palo Alto Networks" ->
+ * "palo-alto-networks"), which broke the dashboard's vendor filters (NaN risk). */
 function vendorMeta(name) {
   const n = (name || '').toLowerCase();
   if (n.includes('palo'))  return { id: 'palo-alto', abbr: 'PA', accent: 'var(--vendor-paloalto)', os: 'PAN-OS' };
   if (n.includes('forti')) return { id: 'fortinet',  abbr: 'FT', accent: 'var(--vendor-fortinet)', os: 'FortiOS' };
-  if (n.includes('cisco')) return { id: 'cisco',     abbr: 'CS', accent: 'var(--vendor-cisco)', os: 'ASA' };
   return {
     id: n.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown',
     abbr: (name || '?').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || '??',
@@ -244,8 +243,6 @@ export async function fetchLFPMData() {
       let model = 'Firewall';
       if (vm.id === 'fortinet') {
         model = d.hostname.includes('CORE') ? 'FortiGate 600F' : 'FortiGate 200F';
-      } else if (vm.id === 'cisco') {
-        model = 'Cisco ASA 5500-X';
       } else if (vm.id === 'palo-alto') {
         model = d.hostname.includes('DC') ? 'PA-5220' : 'PA-820';
       }
@@ -404,7 +401,9 @@ export async function fetchLFPMData() {
       }
     }));
     const externalNodes = (ctiData.indicators || [])
-      .filter(ind => ind.malicious)
+      // firmware_version indicators are device-scoped CVE evidence (value is a
+      // firmware string, not an IP) — never plot them as external network nodes.
+      .filter(ind => ind.malicious && ind.type !== 'firmware_version')
       .map(ind => {
         const obs = (ind.observations && ind.observations[0]) || {};
         const devs = devicesByIndicator[ind.value]
@@ -433,7 +432,6 @@ export async function fetchLFPMData() {
       const vs = [];
       if (/fortios|fortigate|fortinet/.test(hay)) vs.push('fortinet');
       if (/pan-os|panos|palo|globalprotect/.test(hay)) vs.push('palo-alto');
-      if (/\basa\b|adaptive security|cisco/.test(hay)) vs.push('cisco');
       return vs.length ? vs : [];
     };
     const isKev = (f) =>
