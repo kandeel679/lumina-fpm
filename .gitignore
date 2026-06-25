@@ -17,3 +17,6 @@ lab/benchmark_ground_truth.json
 
 # Local-only engineering handoff doc for Claude — intentionally NOT committed
 CLAUDE.md
+
+# Large reference doc (input, not a deliverable)
+FINAL DOCUMENTATION/*.docx

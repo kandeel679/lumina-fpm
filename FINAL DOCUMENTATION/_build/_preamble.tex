@@ -1,0 +1,120 @@
+% ============================================================
+%  LuminaFPM — Proactive Multi-Vendor Firewall Anomaly Management Platform
+%  B.Sc. Final Year Project — Term 2
+%  Arab Academy for Science, Technology, and Maritime Transport
+%  Compiles with pdflatex OR xelatex. Self-contained: no external images required
+%  (figure placeholders are framed boxes; drop real images into ./figures and
+%   replace the \uiplaceholder calls with \includegraphics to use them).
+% ============================================================
+\documentclass[12pt,a4paper]{report}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else
+  \usepackage{fontspec}
+\fi
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{ragged2e}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,shapes.misc,fit,calc,backgrounds}
+\usepackage[hidelinks]{hyperref}
+
+% ── Colour Palette ────────────────────────────────────────────────────────────
+\definecolor{NavyBlue}{HTML}{1F3864}
+\definecolor{MidBlue}{HTML}{2E5496}
+\definecolor{LightGray}{HTML}{EDEFF4}
+\definecolor{CodeBg}{HTML}{F7F7F7}
+\definecolor{SubtleGray}{HTML}{888888}
+\definecolor{DarkGray}{HTML}{555555}
+
+% ── Hyperref metadata ─────────────────────────────────────────────────────────
+\hypersetup{
+  pdftitle={LuminaFPM — Proactive Multi-Vendor Firewall Anomaly Management Platform},
+  pdfauthor={AASTMT Cybersecurity Team},
+}
+\renewcommand{\bibname}{References}
+
+% ── Heading Styles ────────────────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\Huge\color{NavyBlue}}{\chaptertitlename\ \thechapter}{8pt}{\Huge}
+\titleformat{\section}{\normalfont\Large\bfseries\color{NavyBlue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{MidBlue}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries}{\thesubsubsection}{0.7em}{}
+\titlespacing*{\chapter}{0pt}{10pt}{30pt}
+\titlespacing*{\section}{0pt}{18pt}{8pt}
+\titlespacing*{\subsection}{0pt}{14pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{4pt}
+
+% ── Page Style ────────────────────────────────────────────────────────────────
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{DarkGray}LuminaFPM}
+\fancyhead[R]{\small\color{DarkGray}\leftmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% ── Table Helpers (used by chapter content) ───────────────────────────────────
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\Centering\arraybackslash}p{#1}}
+\newcommand{\hrow}{}
+\newcommand{\hcell}[1]{\textbf{#1}}
+\newcommand{\altrow}{}
+\setlength{\arrayrulewidth}{0.4pt}
+\arrayrulecolor{black!55}
+
+% ── Code Listings ─────────────────────────────────────────────────────────────
+\lstset{
+  backgroundcolor=\color{CodeBg},
+  basicstyle=\ttfamily\footnotesize\color{black},
+  breaklines=true, columns=fullflexible, frame=single, framerule=0.3pt,
+  rulecolor=\color{black!30}, xleftmargin=1.0em, xrightmargin=0.5em,
+  aboveskip=8pt, belowskip=8pt, showstringspaces=false, numbers=none,
+}
+
+% ── List & Caption Styles ─────────────────────────────────────────────────────
+\setlist[itemize]{leftmargin=1.9em, topsep=5pt, itemsep=2pt, parsep=1pt}
+\setlist[enumerate]{leftmargin=1.9em, topsep=5pt, itemsep=2pt, parsep=1pt}
+\captionsetup{font={small,it}, labelfont={bf}, labelsep=period, skip=5pt}
+
+% ── Figure Helper: framed placeholder (compiles with no external image) ───────
+\newcommand{\uiplaceholder}[4]{%
+\begin{figure}[htbp]
+  \centering
+  \setlength{\fboxsep}{0pt}%
+  \fcolorbox{black!45}{LightGray}{%
+    \begin{minipage}[c][4.6cm][c]{0.90\linewidth}
+      \centering
+      \large\bfseries\color{NavyBlue}#1\\[8pt]
+      \normalsize\color{black}\itshape #2\\[10pt]
+      \small\color{DarkGray}[\,Figure placeholder — insert the supplied image here\,]
+    \end{minipage}}
+  \caption{#3}\label{#4}
+\end{figure}}
+
+% ── Paragraph Spacing ─────────────────────────────────────────────────────────
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{1.4em}
+\setstretch{1.12}
+\hbadness=10000 \hfuzz=30pt \vbadness=10000 \vfuzz=30pt

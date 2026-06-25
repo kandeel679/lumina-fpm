@@ -1,0 +1,2186 @@
+% !TeX program = xelatex
+% ============================================================
+%  CyberArcade — Educational Cybersecurity Training Platform
+%  B.Sc. Final Year Project — January 2026
+%  Arab Academy for Science, Technology, and Maritime Transport
+% ============================================================
+\documentclass[12pt,a4paper]{report}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Latin Modern Roman}
+  \newfontfamily\arabicfont[Script=Arabic,Scale=1.08]{Amiri}
+\fi
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage[nopatch=footnote]{microtype}
+\usepackage{setspace}
+\usepackage{ragged2e}
+\usepackage{caption}
+\usepackage{emptypage}
+\usepackage{pdfpages}
+
+% ── Colour Palette ────────────────────────────────────────────────────────────
+\definecolor{NavyBlue}{HTML}{000000}   % black headings
+\definecolor{MidBlue}{HTML}{000000}    % black table headers, rules
+\definecolor{LightGray}{HTML}{F2F2F2}  % alternating table rows
+\definecolor{CodeBg}{HTML}{F7F7F7}     % subtle code block background
+\definecolor{SubtleGray}{HTML}{888888}
+\definecolor{DarkGray}{HTML}{555555}
+
+% ── Hyperref Setup ────────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=false,
+  hidelinks,
+  pdftitle={CyberArcade — Educational Cybersecurity Training Platform},
+  pdfauthor={AASTMT Cybersecurity Team},
+  pageanchor=false,
+}
+
+% ── Heading Styles ────────────────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\Huge}
+  {}
+  {0pt}
+  {\MakeUppercase}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries}
+  {\thesection}
+  {0.7em}{}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries}
+  {\thesubsection}
+  {0.7em}{}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsubsection}
+  {0.7em}{}
+
+\titlespacing*{\chapter}{0pt}{32pt}{42pt}
+\titlespacing*{\section}{0pt}{18pt}{8pt}
+\titlespacing*{\subsection}{0pt}{14pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{4pt}
+
+% ── Page Style ────────────────────────────────────────────────────────────────
+\setlength{\headheight}{15pt}
+\pagestyle{empty}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}
+
+% ── Table Helpers ─────────────────────────────────────────────────────────────
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\Centering\arraybackslash}p{#1}}
+
+% Header row colour
+\newcommand{\hrow}{}
+\newcommand{\hcell}[1]{\textbf{#1}}
+\newcommand{\altrow}{}
+
+\setlength{\arrayrulewidth}{0.4pt}
+\arrayrulecolor{black}
+
+% ── Code Listings ─────────────────────────────────────────────────────────────
+\lstset{
+  backgroundcolor=\color{CodeBg},
+  basicstyle=\ttfamily\small\color{black},
+  breaklines=true,
+  columns=fullflexible,
+  frame=none,
+  xleftmargin=1.5em,
+  xrightmargin=0.5em,
+  aboveskip=8pt,
+  belowskip=8pt,
+  showstringspaces=false,
+  numbers=none,
+  literate={\{}{{\ttfamily\char`\{}}1 {\}}{{\ttfamily\char`\}}}1,
+}
+
+% ── List Styles ───────────────────────────────────────────────────────────────
+\setlist[itemize]{leftmargin=1.9em, topsep=6pt, itemsep=3pt, parsep=1pt}
+\setlist[enumerate]{leftmargin=1.9em, topsep=6pt, itemsep=3pt, parsep=1pt}
+
+% ── Caption Style ─────────────────────────────────────────────────────────────
+\captionsetup{font={small,it}, labelfont={bf}, labelsep=period, hypcap=false,
+              justification=centering, skip=4pt}
+
+% ── Figure Helpers ────────────────────────────────────────────────────────────
+\newcommand{\diagramfigure}[4]{%
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=#1\linewidth,height=0.72\textheight,keepaspectratio]{#2}
+  \caption{#3}\label{#4}
+\end{figure}
+}
+
+\newcommand{\frontendfigure}[3]{%
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.72\textheight,keepaspectratio]{#1}
+  \caption{#2}\label{#3}
+\end{figure}
+}
+
+\newcommand{\uiplaceholder}[4]{%
+\begin{figure}[htbp]
+  \centering
+  \fcolorbox{black}{white}{%
+    \begin{minipage}[c][5.5cm][c]{0.88\linewidth}
+      \centering
+      \Large\bfseries\color{black}#1\\[8pt]
+      \normalsize\color{black}#2\\[6pt]
+      \small\itshape Screenshot space reserved for the final frontend image.
+    \end{minipage}}
+  \caption{#3}\label{#4}
+\end{figure}
+}
+
+% ── Paragraph Spacing ─────────────────────────────────────────────────────────
+\setlength{\parskip}{3pt}
+\setlength{\parindent}{1.5em}
+\hbadness=10000
+\hfuzz=30pt
+\vbadness=10000
+\vfuzz=30pt
+\setstretch{1.12}
+\ifXeTeX
+  \TeXXeTstate=1
+\fi
+
+\makeatletter
+\setlength{\@fptop}{0pt}
+\setlength{\@fpsep}{10pt}
+\setlength{\@fpbot}{0pt}
+\makeatother
+
+% =============================================================================
+\begin{document}
+
+% ── Cover Page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \thispagestyle{empty}
+  \vspace*{0.8cm}
+
+  \includegraphics[width=2.5cm]{figures/loogo.png}\\[1.0cm]
+
+  {\Large\bfseries Arab Academy for Science, Technology, and\\
+  Maritime Transport}\\[4pt]
+  {\large College of Computing and Information Technology -- Cairo}\\[4pt]
+  {\large\bfseries Department of Cybersecurity}
+
+  \vspace{0.9cm}
+  {\large B.Sc.\ Final Year Project}
+
+  \vspace{1.0cm}
+  \rule{0.82\linewidth}{1.2pt}\\[8pt]
+  {\Huge\bfseries CyberArcade}\\[8pt]
+  {\large\bfseries An Educational Cybersecurity Training Platform}\\[8pt]
+  \rule{0.82\linewidth}{1.2pt}
+
+  \vspace{1.4cm}
+  {\large\bfseries Presented By:}\\[0.6cm]
+  \begin{tabular}{ccc}
+    Nour Yehia & Aya Batarfi & Mohamed Ahmed \\
+    Khadeja Waheed & Gana Freigah & Seif Eldin Tamer
+  \end{tabular}
+
+  \vspace{2.1cm}
+  {\large\bfseries Supervised By:}\\[0.35cm]
+  Dr.\ Ehab Kamel Abo Saif\\[6pt]
+  Dr.\ Hassan Yakout
+\end{titlepage}
+
+% ── Front Matter ──────────────────────────────────────────────────────────────
+\pagenumbering{roman}
+
+% ── Declaration ───────────────────────────────────────────────────────────────
+\chapter*{Declaration}
+\addcontentsline{toc}{chapter}{Declaration}
+\thispagestyle{empty}
+
+I hereby certify that this material, which I now submit for assessment on the program of study leading
+to the award of Bachelor of Science in Computer Science is entirely my own work, that I have exercised
+reasonable care to ensure that the work is original, and does not to the best of my knowledge breach
+any law of copyright, and has not been taken from the work of others save and to the extent that such
+work has been cited and acknowledged within the text of my work.
+
+\vspace{0.9cm}
+\noindent
+\begin{tabular}{@{}p{0.46\linewidth}@{\hspace{0.07\linewidth}}p{0.46\linewidth}@{}}
+\textbf{Student Name:} Mohamed Ahmed & \textbf{Student Name:} Aya Batarfi \\
+\textbf{Registration No.:} 221006216 & \textbf{Registration No.:} 221006387 \\
+\textbf{Signed:} \hrulefill & \textbf{Signed:} \hrulefill \\
+\textbf{Date:} 24/12/2025 & \textbf{Date:} 24/12/2025 \\
+\addlinespace[0.7cm]
+\textbf{Student Name:} Khadeja Waheed & \textbf{Student Name:} Nour Yahia \\
+\textbf{Registration No.:} 221006441 & \textbf{Registration No.:} 221004805 \\
+\textbf{Signed:} \hrulefill & \textbf{Signed:} \hrulefill \\
+\textbf{Date:} 24/12/2025 & \textbf{Date:} 24/12/2025 \\
+\addlinespace[0.7cm]
+\textbf{Student Name:} Seif Eldin Tamer & \textbf{Student Name:} Gana Freigah \\
+\textbf{Registration No.:} 221006233 & \textbf{Registration No.:} 221005333 \\
+\textbf{Signed:} \hrulefill & \textbf{Signed:} \hrulefill \\
+\textbf{Date:} 24/12/2025 & \textbf{Date:} 24/12/2025
+\end{tabular}
+\clearpage
+
+% ── Acknowledgment ────────────────────────────────────────────────────────────
+\chapter*{Acknowledgment}
+\addcontentsline{toc}{chapter}{Acknowledgment}
+
+First and foremost, we are deeply thankful to Allah for granting us the strength, patience, and
+guidance throughout our academic journey and during the development of this graduation project.
+
+We would like to express our sincere gratitude and appreciation to Dr.\ Ehab Abo Saif and
+Dr.\ Hassan Yakout for their invaluable guidance, continuous support, and constructive feedback
+throughout the development of this graduation project. Their expertise, academic insight, and
+dedication greatly contributed to shaping the technical direction of the project and enhancing its
+overall quality.
+
+We are especially thankful for their patience, encouragement, and thoughtful supervision, which helped
+us overcome challenges and maintain a clear vision during all phases of the project. Their guidance not
+only strengthened our understanding of cybersecurity concepts but also improved our ability to apply
+theoretical knowledge to the design and implementation of a practical, real-world system.
+
+This project would not have been successfully completed without their mentorship and support, and we
+are truly grateful for the opportunity to work under their supervision.
+\clearpage
+
+% ── Abstract ─────────────────────────────────────────────────────────────────
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+The rapid growth of cyber threats has created an increasing demand for skilled cybersecurity
+professionals with strong practical experience. Traditional cybersecurity education often focuses on
+theoretical knowledge with limited opportunities for hands-on practice, leaving learners unprepared
+for real-world attack and defense scenarios. Existing training platforms provide virtual labs but many
+lack adaptive guidance, intelligent assistance, and mechanisms to ensure effective learning when users
+encounter difficulties.
+
+This project presents CyberArcade, a web-based cybersecurity training platform designed to bridge the
+gap between theory and practice through interactive courses and realistic lab environments. The
+platform offers structured cybersecurity courses with hands-on labs where users apply concepts in
+attack and defense scenarios. Labs run on Ubuntu Server infrastructure using Docker containers to
+deploy isolated attacker and victim machines, which users access remotely through a browser using
+Apache Guacamole.
+
+To improve learning effectiveness, the platform integrates a step-by-step task system, a
+time-controlled hint mechanism that encourages independent problem-solving, and an AI-powered chatbot
+that answers user questions during lab execution. It also includes an automated lab-solving algorithm
+that becomes available only after all hints have been used, allowing learners to observe the correct
+solution methodology while retaining the option to continue manually.
+
+CyberArcade supports subscription-based access and instructor-managed classes, enabling students to
+join specific courses using class IDs. Experimental evaluation confirmed that core features, including
+lab deployment, hint enforcement, chatbot assistance, and automated solving, operated correctly across
+end-to-end testing scenarios and supported up to 50 concurrent isolated user environments. By combining
+hands-on labs, intelligent assistance, controlled automation, and scalable web-based infrastructure,
+CyberArcade provides an adaptive solution for modern cybersecurity education.
+
+\clearpage
+
+% ── Table of Contents ────────────────────────────────────────────────────────
+\tableofcontents
+\clearpage
+
+% ── List of Figures ──────────────────────────────────────────────────────────
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\clearpage
+
+% ── List of Tables ───────────────────────────────────────────────────────────
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\clearpage
+
+% ── List of Acronyms ─────────────────────────────────────────────────────────
+\chapter*{List of Acronyms / Abbreviations}
+\addcontentsline{toc}{chapter}{List of Acronyms/Abbreviations}
+
+\begin{center}
+\begin{tabular}{|L{2.8cm}|L{11.2cm}|}
+\hline
+\hrow \hcell{Acronym} & \hcell{Definition} \\
+\hline
+IDS  & Intrusion Detection System \\\hline
+\altrow AI   & Artificial Intelligence \\\hline
+API  & Application Programming Interface \\\hline
+\altrow CTF  & Capture The Flag \\\hline
+DFD  & Data Flow Diagram \\\hline
+\altrow DoS  & Denial of Service \\\hline
+GUI  & Graphical User Interface \\\hline
+\altrow NLP  & Natural Language Processing \\\hline
+RBAC & Role-Based Access Control \\\hline
+\altrow SOC  & Security Operations Center \\\hline
+VM   & Virtual Machine \\\hline
+\altrow ORM  & Object-Relational Mapping \\\hline
+JWT  & JSON Web Token \\\hline
+\altrow REST & Representational State Transfer \\\hline
+TLS  & Transport Layer Security \\\hline
+\altrow AES  & Advanced Encryption Standard \\\hline
+VPN  & Virtual Private Network \\\hline
+\altrow WAF  & Web Application Firewall \\\hline
+CDN  & Content Delivery Network \\\hline
+\altrow SCORM& Shareable Content Object Reference Model \\\hline
+\end{tabular}
+\end{center}
+\clearpage
+
+% =============================================================================
+\pagenumbering{arabic}
+
+% =============================================================================
+\cleardoublepage
+\hypersetup{pageanchor=true}
+\chapter{Introduction}
+% =============================================================================
+
+Cybersecurity intrusions and digital threats have become a pressing disaster for organizations
+worldwide. The shortage of skilled cybersecurity professionals continues to widen even as the attack
+surface grows. Our project, CyberArcade, aims to bridge the practical knowledge gap by providing an
+interactive, web-based training platform that allows learners to practice real attack and defense
+scenarios in safe, isolated environments with intelligent guidance.
+
+\section{Purpose}
+
+CyberArcade is a web-based cybersecurity training platform that accurately simulates real-world attack
+and defense scenarios within isolated containerized environments. This system is intended to assist
+cybersecurity students, IT professionals, and organizations in developing practical skills through
+guided labs, time-controlled hints, an AI-powered chatbot, and an automated lab-solving mechanism that
+reinforces learning outcomes.
+
+\section{Intended Audience}
+
+Our primary audiences are:
+\begin{itemize}
+  \item \textbf{Cybersecurity Students:} Undergraduate and graduate students seeking practical experience to complement academic studies.
+  \item \textbf{IT Professionals:} System administrators, network engineers, and developers looking to enhance their security skills.
+  \item \textbf{Enterprise Employees:} Organizations aiming to train staff in security awareness and defensive techniques.
+  \item \textbf{Cybersecurity Enthusiasts:} Self-learners and hobbyists entering the cybersecurity field.
+  \item \textbf{Educational Institutions:} Universities and training centers needing a scalable platform for cybersecurity courses.
+  \item \textbf{Corporate Trainers:} Instructors who require a controlled environment to teach specific security concepts to teams.
+\end{itemize}
+
+\section{Intended Use}
+
+CyberArcade is intended for use in academic, professional, and enterprise training environments. It
+can be integrated into existing curricula or used standalone for self-paced learning. The platform
+monitors user progress, enforces structured hint usage, and provides automated demonstrations when
+learners exhaust all available assistance.
+
+\section{Scope}
+
+\subsection{Included in Scope}
+\begin{itemize}
+  \item User authentication and subscription management system
+  \item Course and lab catalog with structured learning paths
+  \item Docker-based isolated lab environments for each exercise
+  \item Apache Guacamole integration for browser-based lab access
+  \item Adaptive hint system with configurable timing restrictions
+  \item AI-powered chatbot for conceptual guidance during labs
+  \item Automated solving algorithm for completed exercises
+  \item Instructor dashboard for class management
+  \item Progress tracking and achievement system
+  \item Responsive web interface accessible from multiple devices
+\end{itemize}
+
+\subsection{Excluded from Scope}
+\begin{itemize}
+  \item Development of original cybersecurity curriculum content
+  \item Real-time multiplayer attack/defense scenarios
+  \item Mobile application development
+  \item Integration with external certification bodies
+  \item Advanced enterprise features like SCORM compliance
+  \item Offline functionality
+\end{itemize}
+
+\section{Problem Statement}
+
+The cybersecurity skills gap continues to widen despite increasing threats. Organizations report
+difficulty finding qualified professionals. Current training solutions suffer from several limitations:
+\begin{enumerate}
+  \item \textbf{High Cost:} Enterprise platforms like Cyberbit are prohibitively expensive for individuals and educational institutions.
+  \item \textbf{Accessibility Barriers:} Many platforms require complex local VM setups, creating technical hurdles for beginners.
+  \item \textbf{Limited Guidance:} Some platforms offer labs but lack structured learning paths and intelligent assistance.
+  \item \textbf{Educational Gaps:} Free platforms often provide challenges without pedagogical structure or instructor oversight.
+  \item \textbf{Scalability Issues:} Educational institutions struggle to provide consistent lab environments for large cohorts.
+  \item \textbf{Engagement Drop-off:} Users frequently abandon training when stuck on difficult challenges without adequate support.
+\end{enumerate}
+
+\section{Goals}
+
+\subsection{Short-term Goals (Project Completion)}
+\begin{itemize}
+  \item Functional platform with at least 5 complete courses and 15 labs
+  \item Support for 50 concurrent users with isolated environments
+  \item Successful deployment on Ubuntu Server infrastructure
+  \item Integration of all core features: labs, hints, chatbot, and auto-solver
+\end{itemize}
+
+\subsection{Medium-term Goals (6--12 Months Post-Launch)}
+\begin{itemize}
+  \item Expand course catalog to 20+ courses across different cybersecurity domains
+  \item Implement advanced features like progress analytics and skill assessment
+  \item Develop mobile-responsive interface
+  \item Establish partnerships with educational institutions
+\end{itemize}
+
+\subsection{Long-term Goals (1--3 Years)}
+\begin{itemize}
+  \item Support 1000+ concurrent users with optimized resource management
+  \item Develop specialized tracks for industry certifications (CEH, Security+, OSCP preparation)
+  \item Implement gamification elements and leaderboards
+  \item Create content creation tools for community-driven lab development
+\end{itemize}
+
+\section{Definitions}
+
+\begin{longtable}{|L{3.8cm}|L{10.2cm}|}
+\caption{Definitions of Key Terms}\label{tab:definitions}\\
+\hline
+\hrow \hcell{Term / Tool / Library} & \hcell{Definition / Purpose} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Term / Tool / Library} & \hcell{Definition / Purpose} \\
+\hline
+\endhead
+Lab & A practical exercise environment where users apply cybersecurity concepts, typically consisting of attacker and victim machines \\\hline
+\altrow Container & Isolated, lightweight virtual environment using Docker technology to run lab components \\\hline
+Guacamole & Apache Guacamole, a clientless remote desktop gateway providing browser-based access to lab machines \\\hline
+\altrow Hint System & Progressive assistance mechanism providing step-by-step guidance with enforced time delays between hints \\\hline
+Auto-Solver & Automated algorithm that completes lab objectives when triggered by the user after exhausting all hints \\\hline
+\altrow Course & Structured collection of learning modules containing both theoretical content and associated labs \\\hline
+Class ID & Unique identifier allowing students to join instructor-created groups for coordinated learning \\\hline
+\altrow Orchestrator & Backend service managing the lifecycle of lab containers (creation, monitoring, destruction) \\\hline
+Chatbot & AI-powered assistant providing conceptual guidance without revealing specific lab solutions \\\hline
+\end{longtable}
+
+\section{Standards to be Used in this Project}
+
+\subsection{Programming Standards}
+\begin{itemize}
+  \item PEP 8: Python code style guidelines
+  \item IEEE 829: Software and System Test Documentation
+  \item Git Flow: Version control branching strategy
+  \item REST API: Standard HTTP-based API design
+  \item OWASP: Web application security guidelines
+\end{itemize}
+
+\begin{longtable}{|L{3.8cm}|L{4.5cm}|L{5.7cm}|}
+\caption{Challenges, Risks, and Mitigation Strategies}\label{tab:risks}\\
+\hline
+\hrow \hcell{Challenges} & \hcell{Risks} & \hcell{Risk Mitigation Strategies} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Challenges} & \hcell{Risks} & \hcell{Risk Mitigation Strategies} \\
+\hline
+\endhead
+Container escape vulnerabilities & High -- Could compromise entire server infrastructure & Implement Docker security best practices, read-only filesystems, limit capabilities, regular security updates \\\hline
+\altrow Resource exhaustion from concurrent containers & High -- Could crash server and disrupt all users & Implement resource quotas, container limits, queue system for lab access, auto-scaling where possible \\\hline
+Guacamole performance under load & Medium -- Poor user experience, lag in lab interactions & Optimize Guacamole configuration, implement connection pooling, use efficient display protocols \\\hline
+\altrow Users over-relying on hints and auto-solver & Medium -- Defeats learning objectives & Enforce minimum time between hints, track hint usage, provide post-lab knowledge checks \\\hline
+Malicious users attacking platform infrastructure & High -- Service disruption, data breach & Implement strict network segmentation, WAF, intrusion detection, regular security audits \\\hline
+\altrow Hosting costs for resource-intensive containers & Medium -- Unsustainable operations & Implement efficient container lifecycle, auto-suspension of idle labs, tiered subscription model \\\hline
+\end{longtable}
+
+% =============================================================================
+\chapter{Literature Review}
+% =============================================================================
+
+In our literature review, we examined previous cybersecurity training platforms and academic research
+on virtual lab-based education, AI-assisted learning, and automated problem-solving. What follows is a
+comparison with respect to datasets, methods, features, and results.
+
+\section{Related Projects}
+
+\subsection{Cyberbit}
+
+\textbf{Overview}\\
+Cyberbit is a professional cybersecurity training platform focusing on immersive cyber range
+environments. It provides realistic enterprise-scale simulations where trainees practice defensive and
+offensive cybersecurity operations within Security Operations Center (SOC) scenarios.
+
+\textbf{Features}
+\begin{itemize}
+  \item Enterprise-scale network simulation
+  \item SOC-based incident response workflows
+  \item Real virtual machine environments
+  \item Role-based training scenarios
+\end{itemize}
+
+\textbf{Limitations}
+\begin{itemize}
+  \item Designed primarily for enterprise training, not individual learners
+  \item Limited step-by-step guidance during labs
+  \item No built-in chatbot for real-time learner assistance
+  \item Does not support automated lab solving when learners are stuck
+  \item Prohibitively expensive for academic institutions
+\end{itemize}
+
+\textbf{Gap Addressed}\\
+Cyberbit demonstrates the importance of realistic environments but lacks adaptive learning support and
+user-controlled automation, which are core goals of CyberArcade.
+
+\subsection{TryHackMe}
+
+\textbf{Overview}\\
+TryHackMe is a widely used online cybersecurity learning platform that combines theoretical content
+with interactive labs. Users progress through guided rooms covering penetration testing, networking,
+and malware analysis.
+
+\textbf{Features}
+\begin{itemize}
+  \item Guided rooms with step-by-step tasks
+  \item Structured learning paths from beginner to advanced
+  \item Browser-accessible lab environments
+  \item Community-driven content
+\end{itemize}
+
+\textbf{Limitations}
+\begin{itemize}
+  \item Labs are mostly static and follow predefined solutions
+  \item Hints are not time-controlled and can be used immediately
+  \item No automated solving mechanism once hints are exhausted
+  \item Limited real-time conversational assistance for user-specific questions
+\end{itemize}
+
+\textbf{Gap Addressed}\\
+TryHackMe validates the effectiveness of guided labs but does not enforce independent problem-solving
+or provide intelligent automation after learning attempts, which CyberArcade explicitly addresses.
+
+\subsection{Virtual Lab-Based Cybersecurity Training Platforms}
+
+Many academic and open-source training systems rely on virtual labs using containerization or
+virtualization technologies, commonly deploying attacker and victim machines using Docker and providing
+access through Apache Guacamole.
+
+\textbf{Limitations}
+\begin{itemize}
+  \item Labs often lack integrated learning logic
+  \item No adaptive hint scheduling or enforced learning intervals
+  \item No AI-driven chatbot support
+  \item Automation is typically absent or external to the learning flow
+\end{itemize}
+
+\textbf{Gap Addressed}\\
+While virtual lab platforms provide technical infrastructure, they do not address learner engagement,
+guided assistance, or intelligent progression control---all central to CyberArcade.
+
+\subsection{AI-Assisted Learning Systems in Cybersecurity}
+
+Some modern learning platforms integrate chatbots or AI tutors to answer learner questions. These
+systems improve accessibility by providing explanations and troubleshooting support.
+
+\textbf{Limitations}
+\begin{itemize}
+  \item Chatbots are often disconnected from the lab state
+  \item No awareness of user progress or hint usage
+  \item No automated execution of lab solutions
+  \item Assistance is informational rather than operational
+\end{itemize}
+
+\textbf{Gap Addressed}\\
+These systems highlight the value of AI support but fail to integrate assistance with real lab
+execution and automated solving logic. CyberArcade connects its chatbot directly to the current lab
+context.
+
+\subsection{Hack The Box Academy}
+
+Hack The Box Academy provides structured cybersecurity courses combined with practical virtual
+machines, suitable for professional and academic learning, emphasizing hands-on challenges and guided
+learning paths.
+
+\textbf{Limitations}
+\begin{itemize}
+  \item No AI-based tutor integrated into the learning experience
+  \item No automated execution of exploitation or defense steps
+  \item Learning paths require continuous self-guidance or instructor involvement
+\end{itemize}
+
+\textbf{Gap Addressed}\\
+CyberArcade addresses these gaps by introducing an AI-powered chatbot for learner support and an
+automated lab-solving mechanism, enabling learners to receive guidance and demonstrations without
+depending entirely on instructors.
+
+\subsection{Identified Research Gap}
+
+From the reviewed systems, several limitations remain unaddressed:
+\begin{itemize}
+  \item Lack of time-controlled hints to encourage independent problem-solving
+  \item Absence of automated lab solving as a last-resort learning aid
+  \item Limited integration between chatbot assistance and live lab environments
+  \item No unified platform combining courses, labs, AI guidance, automation, and class-based access control
+\end{itemize}
+
+These gaps motivate the design of CyberArcade, which integrates structured courses, interactive labs,
+intelligent hint scheduling, AI chatbot assistance, automated lab solving, and instructor-managed
+classes within a unified, subscription-based platform.
+
+\section{Similar Systems}
+
+\subsection{Immersive Labs}
+
+Immersive Labs focuses on developing cybersecurity skills through challenge-based labs and
+role-oriented learning paths, widely used in enterprise and workforce training environments. However,
+it remains largely manual in operation, with no AI chatbot, no automation for demonstrating attack
+scenarios, and high reliance on instructors for explanations.
+
+\subsection{RangeForce}
+
+RangeForce specializes in defensive (Blue Team) cybersecurity training using web-based cyber range
+environments, supporting team-based exercises. Despite its practical focus, learning content and labs
+are not fully unified into a single adaptive system, with no automated walkthrough or AI-driven
+learner support mechanism.
+
+\subsection{Comparison Summary}
+
+\small
+\begin{longtable}{|L{3.05cm}|C{1.45cm}|C{1.85cm}|C{1.5cm}|C{1.65cm}|C{1.75cm}|}
+\caption{Comparison of Cybersecurity Training Platforms}\label{tab:comparison}\\
+\hline
+\hrow \hcell{Feature} & \hcell{Cyber\-bit} & \hcell{TryHack\-Me} & \hcell{HTB Acad.} & \hcell{Range\-Force} & \hcell{Cyber\-Arcade} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Feature} & \hcell{Cyber\-bit} & \hcell{TryHack\-Me} & \hcell{HTB Acad.} & \hcell{Range\-Force} & \hcell{Cyber\-Arcade} \\
+\hline
+\endhead
+Courses with Labs & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\\hline
+\altrow Real Virtual Machines & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\\hline
+Browser-Based Lab Access & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\\hline
+\altrow AI Chatbot Support & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\\hline
+Automated Lab Solving & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\\hline
+\altrow Time-Gated Hint System & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\\hline
+Instructor Class Management & $\times$ & $\times$ & Limited & $\times$ & \checkmark \\\hline
+\altrow Guided Steps & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\\hline
+Adaptive Learning & $\times$ & $\times$ & $\times$ & $\times$ & Limited \\\hline
+\altrow Subscription Pricing & Enter\-prise & Free\-mium & Free\-mium & Enter\-prise & Tiered \\\hline
+Offline Support & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ \\\hline
+\end{longtable}
+\normalsize
+
+\subsection{CyberArcade Competitive Advantage}
+
+These features give CyberArcade a competitive advantage over existing platforms:
+\begin{itemize}
+  \item \textbf{ML-Powered AI Chatbot:} CyberArcade embeds a context-aware AI chatbot directly within the lab environment, providing real-time conceptual guidance without revealing solutions---a feature absent from all compared platforms.
+  \item \textbf{Automated Lab-Solving Algorithm:} After all hints are exhausted, CyberArcade's automated solver demonstrates the correct methodology, reinforcing learning for stuck users while preserving the educational process.
+  \item \textbf{Time-Controlled Hint Enforcement:} The progressive hint system enforces minimum time delays between hints, ensuring learners genuinely attempt problems before receiving assistance.
+  \item \textbf{Unified Learning Ecosystem:} Unlike platforms that separate courses, labs, AI support, and management tools, CyberArcade integrates all components into a single cohesive environment.
+  \item \textbf{Browser-Based Deployment via Guacamole:} Full lab access through Apache Guacamole eliminates local setup requirements.
+  \item \textbf{Academic Class Management:} Instructor-created classes with unique Class IDs allow structured academic usage, bridging the gap between self-paced and institution-led learning.
+\end{itemize}
+
+\subsection{Conclusion}
+
+Existing cybersecurity training platforms provide either structured learning content or hands-on lab
+environments, but remain largely dependent on manual guidance and static interaction. CyberArcade
+bridges this gap by integrating an AI chatbot for conceptual guidance and an automated lab-solving
+mechanism within a single web-based platform. This approach reduces dependency on instructors,
+supports self-paced learning, and enhances learner understanding through guided demonstrations.
+
+\section{Survey and User Insights}
+
+To better understand the needs and expectations of potential users, we conducted a survey with 34
+participants.
+
+\subsection{Demographics and Experience}
+
+Survey respondents included students (62\%), IT professionals (24\%), and cybersecurity enthusiasts
+(14\%). Of these, 58\% rated their cybersecurity skill level as beginner or intermediate, while 71\%
+reported prior experience with at least one cybersecurity lab platform.
+
+\subsection{Challenges in Cybersecurity Learning}
+
+The most commonly reported challenges were lack of hands-on practice (79\%), difficulty setting up
+local lab environments (65\%), getting stuck with no guidance (71\%), and high cost of existing
+training platforms (55\%).
+
+\subsection{Learning Needs and Platform Expectations}
+
+91\% of respondents rated real-time guidance during labs as important or very important. 87\% indicated
+that browser-based access without local installation was a significant factor in platform adoption.
+
+\subsection{User Preferences}
+
+74\% of respondents preferred a tiered or monthly subscription pricing model. 82\% indicated they
+would likely use an AI chatbot-guided lab platform. The most valued features were hands-on labs (94\%),
+step-by-step guidance (88\%), and automated solution walkthroughs (76\%).
+
+\section{Four P's of Marketing}
+
+\subsection{Product}
+
+CyberArcade is a web-based cybersecurity training platform providing both theoretical knowledge and
+practical, hands-on experience through interactive labs. Key features include:
+\begin{itemize}
+  \item Structured cybersecurity courses organized by topic (networking, penetration testing, malware analysis, incident response)
+  \item Hands-on Docker-based virtual labs with attacker and victim machines
+  \item Step-by-step guided tasks that encourage critical thinking without revealing direct solutions
+  \item Time-controlled hint system with enforced delay periods between each hint
+  \item AI chatbot assistance for conceptual guidance without exposing final answers
+  \item Automated lab-solving algorithm available after all hints are exhausted
+  \item Class-based access control for instructor-led academic environments
+\end{itemize}
+
+\subsection{Price}
+\begin{itemize}
+  \item Free trial: Limited access to introductory labs and preview courses
+  \item Monthly subscription: Full platform access for individual learners
+  \item Semester-based plans: Discounted rates for students with academic email verification
+  \item Institutional licenses: Bulk enrollment pricing for universities and training centers
+\end{itemize}
+
+\subsection{Place}
+\begin{itemize}
+  \item Fully web-based platform accessible from any modern browser
+  \item Ubuntu Server hosting Docker containers for centralized lab management
+  \item Apache Guacamole providing browser-based remote access to lab machines
+  \item Compatible with academic integration through class IDs and instructor dashboards
+\end{itemize}
+
+\subsection{Promotion}
+\begin{itemize}
+  \item Academic Promotion: Collaboration with universities, integration into coursework, demonstrations during lectures
+  \item Digital Marketing: LinkedIn and social media campaigns targeting cybersecurity communities
+  \item Content Marketing: Blog posts, tutorials, and free preview labs
+  \item Freemium Model: Limited free labs to allow users to experience the platform before subscribing
+  \item Industry Events: Presence at cybersecurity conferences such as DEF CON and Black Hat
+\end{itemize}
+
+\subsection{Summary}
+
+The Four P's analysis demonstrates that CyberArcade is well-positioned in the market. By combining
+advanced technical infrastructure with adaptive learning mechanisms, intelligent assistance, and
+controlled automation, the platform offers a unique and competitive solution for modern cybersecurity
+education.
+
+\section{PESTLE}
+
+\subsection{Introduction}
+
+PESTLE analysis evaluates the external macro-environmental factors affecting adoption and growth of
+CyberArcade within the Egyptian and global cybersecurity education markets.
+
+\subsection{Political}
+
+Governments worldwide increasingly recognize cybersecurity as a national priority. In Egypt, the
+government has demonstrated clear political will to digitize infrastructure and strengthen
+cybersecurity capabilities through initiatives such as Egypt Vision 2030.
+
+\subsection{Economic}
+
+Egypt's ICT and cybersecurity markets are expanding despite broader economic challenges. CyberArcade's
+tiered, subscription-based pricing model addresses this by offering accessible entry points for
+individual learners while providing institutional pricing for larger organizations.
+
+\subsection{Social}
+
+Egypt has a young, tech-savvy population fueling high demand for online services and increasing
+awareness of cybersecurity threats. Growing acceptance of remote and online learning platforms aligns
+strongly with CyberArcade's browser-based, self-paced learning model.
+
+\subsection{Technological}
+
+Egypt's expanding embrace of cloud computing, AI, and cybersecurity solutions offers significant
+opportunities. The availability of containerization technologies (Docker), browser-based remote access
+tools (Apache Guacamole), and AI/NLP services enables CyberArcade's scalable and realistic lab
+infrastructure.
+
+\subsection{Legal}
+
+Compliance with Egypt's Cybersecurity Law (Law No.\ 175 of 2018) and data protection regulations is
+essential for platform adoption. CyberArcade mitigates legal risks by operating within controlled,
+isolated environments and enforcing strict acceptable-use policies.
+
+\subsection{Environmental}
+
+CyberArcade's container-based architecture minimizes physical resource consumption compared to
+traditional physical lab setups. Auto-suspension of idle lab environments aligns with green tech
+trends.
+
+\subsection{PESTLE Summary}
+
+The PESTLE analysis indicates that the external environment is largely favorable for CyberArcade.
+Political and social trends support cybersecurity education, technological advances enable scalable
+realistic labs, and economic and environmental factors favor web-based solutions.
+
+\section{SWOT}
+
+\subsection{Strengths}
+\begin{itemize}
+  \item Integrated Hands-On Learning: Combines theoretical courses with real-world practical labs
+  \item Realistic Lab Environments: Docker-based attacker and victim machines simulate real scenarios
+  \item Time-Controlled Hint System: Enforces independent problem-solving before revealing assistance
+  \item AI Chatbot Assistance: Provides instant contextual answers, reducing frustration
+  \item Automated Lab Solving: Acts as a last-resort educational aid
+  \item Instructor and Class Management: Supports academic usage through instructor-created classes
+  \item Scalable Architecture: Docker-based infrastructure allows easy scaling
+\end{itemize}
+
+\subsection{Weaknesses}
+\begin{itemize}
+  \item High Infrastructure Dependency: Continuous server availability required
+  \item Complex System Architecture: Integration of labs, chatbot, automation, and access control
+  \item Learning Curve for New Users: Beginners may struggle with command-line interfaces
+  \item Automation Misuse Risk: Some users may rely excessively on hints or auto-solving
+\end{itemize}
+
+\subsection{Opportunities}
+\begin{itemize}
+  \item Growing Demand for Cybersecurity Skills: Global shortage of qualified professionals
+  \item Academic Adoption: Strong potential for integration into university curricula
+  \item Remote Learning Expansion: Growth of online education
+  \item Feature Expansion: Future CTF competitions, blue team SOC simulations, and AI personalization engines
+  \item Institutional Partnerships: Licensing opportunities for bulk student access
+\end{itemize}
+
+\subsection{Threats}
+\begin{itemize}
+  \item Strong Market Competition: Established platforms may introduce similar features
+  \item Rapid Technology Evolution: Cybersecurity tools evolve quickly, requiring continuous content updates
+  \item Security and Misuse Risks: Platform could be misused without strict access control
+  \item Operational and Financial Risks: Hosting and maintenance costs may increase with user growth
+\end{itemize}
+
+\subsection{Conclusion}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|L{6.5cm}|L{6.5cm}|}
+\hline
+\hrow \hcell{Strengths} & \hcell{Weaknesses} \\
+\hline
+Integrated Hands-On Learning \newline
+Realistic Lab Environments \newline
+Time-Controlled Hint System \newline
+AI Chatbot Assistance \newline
+Automated Lab Solving \newline
+Instructor and Class Management &
+High Infrastructure Dependency \newline
+Complex System Architecture \newline
+Learning Curve for New Users \newline
+Automation Misuse Risk \\\hline
+\end{tabular}
+
+\vspace{8pt}
+
+\begin{tabular}{|L{6.5cm}|L{6.5cm}|}
+\hline
+\hrow \hcell{Opportunities} & \hcell{Threats} \\
+\hline
+Growing Demand for Cybersecurity Skills \newline
+Academic Adoption \newline
+Remote Learning Expansion \newline
+Feature Expansion \newline
+Institutional Partnerships &
+Strong Market Competition \newline
+Rapid Technology Evolution \newline
+Security and Misuse Risks \newline
+Operational and Financial Risks \\\hline
+\end{tabular}
+\caption{SWOT Analysis}\label{tab:swot}
+\end{table}
+
+The SWOT analysis demonstrates that CyberArcade is a strong, innovative, and timely solution for
+modern cybersecurity education. Its strengths lie in the integration of hands-on labs, adaptive
+learning mechanisms, AI assistance, and automated problem-solving within a unified platform.
+
+% =============================================================================
+\chapter{Proposed Work}
+% =============================================================================
+
+\section{System Design}
+
+\subsection{System Architecture Diagram}
+
+The CyberArcade system follows a multi-layered architecture that separates concerns across distinct
+functional levels. The \textbf{Presentation Layer} delivers the React.js frontend to users via modern
+web browsers. The \textbf{Application Layer}, built on FastAPI, handles authentication, course
+management, lab orchestration, hint logic, chatbot interaction, and automated solving. The
+\textbf{Virtual Lab Layer}, hosted on Ubuntu Server, deploys isolated Docker containers representing
+attacker (Kali Linux) and victim machines per user session. The \textbf{Integration Layer} uses Apache
+Guacamole as a secure gateway connecting browser clients to Docker-hosted lab machines.
+
+\diagramfigure{0.95}{figures/system_architecture_diagram.png}{System Architecture Diagram of CyberArcade}{fig:system-architecture}
+
+\subsection{Deployment Diagram}
+
+The deployment architecture places the FastAPI backend, PostgreSQL database, and Docker container
+orchestrator on a single Ubuntu Server instance. Apache Guacamole runs as an independent service,
+routing browser connections through WebSocket tunnels to each user's dedicated container pair. The
+React.js frontend is served as a static build and communicates with the backend exclusively through
+RESTful APIs over HTTPS.
+
+\diagramfigure{0.95}{figures/deployment_diagram.png}{Deployment Diagram of CyberArcade}{fig:deployment-diagram}
+
+\subsection{Use Case Diagram}
+
+CyberArcade has four primary actors: Student, Instructor, System Administrator, and the AI Chatbot
+subsystem. Students enroll in courses, launch labs, use hints, interact with the chatbot, and trigger
+the auto-solver. Instructors create classes, assign courses, and monitor student progress. System
+Administrators manage user accounts, subscriptions, and platform configuration.
+
+\diagramfigure{0.95}{figures/use_case_diagram.png}{Use Case Diagram of CyberArcade}{fig:use-case-diagram}
+
+\subsection{Misuse Case Diagram}
+
+\begin{longtable}{|L{2.8cm}|L{2.8cm}|L{3.5cm}|L{4.9cm}|}
+\caption{Misuse Case Diagram}\label{tab:misuse}\\
+\hline
+\hrow \hcell{Misuse Case} & \hcell{Threat Actor} & \hcell{Attack Vector} & \hcell{Countermeasure} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Misuse Case} & \hcell{Threat Actor} & \hcell{Attack Vector} & \hcell{Countermeasure} \\
+\hline
+\endhead
+Container Escape & Malicious Student & Exploit Docker misconfiguration & Seccomp profiles, read-only filesystems, capability restrictions \\\hline
+\altrow Brute Force Login & External Attacker & Repeated login attempts & Rate limiting, account lockout, JWT expiry \\\hline
+Hint System Bypass & Student & Manipulate client-side timers & Server-side timer enforcement in backend \\\hline
+\altrow Auto-Solver Abuse & Student & Trigger before all hints used & Backend validation: hint count check before solver activation \\\hline
+Lab Data Exfiltration & Malicious User & Download lab container contents & Network isolation, container network policies \\\hline
+\altrow SQL Injection & External Attacker & Malicious API input & SQLAlchemy ORM parameterized queries, input validation \\\hline
+\end{longtable}
+
+\diagramfigure{0.95}{figures/misuse_case_diagram.png}{Misuse Case Diagram of CyberArcade}{fig:misuse-case-diagram}
+
+\subsection{Class Diagram}
+
+The class diagram presents the core entities: User, Course, Module, Lab, Task, Hint, HintUsage,
+LabInstance, Alert, Report, and SystemLog. The User entity has role-based specialization into Student
+and Instructor. LabInstance maintains the lifecycle of each Docker container pair per user session.
+
+\diagramfigure{0.95}{figures/class_diagram.png}{Class Diagram of CyberArcade}{fig:class-diagram}
+
+\subsection{Context Diagram}
+
+At the context level, CyberArcade interacts with three external entities: the Learner (student or
+instructor), the Docker Engine (which creates and manages isolated lab containers), and the AI/NLP
+Service (which processes chatbot queries and returns contextual responses).
+
+\diagramfigure{0.95}{figures/context_diagram.png}{Context Diagram of CyberArcade Platform}{fig:context-diagram}
+
+\subsection{Data Flow Diagram}
+
+The DFD illustrates data movement across four processes: User Authentication, Lab Deployment, Hint
+Delivery, and Chatbot Interaction.
+
+\diagramfigure{0.95}{figures/dfd_diagram.png}{Data Flow Diagram of CyberArcade}{fig:data-flow-diagram}
+
+\subsection{Sequence Diagrams}
+
+\subsubsection{System Administrator Sequence Diagram}
+
+The System Administrator sequence covers account creation, subscription management, platform
+configuration updates, and user role assignments.
+
+\diagramfigure{0.95}{figures/sequence_sysadmin.png}{System Administrator Sequence Diagram}{fig:sequence-sysadmin}
+
+\subsubsection{Instructor Sequence Diagram}
+
+The Instructor sequence covers class creation (generating a unique Class ID), course assignment to
+classes, and monitoring student progress.
+
+\diagramfigure{0.95}{figures/sequence_instructor.png}{Instructor Sequence Diagram}{fig:sequence-instructor}
+
+\subsubsection{Student Sequence Diagram}
+
+The Student sequence covers course enrollment, lab launch, hint requests (validated server-side),
+chatbot queries, and auto-solver activation (validated after all hints consumed).
+
+\diagramfigure{0.95}{figures/sequence_student.png}{Student Sequence Diagram}{fig:sequence-student}
+
+\subsubsection{Administrator Sequence Diagram}
+
+The platform Administrator sequence covers system-level monitoring, container health checks, database
+maintenance, log review, and emergency lab termination.
+
+\diagramfigure{0.95}{figures/sequence_admin.png}{Administrator Sequence Diagram}{fig:sequence-admin}
+
+\subsection{Entity Relationship Diagram (ERD)}
+
+The ERD defines relationships between: Users, Courses, Modules, Labs, Tasks, Hints, Classes,
+Enrollments, and LabInstances.
+
+\diagramfigure{0.95}{figures/erd_diagram.png}{Entity Relationship Diagram of CyberArcade}{fig:erd-diagram}
+
+
+\subsection{User Interface Design}
+
+The frontend prototype was implemented as a React.js user interface with navigation for landing, authentication, subscriptions, dashboards, course modules, analytics, chatbot support, and live lab execution. The following screenshots show the final visual design captured from the running CyberArcade frontend.
+
+\subsubsection{Landing Page Dashboard}
+
+The landing page presents the CyberArcade brand, platform value proposition, learning motivation, and a prominent call-to-action for starting cybersecurity training.
+
+\frontendfigure{figures/frontend_landing.png}{CyberArcade Landing Page Dashboard}{fig:landing-page-dashboard}
+
+\subsubsection{Login Page}
+
+The login interface provides username/email and password authentication with a clean centered form and role-aware access flow.
+
+\frontendfigure{figures/frontend_login.png}{CyberArcade User Login Interface}{fig:login-interface}
+
+\subsubsection{Subscription Plan Selection}
+
+The subscription page allows learners to compare available plans and select an access tier before entering the training environment.
+
+\frontendfigure{figures/frontend_plan_selection.png}{CyberArcade Subscription Plan Selection}{fig:plan-selection}
+
+\subsubsection{Student Dashboard}
+
+The student dashboard summarizes enrolled content, recent progress, achievements, active modules, and recommended next actions.
+
+\frontendfigure{figures/frontend_student_dashboard.png}{CyberArcade Student Dashboard}{fig:student-dashboard}
+
+\subsubsection{Course Modules Interface}
+
+The course modules page displays available cybersecurity tracks as organized cards, helping students browse topics and select learning paths.
+
+\frontendfigure{figures/frontend_course_modules.png}{CyberArcade Course Modules Overview}{fig:course-modules-overview}
+
+\subsubsection{Analytics Dashboard}
+
+The analytics pages present learner activity, recommendations, progress visualizations, and performance charts used to support adaptive learning decisions.
+
+\frontendfigure{figures/frontend_dashboard_overview.png}{CyberArcade Analytics Overview Dashboard}{fig:analytics-overview}
+
+\frontendfigure{figures/frontend_analytics_overview.png}{CyberArcade AI Coach and Progress Analytics}{fig:ai-coach-progress-analytics}
+
+\frontendfigure{figures/frontend_progress_charts.png}{CyberArcade Skill Progress Charts}{fig:progress-charts}
+
+\frontendfigure{figures/frontend_performance_charts.png}{CyberArcade Performance Analytics Charts}{fig:performance-charts}
+
+\subsubsection{Class Management Interface}
+
+The class interface supports class enrollment and class-code entry, allowing students to join instructor-managed learning groups.
+
+\frontendfigure{figures/frontend_class_modal.png}{CyberArcade Class Join Modal}{fig:class-join-modal}
+
+\subsubsection{AI Chatbot Interface}
+
+The chatbot panel is embedded within the learning environment and provides contextual assistance while respecting lab rules and avoiding direct answer disclosure.
+
+\frontendfigure{figures/frontend_chatbot_panel.png}{CyberArcade AI Chatbot Interface}{fig:ai-chatbot-interface}
+
+\subsubsection{Integrated Virtual Lab Environment}
+
+The lab environment embeds an Apache Guacamole terminal alongside task cards, hint controls, and challenge progress, giving learners a browser-based hands-on workspace.
+
+\frontendfigure{figures/frontend_lab_environment.png}{CyberArcade Integrated Virtual Lab Environment}{fig:integrated-lab-environment}
+
+\frontendfigure{figures/frontend_lab_terminal.png}{CyberArcade Lab Terminal and Task Workflow}{fig:lab-terminal-workflow}
+
+\subsubsection{Achievements and Profile Pages}
+
+The achievements and profile pages show gamified progress, badges, personal information, and learner status summaries.
+
+\frontendfigure{figures/frontend_badges.png}{CyberArcade Badges and Achievements Page}{fig:badges-achievements}
+
+\frontendfigure{figures/frontend_profile.png}{CyberArcade Student Profile Page}{fig:student-profile}
+
+\section{System Analysis}
+
+\subsection{User Requirements}
+
+\subsubsection{Student Requirements}
+
+\begin{longtable}{|L{3cm}|L{4cm}|L{7cm}|}
+\caption{Student Requirements}\label{tab:student-req}\\
+\hline
+\hrow \hcell{Requirement Name} & \hcell{Description} & \hcell{Requirement Statement} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Requirement Name} & \hcell{Description} & \hcell{Requirement Statement} \\
+\hline
+\endhead
+Course Enrollment & View and enroll in available courses & Student selects course from catalog and confirms enrollment \\\hline
+\altrow Lab Launch & Start an isolated lab environment & Student presses Launch Lab button; system deploys Docker containers and registers Guacamole connection \\\hline
+Hint Request & Access progressive hints during lab & Student requests hint; system validates time elapsed since last hint before releasing next hint \\\hline
+\altrow Chatbot Query & Ask AI chatbot for conceptual guidance & Student types question; chatbot receives lab context and returns guidance without revealing solution \\\hline
+Auto-Solver Activation & Trigger automated lab solution & Student activates auto-solver only after all hints consumed; system executes solution script \\\hline
+\altrow Progress Tracking & View course and lab completion status & Dashboard displays completion percentage per course and per lab \\\hline
+Class Enrollment & Join instructor-created class using Class ID & Student enters Class ID; system validates and enrols student in the corresponding class \\\hline
+\end{longtable}
+
+\subsubsection{Instructor Requirements}
+
+\begin{longtable}{|L{3cm}|L{4cm}|L{7cm}|}
+\caption{Instructor Requirements}\label{tab:instructor-req}\\
+\hline
+\hrow \hcell{Requirement Name} & \hcell{Description} & \hcell{Requirement Statement} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Requirement Name} & \hcell{Description} & \hcell{Requirement Statement} \\
+\hline
+\endhead
+Class Creation & Create a new class for students & Instructor fills class details; system generates unique Class ID \\\hline
+\altrow Course Assignment & Assign courses to a class & Instructor selects courses from catalog and assigns them to the created class \\\hline
+Student Monitoring & Monitor student progress & Instructor views per-student progress, hint usage, and lab completion from the instructor dashboard \\\hline
+\altrow Lab Reset & Reset a student's lab environment & Instructor triggers lab reset; system terminates and re-deploys the student's containers \\\hline
+\end{longtable}
+
+\subsubsection{Administrator Requirements}
+
+The platform administrator manages user accounts, subscription tiers, platform configuration, container
+resource quotas, and system-level logs. Administrators can suspend accounts, terminate runaway
+containers, and review security logs through a protected admin interface.
+
+\subsection{System Requirements}
+
+\begin{table}[htbp]
+\centering
+\refstepcounter{table}\label{tab:sys-req}
+{\small\itshape\textbf{Table~\thetable.} Functional System Requirements\par}
+\vspace{4pt}
+\small
+\begin{tabularx}{\linewidth}{|L{3.2cm}|L{3.8cm}|X|}
+\hline
+\hrow \hcell{Requirement Name} & \hcell{Description} & \hcell{Requirement Statement} \\ \hline
+Automatic Lab Deployment & System deploys containers on lab launch & After student triggers lab launch, system creates attacker and victim containers within 30 seconds \\ \hline
+\altrow Hint Timer Enforcement & Enforce time delay between hints & System validates server-side timestamp of last hint request; rejects early requests with remaining time \\ \hline
+Auto-Solver Prerequisite & Verify all hints consumed before solver & System counts hint usage per lab per user; blocks solver activation until all hints accessed \\ \hline
+\altrow Chatbot Context Injection & Provide lab context to AI chatbot & System injects current module name, task description, and hint index into every chatbot API call \\ \hline
+JWT Authentication & Secure all API endpoints with JWT tokens & All API requests validated against signed JWT; expired or invalid tokens return 401 Unauthorized \\ \hline
+\altrow Container Isolation & Isolate each student's lab environment & Each lab instance runs in a dedicated Docker network, preventing inter-user traffic \\ \hline
+Generate Report & Generate incident report for lab completion & Extracts lab details, student progress, and hint usage then displays them in readable format \\ \hline
+\end{tabularx}
+\normalsize
+\end{table}
+
+\section{Non-Functional Requirements}
+
+\subsection{Performance}
+\begin{itemize}
+  \item Alert the administrator immediately upon system resource threshold breach
+  \item Operate smoothly under 50 concurrent user lab sessions
+  \item Lab deployment (container creation and Guacamole registration) within 30 seconds
+  \item Chatbot response latency under 5 seconds per query
+\end{itemize}
+
+\subsection{Safety}
+\begin{itemize}
+  \item Ensure fail-safe container termination on user session expiry
+  \item Degrade gracefully in the event of system overload by queuing lab deployment requests
+  \item Self-heal from container crashes by detecting unhealthy containers and restarting them
+  \item Never introduce new security risks while operating --- all lab containers run in isolated networks
+\end{itemize}
+
+\subsection{Security}
+
+Only authenticated users with valid subscriptions may access CyberArcade's lab environments. All data
+in transit is encrypted with TLS 1.3. Passwords are stored using Argon2 hashing, with legacy PBKDF2-SHA256 verification supported during migration. Role-Based Access
+Control (RBAC) enforces privilege separation between students, instructors, and administrators. No
+credentials are committed to source code; secrets are managed through environment variables.
+
+\subsection{Scalability}
+\begin{itemize}
+  \item Docker-based deployment allows horizontal scaling of lab infrastructure
+  \item FastAPI's async architecture supports high-concurrency API requests
+  \item Database connection pooling ensures stable performance under load
+\end{itemize}
+
+\subsection{Availability}
+
+CyberArcade must operate 24 hours a day, 7 days a week. Auto-suspension of idle containers after
+30 minutes of inactivity preserves resources. Database backups are performed daily.
+
+\section{System Planning}
+
+\subsection{Assumptions}
+\begin{itemize}
+  \item Users possess basic computer literacy and fundamental networking knowledge
+  \item Learners access the platform through modern web browsers with stable internet connectivity
+  \item Docker containers provide sufficient isolation to prevent cross-user interference
+  \item Instructors create and manage course content responsibly within ethical guidelines
+  \item Python 3.10+ environment with all specified dependencies is installed on the server
+  \item Ubuntu Server 22.04 LTS with Docker Engine is available as the deployment host
+\end{itemize}
+
+\subsection{Constraints}
+
+\begin{longtable}{|L{2.8cm}|L{11.2cm}|}
+\caption{System Constraints}\label{tab:constraints}\\
+\hline
+\hrow \hcell{Source} & \hcell{Constraint} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Source} & \hcell{Constraint} \\
+\hline
+\endhead
+Operational & Maximum 50 concurrent lab sessions per server instance; lab sessions auto-terminate after 2 hours of inactivity \\\hline
+\altrow Technical & CyberArcade will use Docker for lab isolation and will not interface directly with physical hardware beyond the host server \\\hline
+Functional & Platform will only detect and report lab completion --- it will not prevent students from attempting incorrect approaches \\\hline
+\altrow Security & AES-256 for data at rest; TLS 1.3+ for all data in transit; bcrypt for password hashing \\\hline
+Performance & CyberArcade must balance performance and resource efficiency during continuous multi-user operation \\\hline
+\altrow Accuracy & Hint timer enforcement must be validated server-side with zero tolerance for client-side bypass \\\hline
+\end{longtable}
+
+\subsection{Limitations}
+\begin{itemize}
+  \item Chatbot responses depend on the quality of predefined knowledge and AI training
+  \item Complex real-world enterprise-scale environments cannot be fully replicated due to single-server resource constraints
+  \item Automated solutions cover only predefined lab scenarios
+  \item Performance may degrade under very high concurrent user loads without additional horizontal scaling
+  \item Offline functionality is not supported
+\end{itemize}
+
+\subsection{Dependencies}
+
+\subsubsection{Infrastructure Dependencies}
+\begin{itemize}
+  \item Ubuntu Server 22.04 LTS as the hosting operating system
+  \item Docker Engine for container orchestration and lab isolation
+  \item Apache Guacamole for browser-based remote desktop access
+  \item PostgreSQL 15+ for relational data storage
+\end{itemize}
+
+\subsubsection{Internal Dependencies}
+\begin{itemize}
+  \item User authentication and subscription management modules
+  \item Hint timing and tracking mechanisms (server-side timestamp validation)
+  \item Lab lifecycle management services
+  \item Automated solution execution logic (predefined scripts per lab)
+  \item Class and instructor management modules
+\end{itemize}
+
+\subsubsection{External Dependencies}
+\begin{itemize}
+  \item Web browsers supporting HTML5 and WebSocket (Chrome, Firefox, Edge)
+  \item AI or NLP API service for chatbot functionality (e.g., OpenAI API or equivalent)
+  \item Open-source security tools within lab containers (Metasploit, Nmap, Burp Suite Community)
+  \item Payment gateway services for subscription handling
+\end{itemize}
+
+\subsection{Technologies Used}
+
+\begin{longtable}{|L{3cm}|L{3.8cm}|L{7.2cm}|}
+\caption{Intended Technologies}\label{tab:technologies}\\
+\hline
+\hrow \hcell{Module} & \hcell{Technology / Library} & \hcell{Purpose} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Module} & \hcell{Technology / Library} & \hcell{Purpose} \\
+\hline
+\endhead
+Backend Framework & FastAPI (Python) & REST API server, async request handling, JWT authentication \\\hline
+\altrow Frontend Framework & React.js + Vite & User interface, dynamic lab status updates, chatbot panel \\\hline
+Database & PostgreSQL + SQLAlchemy ORM & User data, course content, hint tracking, lab instances \\\hline
+\altrow Lab Infrastructure & Docker Engine & Isolated attacker and victim container deployment per user \\\hline
+Attacker Machine & Kali Linux Container & Student-facing penetration testing environment \\\hline
+\altrow Victim Machine & Ubuntu/Linux Container & Vulnerable target machine for lab exercises \\\hline
+Remote Access & Apache Guacamole & Browser-based terminal access to Docker lab containers \\\hline
+\altrow Database Migrations & Alembic & Version-controlled database schema migrations \\\hline
+AI Chatbot & NLP API (OpenAI / equivalent) & Context-aware conceptual guidance during labs \\\hline
+\altrow Security Tools & Metasploit, Nmap, Burp Suite & Penetration testing tools within lab containers \\\hline
+Authentication & JWT + bcrypt & Secure token-based auth and password hashing \\\hline
+\altrow Network Simulation & Docker Networking & Isolated per-user lab networks preventing cross-user traffic \\\hline
+\end{longtable}
+
+% =============================================================================
+\chapter{Implementation and Testing}
+% =============================================================================
+
+This chapter describes how CyberArcade was implemented, following the proposed architecture and design
+specifications. The implementation focuses on modularity, performance, and maintainability.
+
+CyberArcade is implemented as a web-based application with the following major layers:
+\begin{itemize}
+  \item Backend Application Layer (FastAPI)
+  \item Frontend Presentation Layer (React.js)
+  \item Docker-Based Lab Infrastructure Layer
+  \item Apache Guacamole Integration Layer
+  \item AI Chatbot Layer
+  \item Database Persistence Layer (PostgreSQL)
+\end{itemize}
+
+\section{Implementation}
+
+\subsection{Backend Implementation}
+
+The backend was developed using FastAPI with an asynchronous architecture. SQLAlchemy ORM manages all
+database interactions. Alembic handles schema migrations. The backend is organized into independent
+modules:
+\begin{itemize}
+  \item Authentication Module: JWT-based login, registration, token refresh, and role validation
+  \item Course Management Module: CRUD operations for courses, modules, labs, and tasks
+  \item Lab Management Module: Container lifecycle management via Docker SDK for Python
+  \item Class Management Module: Class creation, Class ID generation, student enrollment
+  \item Subscription Module: Subscription tier validation and access gating
+  \item Chatbot Module: Context assembly and NLP API communication
+  \item Auto-Solver Module: Hint prerequisite validation and solution script execution
+  \item Progress Tracking Module: Lab completion logging and dashboard statistics
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption={Sample Backend Code --- Lab Deployment}]
+def deploy_lab(lab_config, user_id):
+    client = docker.from_env()
+    network = client.networks.create(
+        f"lab_net_{user_id}",
+        driver="bridge"
+    )
+    attacker = client.containers.run(
+        image=lab_config.attacker_image,
+        name=f"attacker_{user_id}",
+        network=f"lab_net_{user_id}",
+        detach=True,
+        remove=True,
+        cap_drop=["ALL"],
+        read_only=False
+    )
+    victim = client.containers.run(
+        image=lab_config.victim_image,
+        name=f"victim_{user_id}",
+        network=f"lab_net_{user_id}",
+        detach=True,
+        remove=True
+    )
+    return attacker.id, victim.id
+\end{lstlisting}
+
+\subsection{Frontend Implementation}
+
+The frontend was developed using React.js with Vite. Main components include:
+\begin{itemize}
+  \item Landing Page: Platform overview, feature highlights, and call-to-action for registration
+  \item Login/Register Pages: JWT-based authentication with role-aware routing post-login
+  \item Dashboard: Per-student progress overview, enrolled courses, and class status
+  \item Courses Page: Browsable catalog organized by the Cyber Kill Chain framework
+  \item Lab Environment: Embedded Guacamole terminal, task panel, hint controls, and chatbot
+  \item AI Chatbot Panel: Real-time query input with streaming response display
+  \item Class Management: Class enrollment (students) and class creation (instructors)
+  \item Profile Page: Subscription status, account settings, and progress history
+\end{itemize}
+
+\subsection{Database Implementation}
+
+CyberArcade uses PostgreSQL as its primary database. The schema is organized into three functional
+groups:
+
+\textbf{User Data:} \texttt{user\_accounts}, \texttt{user\_sessions}, \texttt{subscriptions}
+
+\textbf{Learning Data:} \texttt{courses}, \texttt{modules}, \texttt{labs}, \texttt{tasks},
+\texttt{hints}, \texttt{hint\_usages}
+
+\textbf{Instructor Data:} \texttt{classes}, \texttt{enrollments}, \texttt{lab\_instances}
+
+\subsection{Docker-Based Lab Infrastructure}
+
+Each lab consists of an attacker machine (Kali Linux) and a target machine (Ubuntu/Linux victim),
+deployed in a dedicated per-user Docker bridge network:
+\begin{itemize}
+  \item \textbf{Isolation:} Lab scenarios use explicit non-overlapping Docker bridge subnets, with per-session stack isolation identified as the next runtime refactor
+  \item \textbf{Scalability:} Containers are created on demand and destroyed after session expiry
+  \item \textbf{Easy Reset:} Lab environments are reset by terminating and redeploying containers
+  \item \textbf{Resource Efficiency:} Container memory, CPU, and PID limits are enforced through Docker resource quotas
+  \item \textbf{Hardening:} Lab containers use dropped Linux capabilities, no-new-privileges, read-only filesystems where possible, and pinned Guacamole images
+\end{itemize}
+
+\begin{lstlisting}[language=bash, caption={Sample Docker Compose for a Lab}]
+version: '3.8'
+services:
+  attacker:
+    image: kalilinux/kali-rolling
+    container_name: attacker_${user_id}
+    networks:
+      - lab_network
+    cap_add:
+      - NET_RAW
+    mem_limit: 1g
+    cpus: '0.5'
+  victim:
+    image: cyberarcade/sqli-vulnerable:1.0
+    container_name: victim_${user_id}
+    networks:
+      - lab_network
+    mem_limit: 512m
+networks:
+  lab_network:
+    driver: bridge
+    internal: true
+\end{lstlisting}
+
+\subsection{Apache Guacamole Integration}
+
+Apache Guacamole provides browser-based terminal access to lab containers. CyberArcade's backend
+registers each lab container as a Guacamole connection via the Guacamole REST API:
+\begin{itemize}
+  \item No VM installation required on the student's device
+  \item Cross-platform compatibility --- any modern browser supported
+  \item Session tokens are unique per user and expire with the lab session
+  \item WebSocket tunneling ensures low-latency terminal interaction
+\end{itemize}
+
+\subsection{AI Chatbot Implementation}
+
+\begin{lstlisting}[language=Python, caption={Chatbot Context Assembly}]
+def build_chatbot_prompt(user_query, lab_context):
+    system_prompt = (
+        "You are a cybersecurity learning assistant for CyberArcade. "
+        "You help students understand concepts during lab exercises. "
+        "Do NOT reveal specific flags, passwords, or direct solution steps. "
+        f"Current lab: {lab_context['lab_name']}. "
+        f"Current task: {lab_context['task_description']}. "
+        f"Hints used: {lab_context['hints_used']} of "
+        f"{lab_context['total_hints']}."
+    )
+    return {"role": "system", "content": system_prompt}
+\end{lstlisting}
+
+\subsection{AI Coach Predictive Analytics}
+
+The uploaded AI Coach design document, stored in the project as \path{prism-uploads/CyberArcade_AI_Coach.pdf}, defines the AI Coach as a hybrid coaching component rather than a simple chatbot. The coach combines an analytics model that predicts learner performance with a narrative layer that explains the analytics in readable language. The analytics model is responsible for scores, probabilities, and recommendations, while the SLM/LLM layer only turns those facts into student-friendly coaching text.
+
+\subsubsection{Model Implementation}
+
+The analytics model is implemented in \path{Backend/Backend/cyberarcade-backend/app/services/ai_coach_model.py}. It uses a logistic regression model trained from CyberArcade platform data. The model learns from actual learner activity inside the platform, including completed lab tasks, correct and incorrect answers, number of attempts, retry behavior, hints used, time spent in labs, chatbot usage, lab difficulty, skill category, course and lab metadata, and VM-based scenario progress.
+
+The backend collects training data from operational tables for lab progress, lab instances, scenario progress, chatbot conversations, courses, labs, and lab tasks. Each training row represents one user's activity on a lab. The feature vector includes task completion rate, correct answer rate, attempts per task, hints per task, time spent in minutes, chatbot questions asked, number of tasks in the lab, lab difficulty, and skill category such as Network Security, Digital Forensics, or Web Security.
+
+\subsubsection{Prediction Target and Training Process}
+
+The model predicts the probability that a learner can complete a lab successfully. For example, the model may estimate that a student has a 72\% predicted completion probability for a recommended lab. This probability supports strong-skill detection, weak-skill detection, next-lab recommendations, readiness estimation, progress analytics, and the AI Coach dashboard.
+
+The training label is \texttt{label\_completed}: it equals \texttt{1} if the user completed the lab and \texttt{0} if the user did not complete the lab. During training, the backend loads available lab and scenario progress, converts each user/lab interaction into a training row, builds numeric features, splits the dataset into training and validation sets, trains the logistic regression model, calculates validation accuracy, and then uses the trained model to predict completion probability for the current user.
+
+\subsubsection{Fallback Scoring Mode}
+
+If the platform does not yet have enough training rows, or if the available data contains only one class of completion labels, the logistic regression model cannot train reliably. In that case, CyberArcade uses a heuristic fallback scoring method based on completion rate, correctness, attempts, hints, and time spent. Once enough real user data exists, the system switches from fallback scoring to the trained analytics model.
+
+\subsubsection{Narrative Layer}
+
+The narrative layer is implemented in \path{Backend/Backend/cyberarcade-backend/app/services/ai_coach_narrative.py}. The SLM does not train the model and does not calculate analytics. Instead, it receives model facts such as metrics, skill scores, recommended labs, model information, and fallback insights, then produces a readable coaching summary, strengths, weaknesses, and improvement plan.
+
+The narrative prompt explicitly instructs the model not to invent numbers, not to change scores, not to reveal flags or answers, and to use only the supplied facts. Therefore, the accurate decision-making comes from the analytics model, while the SLM makes the results clear and natural for students.
+
+\begin{center}
+\begin{tabular}{|L{4.2cm}|L{9.3cm}|}
+\hline
+\hrow \hcell{Stage} & \hcell{Role in AI Coach Pipeline} \\
+\hline
+User activity data & Lab progress, attempts, hints, chatbot usage, time spent, course data, and VM scenario progress are collected from CyberArcade tables \\
+\hline
+\altrow Feature extraction & Raw activity is converted into numeric and categorical features for model training and prediction \\
+\hline
+Logistic regression model & Predicts completion probability and supports skill scores, readiness analytics, and lab recommendations \\
+\hline
+\altrow Narrative layer & Converts analytics facts into readable student coaching text without changing scores or inventing values \\
+\hline
+Student dashboard & Shows AI Coach insights, strengths, weaknesses, recommendations, and improvement plan \\
+\hline
+\end{tabular}
+\captionof{table}{AI Coach Analytics and Narrative Pipeline}\label{tab:ai-coach-pipeline}
+\end{center}
+
+\subsubsection{Dataset Source}
+
+The AI Coach dataset is not an external public dataset. It is trained on CyberArcade's own learner data, which improves personalization because the model learns from the exact courses, labs, hints, attempts, scenario progress, and behaviors produced inside the platform.
+
+\subsection{Hint System Implementation}
+
+\begin{lstlisting}[language=Python, caption={Hint Timer Enforcement}]
+def release_hint(task_id, hint_index, user_id, db):
+    last_usage = db.query(HintUsage).filter_by(
+        user_id=user_id,
+        task_id=task_id
+    ).order_by(HintUsage.accessed_at.desc()).first()
+
+    hint = db.query(Hint).filter_by(
+        task_id=task_id,
+        index=hint_index
+    ).first()
+
+    if last_usage:
+        elapsed = (datetime.utcnow() -
+                   last_usage.accessed_at).seconds
+        if elapsed < hint.delay_seconds:
+            remaining = hint.delay_seconds - elapsed
+            raise HintNotAvailable(
+                f"Next hint in {remaining}s"
+            )
+
+    usage = HintUsage(user_id=user_id,
+                      hint_id=hint.id,
+                      accessed_at=datetime.utcnow())
+    db.add(usage)
+    db.commit()
+    return hint.content
+\end{lstlisting}
+
+\subsection{Automated Lab Solver Implementation}
+
+\begin{lstlisting}[language=Python, caption={Auto-Solver Prerequisite Check and Execution}]
+def trigger_auto_solver(lab_id, user_id, db):
+    total_hints = db.query(Hint).join(Task).filter(
+        Task.lab_id == lab_id
+    ).count()
+
+    used_hints = db.query(HintUsage).join(Hint).join(Task).filter(
+        Task.lab_id == lab_id,
+        HintUsage.user_id == user_id
+    ).count()
+
+    if used_hints < total_hints:
+        raise AutoSolverLocked(
+            f"Use all {total_hints} hints first. "
+            f"Used: {used_hints}."
+        )
+
+    instance = db.query(LabInstance).filter_by(
+        user_id=user_id, lab_id=lab_id
+    ).first()
+
+    lab = db.query(Lab).filter_by(id=lab_id).first()
+    client = docker.from_env()
+    container = client.containers.get(
+        instance.attacker_container_id
+    )
+    container.exec_run(
+        f"bash /solvers/{lab.solver_script}",
+        detach=True
+    )
+\end{lstlisting}
+
+\subsection{Security Implementation}
+
+Security measures include:
+\begin{itemize}
+  \item Argon2 password hashing for all new password sets and resets, with transparent verification for legacy PBKDF2-SHA256 hashes
+  \item JWT access and refresh tokens delivered as HttpOnly, SameSite=lax cookies to reduce XSS token theft risk
+  \item Role-Based Access Control (RBAC) enforcing student, instructor, and admin privilege separation
+  \item Exponential-backoff rate limiting on login, MFA verification, forgot-password, and reset-password flows
+  \item Single-use password reset tokens with 20-minute lifetime and server-side JTI invalidation after use
+  \item Docker Seccomp profiles, capability restrictions, no-new-privileges, and read-only filesystems where applicable
+  \item Network isolation through explicit non-overlapping Docker bridge subnets and internal-only self-contained forensic networks
+  \item Environment variables for all secrets --- no credentials committed to source code
+  \item SQLAlchemy ORM parameterized queries preventing SQL injection
+  \item HTTPS with TLS 1.3 for all client-server communication
+\end{itemize}
+
+\subsubsection{Lab Network Isolation and Container Hardening}
+
+All four lab scenario networks use explicit, non-overlapping Docker subnets in the \texttt{172.25.0.0/24}, \texttt{172.30.0.0/24}, \texttt{172.31.0.0/24}, and \texttt{172.32.0.0/24} ranges. This avoids accidental overlap with Docker's default \texttt{172.17.0.0/16} bridge and with the main application network used by the backend and database. The digital-forensics Kali network is marked \texttt{internal: true}, giving it no route to the internet or host application network because forensics labs are self-contained. Attack labs retain outbound internet access for tool updates, but remain on isolated scenario bridges separate from \texttt{cyberarcade-main\_default}.
+
+Every lab service drops all Linux capabilities by default and enables the Docker no-new-privileges security option. Attacker/Kali containers add back only \texttt{NET\_RAW} and \texttt{NET\_ADMIN}; target and defender containers receive no additional capabilities. Read-only root filesystems are applied to all target/defender containers, both \texttt{guacd} containers, and the Guacamole database, with \texttt{/tmp}, \texttt{/var/run}, and \texttt{/run} provided as \texttt{tmpfs} mounts where services such as \texttt{sshd} require writable runtime paths. Kali attacker containers are intentionally excluded from read-only roots because they write tool output during lab execution.
+
+Resource limits are enforced per service: standard Kali attack containers are capped at \texttt{512m}, \texttt{1.0} CPU, and \texttt{256} PIDs; Metasploit Kali receives \texttt{1g}, \texttt{1.5} CPUs, and \texttt{512} PIDs; target/defender containers are limited to \texttt{256m}, \texttt{0.5} CPU, and \texttt{128} PIDs; and the Guacamole stack is capped at \texttt{512m} and \texttt{0.5} CPU. Root SSH login is disabled in the Kali terminal and Metasploit Dockerfiles using \texttt{PermitRootLogin no}. Guacamole and \texttt{guacd} images are pinned to \texttt{1.5.5} instead of \texttt{latest}, with upgrade comments retained for moving to \texttt{1.6.0} once that Docker Hub tag is available.
+
+\subsubsection{Authentication and Account Protection}
+
+Authentication endpoints enforce exponential-backoff rate limiting. Login failures lock the account after five failed attempts for 30 seconds, then double on repeated failures up to a maximum of one hour; the sixth attempt returns HTTP 429. MFA verification uses the same backoff ladder and resets after successful verification. Forgot-password requests are limited to three attempts to prevent email-spam abuse, while reset-password failures use the same lockout ladder as login.
+
+New passwords are hashed with Argon2. Existing PBKDF2-SHA256 hashes continue to verify transparently, allowing migration without forcing users to reset passwords immediately. Password reset links use UUID JTI values stored in \texttt{users.password\_reset\_jti}; issuing a new reset link invalidates the previous one. Reset tokens expire after 20 minutes and are single-use: after a successful reset, the stored JTI is set to \texttt{NULL} so the token cannot be replayed.
+
+Access and refresh tokens are set as HttpOnly, SameSite=lax cookies, preventing frontend JavaScript from reading them. The \texttt{GET /api/auth/me} endpoint accepts either the secure cookie or an existing \texttt{Authorization: Bearer} header for compatibility, while \texttt{POST /api/auth/logout} clears both cookies server-side. The frontend no longer stores authentication tokens in \texttt{localStorage}.
+
+\subsubsection{Idle Session Cleanup and Remaining Isolation Gap}
+
+The FastAPI application starts a background asyncio cleanup task on startup. Every 60 seconds, the task queries \texttt{lab\_instances} for rows whose \texttt{expires\_at} timestamp is earlier than or equal to the current time and whose status is not already terminated or expired. Matching sessions are marked expired, and the corresponding \texttt{stop\_*\_lab()} function is called according to the lab's \texttt{runtime\_slug}.
+
+A remaining architectural gap is per-session container isolation. At present, users sharing the same scenario type still share one Docker Compose stack, so expiry cleanup can stop the shared stack when the first session expires and disrupt other active users in that lab type. The planned fix is to generate one Compose stack per user session with unique container names and network names, store the stack identifier in \texttt{LabInstance.container\_ids}, and tear down only that session's stack on expiry. The database schema and cleanup task are already aligned with this future runtime refactor.
+
+\subsection{Multithreading and Concurrency}
+\begin{itemize}
+  \item Async API endpoints handle concurrent user requests without blocking
+  \item Docker container deployment runs in background tasks to avoid blocking API responses
+  \item Chatbot API calls are made asynchronously, streaming responses to the frontend
+  \item Database connection pooling ensures stable performance under load
+\end{itemize}
+
+\subsection{Error Handling and Logging}
+
+All important events are logged to the \texttt{system\_logs} database table:
+\begin{itemize}
+  \item API request errors and validation failures
+  \item Container deployment failures and health check results
+  \item Chatbot API timeouts and fallback responses
+  \item Authentication failures and suspicious access patterns
+  \item Auto-solver activation attempts (both successful and blocked)
+\end{itemize}
+
+\section{Testing}
+
+\subsection{Testing Strategy Overview}
+
+\subsubsection{Unit Testing}
+
+Unit tests verified: hint timer enforcement logic, auto-solver prerequisite check, JWT generation and
+validation, CRUD operations for courses and labs, password hashing and verification, and chatbot
+context assembly function.
+
+\subsubsection{Integration Testing}
+
+Integration tests verified: lab launch triggering Docker container creation and Guacamole connection
+registration, hint request flow, auto-solver flow, and class enrollment.
+
+\subsubsection{System Testing}
+
+End-to-end testing was performed using live Docker container deployment on Ubuntu Server, Apache
+Guacamole browser session validation, simulated attack traffic within lab environments, and
+multi-user concurrent session testing (up to 50 simultaneous lab instances).
+
+\subsubsection{Performance Testing}
+
+Measured: lab deployment time, chatbot response latency, database performance under concurrent load,
+UI refresh rate and WebSocket stability, and memory and CPU usage per active lab session.
+
+\subsubsection{Security Testing}
+
+Validated: JWT expiry and refresh token rotation, RBAC enforcement, Docker network isolation, SQL
+injection prevention, hint timer bypass prevention, and auto-solver bypass prevention.
+
+\subsubsection{Usability Testing}
+
+Validated: student lab launch-to-terminal workflow (target: under 45 seconds), hint request and
+display clarity, chatbot response relevance, auto-solver visibility and activation flow.
+
+\subsection{Testing Tables}
+
+\begin{center}
+\begin{tabular}{|L{3.8cm}|L{2.8cm}|L{2.8cm}|L{2.8cm}|L{2cm}|}
+\hline
+\hrow \hcell{Metric} & \hcell{Target} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+Concurrent Users Supported & 50 & 50 & Pass \\\hline
+\altrow Lab Deployment Time (avg) & < 30 seconds & 22 seconds & Pass \\\hline
+Guacamole Session Latency & < 200 ms & 85 ms & Pass \\\hline
+\altrow Chatbot Response Time (avg) & < 5 seconds & 3.2 seconds & Pass \\\hline
+Hint Enforcement Accuracy & 100\% & 100\% & Pass \\\hline
+\altrow Auto-Solver Bypass Prevention & 100\% & 100\% & Pass \\\hline
+End-to-End Test Pass Rate & 100\% & 100\% & Pass \\\hline
+\end{tabular}
+\captionof{table}{Platform Performance Test Results}\label{tab:perf}
+\end{center}
+
+\vspace{8pt}
+
+\begin{center}
+\begin{tabular}{|L{1.8cm}|L{3cm}|L{3.2cm}|L{3.2cm}|L{2cm}|}
+\hline
+\hrow \hcell{Test ID} & \hcell{Test Case} & \hcell{Expected Result} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+AUTH-01 & Register User & Account created successfully & Account created & Pass \\\hline
+\altrow AUTH-02 & Login User & JWT token issued & Token issued & Pass \\\hline
+AUTH-03 & Invalid Password & 401 Unauthorized & 401 returned & Pass \\\hline
+\altrow AUTH-04 & Expired JWT & 401 Unauthorized & 401 returned & Pass \\\hline
+AUTH-05 & Role Enforcement & 403 Forbidden for wrong role & 403 returned & Pass \\\hline
+\end{tabular}
+\captionof{table}{Authentication Testing}\label{tab:auth-test}
+\end{center}
+
+\vspace{8pt}
+
+\begin{center}
+\begin{tabular}{|L{1.8cm}|L{3cm}|L{3.2cm}|L{3.2cm}|L{2cm}|}
+\hline
+\hrow \hcell{Test ID} & \hcell{Test Case} & \hcell{Expected Result} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+LAB-01 & Start Lab & Attacker + victim containers launched & Containers deployed & Pass \\\hline
+\altrow LAB-02 & Stop Lab & Containers terminated, network removed & Cleaned up correctly & Pass \\\hline
+LAB-03 & Reset Lab & Environment restored to initial state & Reset successful & Pass \\\hline
+\altrow LAB-04 & Concurrent Labs & 50 isolated environments active & 50 sessions stable & Pass \\\hline
+\end{tabular}
+\captionof{table}{Lab Deployment Testing}\label{tab:lab-test}
+\end{center}
+
+\vspace{8pt}
+
+\begin{center}
+\begin{tabular}{|L{1.8cm}|L{3cm}|L{3.2cm}|L{3.2cm}|L{2cm}|}
+\hline
+\hrow \hcell{Test ID} & \hcell{Test Case} & \hcell{Expected Result} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+HINT-01 & First Hint Request & Hint 1 released immediately & Released correctly & Pass \\\hline
+\altrow HINT-02 & Early Second Hint & Rejected with remaining time & Rejection returned & Pass \\\hline
+HINT-03 & Hint After Delay & Hint 2 released after wait & Released correctly & Pass \\\hline
+\altrow HINT-04 & Client-Side Bypass & Server rejects early request & Correctly rejected & Pass \\\hline
+\end{tabular}
+\captionof{table}{Hint System Testing}\label{tab:hint-test}
+\end{center}
+
+\vspace{8pt}
+
+\begin{center}
+\begin{tabular}{|L{1.8cm}|L{3cm}|L{3.2cm}|L{3.2cm}|L{2cm}|}
+\hline
+\hrow \hcell{Test ID} & \hcell{Test Case} & \hcell{Expected Result} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+SOLVER-01 & Trigger Before All Hints & AutoSolverLocked error & Error returned & Pass \\\hline
+\altrow SOLVER-02 & Trigger After All Hints & Solution script executes & Script ran correctly & Pass \\\hline
+SOLVER-03 & Observe Solution & Steps visible in terminal & Steps displayed & Pass \\\hline
+\end{tabular}
+\captionof{table}{Auto-Solver Testing}\label{tab:solver-test}
+\end{center}
+
+\vspace{8pt}
+
+\begin{center}
+\begin{tabular}{|L{1.8cm}|L{3cm}|L{3.2cm}|L{3.2cm}|L{2cm}|}
+\hline
+\hrow \hcell{Test ID} & \hcell{Test Case} & \hcell{Expected Result} & \hcell{Actual Result} & \hcell{Status} \\
+\hline
+E2E-01 & Login $\to$ Course $\to$ Lab & Full workflow successful & Workflow completed & Pass \\\hline
+\altrow E2E-02 & Lab + Chatbot & Chatbot responds in lab context & Integrated correctly & Pass \\\hline
+E2E-03 & Lab + Auto-Solver & Solver runs after all hints & Integrated correctly & Pass \\\hline
+\altrow E2E-04 & UI Under Load & Responsive under 50 users & Stable at 50 users & Pass \\\hline
+\end{tabular}
+\captionof{table}{End-to-End System Testing}\label{tab:e2e-test}
+\end{center}
+
+\subsection{Sample Test Cases}
+
+\subsubsection{Test Case 1: End-to-End Lab Detection}
+
+\textbf{ID:} TC-E2E-01 \quad \textbf{Description:} Validate full lab deployment and interaction pipeline
+
+\textbf{Steps:}
+\begin{enumerate}
+  \item Student logs in and authenticates with valid credentials
+  \item Student enrolls in a course and opens a module
+  \item Student clicks Launch Lab --- backend deploys Docker containers and registers Guacamole connection
+  \item Student accesses lab terminal via embedded Guacamole interface
+  \item Student requests Hint 1 --- system releases it immediately
+  \item Student requests Hint 2 before delay expires --- system rejects with remaining time
+  \item Student waits and requests Hint 2 again --- system releases it
+  \item Student activates AI chatbot for conceptual guidance
+  \item Student activates auto-solver after consuming all hints --- solution script executes
+\end{enumerate}
+
+\textbf{Expected Result:} All steps complete successfully; lab completion recorded in database.
+\textbf{Status: Pass}
+
+\subsubsection{Test Case 2: Auto-Solver Prerequisite Enforcement}
+
+\textbf{ID:} TC-SOLVER-01 \quad \textbf{Description:} Validate that auto-solver cannot be triggered before all hints are used
+
+\textbf{Steps:}
+\begin{enumerate}
+  \item Student launches a lab with 3 hints total
+  \item Student uses only Hints 1 and 2
+  \item Student attempts to activate auto-solver via API call
+\end{enumerate}
+
+\textbf{Expected Result:} Server returns AutoSolverLocked error with message indicating 1 remaining hint.
+\textbf{Status: Pass}
+
+\subsubsection{Test Case 3: Class Enrollment}
+
+\textbf{ID:} TC-CLASS-01 \quad \textbf{Steps:}
+\begin{enumerate}
+  \item Instructor creates a class and receives Class ID
+  \item Student opens Join Class interface
+  \item Student enters the Class ID and submits
+\end{enumerate}
+
+\textbf{Expected Result:} Student enrolled in class; courses assigned to class appear in student dashboard.
+\textbf{Status: Pass}
+
+\subsubsection{Test Case 4: Report Creation}
+
+\textbf{ID:} TC-REP-01 \quad \textbf{Steps:}
+\begin{enumerate}
+  \item Student completes lab (all tasks marked complete)
+  \item Student navigates to Reports page
+  \item Student clicks Generate Report for the completed lab
+\end{enumerate}
+
+\textbf{Expected Result:} Report saved and visible in Reports page with accurate data.
+\textbf{Status: Pass}
+
+\section{Summary}
+
+This chapter demonstrated that CyberArcade was implemented successfully according to the proposed
+architecture and tested thoroughly at multiple levels. The system meets real-time performance
+requirements --- 50 concurrent users, 22-second average lab deployment, 3.2-second chatbot response
+--- supports zero hint-bypass and auto-solver prerequisite enforcement with 100\% accuracy, and
+provides a complete, guided workflow for cybersecurity learners.
+
+% =============================================================================
+\chapter[Conclusion and Future Work]{Conclusion and Future Work}
+% =============================================================================
+
+\section{Conclusion}
+
+CyberArcade leverages Docker containerization, Apache Guacamole, and AI-powered assistance for
+real-time, browser-based cybersecurity education. It provides high learning effectiveness through
+time-controlled hints, automated lab-solving demonstrations, and context-aware chatbot guidance ---
+all within a unified, subscription-based web platform.
+
+CyberArcade is scalable, cross-platform, and robust. Through structured course content, Docker-based
+lab infrastructure, and instructor-managed class environments, CyberArcade is prepared to operate in
+academic institutions, corporate training programs, and self-paced learning scenarios. Its real-time
+lab capabilities, controlled automation, and intelligent assistance form a strong foundation for future
+extensions into comprehensive cybersecurity certification preparation platforms.
+
+\section{Future Work}
+
+\subsection{AI Personalization Engine}
+
+Analyze user performance across labs, hint usage patterns, and chatbot queries to generate
+personalized learning paths. Students who struggle with specific techniques would be automatically
+routed to prerequisite content before advancing.
+
+\subsection{Advanced Analytics Dashboard}
+
+Provide detailed learning analytics for instructors and administrators --- per-student lab completion
+rates, average time-to-hint, chatbot query topics, and auto-solver activation frequency.
+
+\subsection{Additional Cybersecurity Tracks}
+\begin{itemize}
+  \item Malware Analysis and Reverse Engineering
+  \item Digital Forensics and Incident Response
+  \item Cloud Security (AWS, Azure, GCP)
+  \item Threat Hunting and SOC Simulation
+  \item Red Team Operations
+\end{itemize}
+
+\subsection{Gamification}
+\begin{itemize}
+  \item Achievement badges for lab completion milestones
+  \item Leaderboards for fastest lab completion without hints
+  \item Skill ranking systems (Beginner $\to$ Inter\-mediate $\to$ Advanced $\to$ Expert)
+  \item CTF (Capture The Flag) competition modes with timed scoring
+\end{itemize}
+
+\subsection{Cloud-Based Scaling}
+
+Deploy lab environments dynamically using Kubernetes orchestration and cloud infrastructure (AWS EKS
+or Azure AKS), enabling auto-scaling from 50 to 1000+ concurrent users without manual server
+provisioning.
+
+\subsection{Voice-Based AI Assistant}
+
+Integrate voice interaction for lab guidance, allowing students to ask questions verbally and receive
+spoken explanations.
+
+\subsection{Multi-Player Scenarios}
+
+Support collaborative blue-team and red-team exercises where students are assigned attacker or
+defender roles in shared network environments, simulating real SOC operations and incident response
+workflows.
+
+\subsection{Instructor Analytics}
+
+Allow instructors to monitor class performance in real time, identifying which tasks are causing the
+most difficulty and which students have been inactive for extended periods.
+
+% =============================================================================
+\chapter{References}
+% =============================================================================
+
+\begin{enumerate}[label={[\arabic*]}, leftmargin=2.2em]
+  \item Arwa K.\ AlSalamah, José M.\ Sierra Cámara, and Stephen Kelly. Applying virtualization and containerization techniques in cybersecurity education. In \textit{Proceedings of the 2018 ISECON}, pages 1--13, San Antonio, Texas, USA, 2018.
+  \item Hack The Box. Hack the box: Cybersecurity training platform, 2025. \url{https://www.hackthebox.com/}.
+  \item Ismail Hassan. Leveraging Apache Guacamole, Linux LXD and Docker containers to deliver a secure online lab for a large cybersecurity course. In \textit{Proceedings of the 2022 IEEE FIE Conference}, pages 1--9, 2022.
+  \item Cyberbit Ltd. Cyber range training for cybersecurity professionals. \textit{Cybersecurity Training Whitepaper}, 2021.
+  \item RangeForce Inc. RangeForce cybersecurity training platform, 2023.
+  \item TryHackMe. TryHackMe: Cybersecurity training platform, 2025. \url{https://tryhackme.com/}.
+  \item Fan Wang and Songyu Jiang. Adopting AI-powered chatbots for academic performance: A qualitative model based on grounded theory approach. \textit{African Educational Research Journal}, 13(1):52--64, 2025.
+  \item Immersive Labs. Immersive Labs cybersecurity workforce development platform. \url{https://www.immersivelabs.com/}.
+  \item Docker Inc. Docker documentation: Containerization and orchestration. \url{https://docs.docker.com/}.
+  \item Apache Software Foundation. Apache Guacamole: Clientless remote desktop gateway. \url{https://guacamole.apache.org/}.
+  \item F.\ Pedregosa et al. Scikit-learn: Machine learning in Python. \textit{Journal of Machine Learning Research}, vol.\ 12, pp.\ 2825--2830, 2011.
+  \item FastAPI. FastAPI: Modern, fast web framework for building APIs with Python. \url{https://fastapi.tiangolo.com/}.
+  \item React. React: A JavaScript library for building user interfaces. \url{https://react.dev/}.
+  \item PostgreSQL Global Development Group. PostgreSQL: Advanced open source relational database. \url{https://www.postgresql.org/}.
+  \item SQLAlchemy. SQLAlchemy: The Python SQL toolkit and object relational mapper. \url{https://www.sqlalchemy.org/}.
+  \item E.\ Rescorla. RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3. IETF, 2018. \url{https://datatracker.ietf.org/doc/html/rfc8446}.
+  \item NIST. FIPS 197: Advanced Encryption Standard (AES). National Institute of Standards and Technology, 2001.
+  \item A.\ Khraisat et al. Survey of intrusion detection systems: techniques, datasets and challenges. \textit{Cybersecurity}, vol.\ 2, no.\ 1, 2019.
+  \item Kali Linux. Kali Linux: The penetration testing distribution. \url{https://www.kali.org/}.
+  \item OWASP Foundation. OWASP Top Ten: The ten most critical web application security risks. \url{https://owasp.org/www-project-top-ten/}.
+\end{enumerate}
+
+% =============================================================================
+\appendix
+\chapter{Appendices}
+% =============================================================================
+
+\section{Glossary}
+
+\begin{longtable}{|L{4.2cm}|L{9.8cm}|}
+\caption{Glossary}\label{tab:glossary}\\
+\hline
+\hrow \hcell{Term / Tool / Library} & \hcell{Definition / Purpose} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Term / Tool / Library} & \hcell{Definition / Purpose} \\
+\hline
+\endhead
+IDS (Intrusion Detection System) & A system that monitors network traffic for suspicious activity and issues alerts \\\hline
+\altrow Docker & An open-source containerization platform used to deploy isolated lab environments \\\hline
+Apache Guacamole & A clientless remote desktop gateway providing browser-based access to virtual machines \\\hline
+\altrow FastAPI & A modern, high-performance Python web framework for building REST APIs \\\hline
+React.js & A JavaScript library for building dynamic user interface components \\\hline
+\altrow PostgreSQL & An open-source relational database management system \\\hline
+SQLAlchemy & A Python SQL toolkit and ORM used for database interaction \\\hline
+\altrow Alembic & A database migration tool for SQLAlchemy-managed schemas \\\hline
+JWT (JSON Web Token) & A compact, URL-safe token format used for secure user authentication \\\hline
+\altrow RBAC & Role-Based Access Control --- a method of restricting access based on user roles \\\hline
+AES-256 & Advanced Encryption Standard with 256-bit keys used for data encryption at rest \\\hline
+\altrow TLS 1.3 & Transport Layer Security protocol version 1.3 for encrypted data in transit \\\hline
+bcrypt & A password hashing function designed to be computationally expensive \\\hline
+\altrow Kali Linux & A Debian-based Linux distribution designed for penetration testing \\\hline
+Metasploit & An open-source penetration testing framework included in lab attacker containers \\\hline
+\altrow Zero-day Attack & A cyberattack exploiting a previously unknown vulnerability \\\hline
+CTF (Capture The Flag) & A cybersecurity competition format where participants solve challenges to find hidden flags \\\hline
+\altrow SOC & Security Operations Center --- centralized team for monitoring cybersecurity incidents \\\hline
+NLP & Natural Language Processing --- AI field enabling computers to understand human language \\\hline
+\altrow Seccomp & A Linux kernel security facility that restricts system calls available to containerized processes \\\hline
+\end{longtable}
+
+\section{Platform Details}
+
+\subsection{Course and Lab Catalog}
+
+\small
+\begin{longtable}{|L{2.7cm}|L{2.7cm}|L{3.35cm}|L{2.05cm}|L{3.05cm}|}
+\caption{Course and Lab Catalog}\label{tab:catalog}\\
+\hline
+\hrow \hcell{Course} & \hcell{Module} & \hcell{Lab Name} & \hcell{Difficulty} & \hcell{Kill Chain Phase} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Course} & \hcell{Module} & \hcell{Lab Name} & \hcell{Difficulty} & \hcell{Kill Chain Phase} \\
+\hline
+\endhead
+Network Fundamentals & TCP/IP and Protocols & Packet Sniffing with Wireshark & Beginner & Reconnaissance \\\hline
+\altrow Web Security & SQL Injection & Exploiting Login Form SQLi & Inter\-mediate & Exploitation \\\hline
+Web Security & XSS Attacks & Stored XSS on Comment Field & Inter\-mediate & Exploitation \\\hline
+\altrow Penetration Testing & Nmap Scanning & Network Discovery and Port Scan & Beginner & Reconnaissance \\\hline
+Penetration Testing & Metasploit Framework & Exploiting EternalBlue (MS17-010) & Advanced & Exploitation \\\hline
+\altrow Malware Analysis & Static Analysis & Analyzing Malware with Strings & Inter\-mediate & Actions on Objectives \\\hline
+Incident Response & Log Analysis & Detecting Brute Force from Logs & Inter\-mediate & Command \& Control \\\hline
+\end{longtable}
+\normalsize
+
+\subsection{Docker Container Specifications}
+
+\small
+\begin{longtable}{|L{2.2cm}|L{2.05cm}|L{1.65cm}|L{1.45cm}|L{2.25cm}|L{3.5cm}|}
+\caption{Docker Container Specifications}\label{tab:docker}\\
+\hline
+\hrow \hcell{Container Type} & \hcell{Base Image} & \hcell{Memory Limit} & \hcell{CPU Limit} & \hcell{Network} & \hcell{Pre-installed Tools} \\
+\hline
+\endfirsthead
+\hline
+\hrow \hcell{Container Type} & \hcell{Base Image} & \hcell{Memory Limit} & \hcell{CPU Limit} & \hcell{Network} & \hcell{Pre-installed Tools} \\
+\hline
+\endhead
+Attacker Machine & kalilinux/ kali-rolling & 1 GB & 0.5 cores & lab\_net\_ \{user\_id\} & Nmap, Metasploit, Burp Suite, Hydra, SQLmap \\\hline
+\altrow Victim Machine & Ubuntu 22.04 LTS & 512 MB & 0.25 cores & lab\_net\_ \{user\_id\} & Vulnerable web apps, misconfigured services \\\hline
+Guacamole Gateway & guacamole/ guacamole & 512 MB & 0.25 cores & host bridge & guacd, tomcat, websocket proxy \\\hline
+\end{longtable}
+\normalsize
+
+\subsection{Hint System Logic}
+
+\begin{lstlisting}[language=Python, caption={Hint Configuration Example}]
+# Hint configuration example (per task)
+HINT_CONFIG = {
+    "task_id": "task_sqli_01",
+    "hints": [
+        {
+            "index": 0,
+            "content": "Try entering a single quote in the username field and observe the error.",
+            "delay_seconds": 0        # Available immediately
+        },
+        {
+            "index": 1,
+            "content": "SQL injection payloads often use OR conditions. Try: ' OR '1'='1",
+            "delay_seconds": 300      # 5 minutes after hint 1
+        },
+        {
+            "index": 2,
+            "content": "To bypass authentication, make the WHERE clause always true.",
+            "delay_seconds": 600      # 10 minutes after hint 2
+        }
+    ]
+}
+\end{lstlisting}
+
+\subsection{Auto-Solver Implementation}
+
+\begin{lstlisting}[language=bash, caption={Auto-Solver Script for SQL Injection Lab}]
+#!/bin/bash
+# solver_sqli_login.sh - Auto-solver script for SQL Injection Lab
+# Executed inside attacker container after all hints consumed
+
+TARGET_URL="http://victim_${user_id}/login"
+
+echo "[*] CyberArcade Auto-Solver: SQL Injection Lab"
+echo "[*] Target: $TARGET_URL"
+echo ""
+echo "[Step 1] Testing basic SQL injection with single quote..."
+curl -s -X POST $TARGET_URL \
+  -d "username='&password=test" | grep -i "error"
+
+echo ""
+echo "[Step 2] Attempting authentication bypass..."
+curl -s -X POST $TARGET_URL \
+  -d "username=' OR '1'='1' -- &password=anything" \
+  -c cookies.txt -L | grep -i "welcome|dashboard|logged"
+
+echo ""
+echo "[Step 3] Confirming successful bypass..."
+if [ -f cookies.txt ]; then
+    echo "[+] Authentication bypassed successfully!"
+    echo "[+] Session cookie captured."
+fi
+\end{lstlisting}
+
+\subsection{AI Chatbot Configuration}
+
+\begin{lstlisting}[language=Python, caption={Chatbot System Prompt Template}]
+# Chatbot system prompt template
+SYSTEM_PROMPT_TEMPLATE = """
+You are a cybersecurity learning assistant for CyberArcade.
+Your role is to help students understand cybersecurity concepts
+during hands-on lab exercises.
+
+STRICT RULES:
+- Do NOT reveal specific flags, passwords, or file paths
+- Do NOT provide direct command sequences that solve the lab
+- Do NOT confirm whether a student's guess is correct
+- ALWAYS encourage the student to try independently first
+- Reference the current lab context in your explanations
+
+Current Lab Context:
+- Lab Name: {lab_name}
+- Current Task: {task_description}
+- Kill Chain Phase: {kill_chain_phase}
+- Hints Used: {hints_used} of {total_hints}
+- Auto-Solver Available: {auto_solver_available}
+
+Provide conceptual explanations, relevant tool documentation
+references, and methodology guidance appropriate to the
+student's current hint usage level.
+"""
+\end{lstlisting}
+
+\subsection{Database Schema}
+
+\begin{lstlisting}[language=SQL, caption={Core Tables Schema (PostgreSQL)}]
+-- Core tables schema (PostgreSQL)
+
+CREATE TABLE users (
+    id            SERIAL PRIMARY KEY,
+    email         VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role          VARCHAR(50) DEFAULT 'student',
+    subscription_tier VARCHAR(50) DEFAULT 'free',
+    created_at    TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE labs (
+    id              SERIAL PRIMARY KEY,
+    module_id       INTEGER REFERENCES modules(id),
+    attacker_image  VARCHAR(255) NOT NULL,
+    victim_image    VARCHAR(255) NOT NULL,
+    solver_script   VARCHAR(255) NOT NULL,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE hints (
+    id              SERIAL PRIMARY KEY,
+    task_id         INTEGER REFERENCES tasks(id),
+    index           INTEGER NOT NULL,
+    content         TEXT NOT NULL,
+    delay_seconds   INTEGER DEFAULT 0
+);
+
+CREATE TABLE hint_usages (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER REFERENCES users(id),
+    hint_id     INTEGER REFERENCES hints(id),
+    accessed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE lab_instances (
+    id                    SERIAL PRIMARY KEY,
+    user_id               INTEGER REFERENCES users(id),
+    lab_id                INTEGER REFERENCES labs(id),
+    attacker_container_id VARCHAR(255),
+    victim_container_id   VARCHAR(255),
+    guacamole_token       VARCHAR(255),
+    started_at            TIMESTAMP DEFAULT NOW(),
+    terminated_at         TIMESTAMP
+);
+\end{lstlisting}
+
+% ── Arabic End Pages ─────────────────────────────────────────────────────────
+\clearpage
+\thispagestyle{empty}
+
+\begin{center}
+\includegraphics[
+width=0.95\textwidth,
+keepaspectratio
+]{figures/arabic_abstractt.png}
+\end{center}
+
+
+
+
+\clearpage
+\begin{center}
+\includegraphics[width=2.7cm]{figures/loogo.png}\\[1.0cm]
+
+{\arabicfont\Large\bfseries    البحري والنقل والتكنولوجيا العربية للعلوم البحري الأكاديمية}\\[0.45cm]
+{\arabicfont\large   المعلومات وتكنولوجيا الحاسبات كلية }\\[0.45cm]
+{\arabicfont\large   السيبراني الأمن قسم}\\[1.0cm]
+
+{\arabicfont\large  التخرج مشروع}\\[0.75cm]
+
+{\arabicfont\Huge\bfseries  أركيد سايبر}\\[0.5cm]
+{\arabicfont\Large\bfseries     السيبراني الأمن على للتدريب تعليمية منصة}\\[1.2cm]
+
+{\arabicfont\large\bfseries  من: مقدمة}\\[0.55cm]
+
+{\arabicfont\large
+\makebox[0.22\linewidth][c]{ أحمد محمد}\hspace{0.08\linewidth}%
+\makebox[0.22\linewidth][c]{باطرفي آية}\hspace{0.08\linewidth}%
+\makebox[0.22\linewidth][c]{ يحيى نور}\\[0.35cm]
+\makebox[0.22\linewidth][c]{ تامر الدين سيف}\hspace{0.08\linewidth}%
+\makebox[0.22\linewidth][c]{ فريجة جنى}\hspace{0.08\linewidth}%
+\makebox[0.22\linewidth][c]{وحيد خديجة}
+}\\[1.25cm]
+
+{\arabicfont\large\bfseries  إشراف تحت}\\[0.45cm]
+{\arabicfont  سيف أبو إيهاب  د.}\\[0.8cm]
+{\arabicfont ياقوت حسن د.}\\[0.25cm]
+
+
+{\arabicfont\large يونيو - يناير ٢٠٢٦}
+\end{center}
+\fi
+
+\end{document}

@@ -1,0 +1,269 @@
+\chapter{System Analysis and Design}
+\label{ch:analysis-design}
+
+This chapter elaborates the analytical and architectural foundation of \textbf{LuminaFPM}, the strictly read-only, multi-vendor Firewall Anomaly Management Platform built for this project. It is divided into two complementary halves. The present half (Part~A — System Analysis) establishes \emph{what} the system is required to do and \emph{under which conditions}: the project methodology expressed as a layered processing pipeline, the categories of users and their privileges, the operating assumptions, constraints, limitations and dependencies, the intended technology stack, the catalogue of functional and non-functional requirements, and the virtualized laboratory in which the platform was validated. The second half (Part~B — System Design) then translates these requirements into concrete design artefacts (data-flow, sequence, class, deployment and entity-relationship diagrams). Throughout, the analysis is grounded in the system as it was actually built — its source packages, database schema, REST endpoints, and the parallel VMware lab — rather than in the earlier Term-1 proposal, and any divergence between the two is stated plainly.
+
+\section{Overview}
+\label{sec:ch3-overview}
+
+LuminaFPM addresses a narrow but high-value problem in firewall operations: enterprises routinely operate firewalls from \emph{different vendors} whose policy languages, object models, and management APIs are mutually incompatible, which makes it difficult to reason about the combined security posture and to find the latent rule-level defects (shadowed rules, redundant rules, conflicting rules, over-permissive rules, missing logging, and cross-device inconsistencies) that accumulate in long-lived rule bases. The platform acquires firewall configuration directly from the devices over their native APIs, \emph{normalizes} the heterogeneous vendor data into a single canonical model, and runs a \emph{deterministic} rule-based anomaly-detection engine over that normalized model. On top of the deterministic core it layers risk scoring, API-based Cyber Threat Intelligence (CTI) enrichment, and AI-assisted (LLM) evidence-grounded SOC reporting, surfacing all results through a React dashboard.
+
+Two design commitments dominate the analysis and recur throughout this chapter. First, the platform is \textbf{strictly read-only}: it never writes, pushes, deletes, reorders, enables, disables, or commits any firewall configuration; corrective action remains entirely with authorized human operators. Read-only operation is a non-negotiable, release-blocking constraint, and it is enforced structurally — the vendor connectors contain no write/commit code path whatsoever. Second, the deterministic engine analyzes the \textbf{normalized model only}; it must never inspect raw Fortinet JSON or Palo Alto XML directly, because vendor-specific differences must be resolved by the parsing and normalization layers before any analysis takes place.
+
+The first-version (v1) vendor scope is deliberately limited to two vendors: \textbf{Fortinet FortiGate} (consumed over its REST/JSON API) and \textbf{Palo Alto Networks PAN-OS} (consumed over its XML API). These were chosen because the validation laboratory exercises both acquisition paths end-to-end. Additional vendors are an explicit extension point — new connectors and parsers can be added later — but only Fortinet and Palo Alto are implemented in v1. (The Term-1 proposal mentioned Cisco; it is de-scoped from v1 and appears, if at all, only as future work.) Likewise, the dark-web / Lumina-Threat-Intel (LTI) subsystem exists in the codebase but is disabled by default and is presented here as an optional, future research module rather than a core v1 capability; API-based CTI is the v1 threat-intelligence path.
+
+The conceptual model underlying detection is best expressed with elementary \textbf{set theory}: a firewall rule is treated as a tuple of sets over source, destination, service, and action; shadowing corresponds to a subset/superset relation between two earlier-and-later rules; redundancy corresponds to set equivalence; and a conflict corresponds to an overlapping match with differing actions. This set-theoretic framing is the formal model used to reason about the anomalies, while the \emph{implementation} is a deterministic, rule-based engine over the normalized model (not machine learning). Section~\ref{sec:ch3-methodology} develops this pipeline as the project methodology.
+
+\section{Methodology}
+\label{sec:ch3-methodology}
+
+The methodology adopted for LuminaFPM is a \textbf{strictly layered processing pipeline} in which each stage has a single responsibility, consumes a well-defined input from the stage above it, and produces a well-defined output for the stage below it. The governing architectural rule is that \emph{no layer may bypass the layer beneath it}: in particular, acquisition is the only layer permitted to touch a firewall, and the anomaly engine is permitted to read only the normalized repository. This separation is what makes the platform multi-vendor without polluting the analytical core with vendor-specific logic, and it is what makes the analytical results deterministic, explainable, and reproducible. Figure~\ref{fig:pipeline} depicts the end-to-end pipeline and the data structures handed between successive layers.
+
+%%FIG:fig:pipeline%%
+
+Each conceptual stage in Figure~\ref{fig:pipeline} maps onto a concrete Python package under \texttt{backend/services/} (and, for presentation, onto the React frontend). The stages are as follows.
+
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{Acquisition} (\texttt{services/acquisition/}). The only firewall-facing layer, and read-only by construction. A vendor connector (\texttt{FortiGateConnector} or \texttt{PaloAltoConnector}, selected at runtime by \texttt{get\_connector(config)}) authenticates to the device API, polls only read endpoints, and returns an \texttt{AcquisitionBundle} of raw vendor responses. FortiGate is polled over the FortiOS REST API (\texttt{/api/v2/cmdb/firewall/*} and \texttt{/api/v2/monitor/system/status}); Palo Alto is polled over the PAN-OS XML API (\texttt{type=keygen}, \texttt{type=config\&action=show}, \texttt{type=op}). Each raw response is persisted to disk as a \texttt{RawArtifact} with a SHA-256 manifest for replay and audit, and the acquisition job advances through a documented state machine (\texttt{queued} $\rightarrow$ \texttt{running} $\rightarrow$ \texttt{success}/\texttt{partial\_success}/\texttt{failed}/\dots). Acquisition runs asynchronously on a Celery worker and \emph{never} inside the web-request cycle.
+  \item \textbf{Parsing} (\texttt{services/parsing/}). Vendor-aware but anomaly-agnostic. \texttt{parse\_artifacts(\dots)} replays the stored artifacts and converts raw FortiGate JSON or Palo Alto XML into a vendor-tagged \texttt{ParsedDevicePayload} capturing rule name, vendor rule ID, vendor UUID, rule order, zones, source/destination/service objects, action, logging, profile group, schedule, NAT, description, tags, and enabled state. No anomaly logic runs here.
+  \item \textbf{Normalization} (\texttt{services/normalization/}). \texttt{normalize\_payloads([payload])} is a pure, database-free function that maps each vendor parser model into one canonical rule/object/service model, mapping vendor actions to canonical ones (\texttt{accept}/\texttt{allow}/\texttt{permit} $\rightarrow$ \texttt{allow}) while preserving the original vendor value for audit, and building the object \emph{correlation model} (vendor-owned objects are preserved, canonical objects sit above them, and mapping tables connect the two). It returns a \texttt{NormalizationResult}.
+  \item \textbf{Normalized Policy Repository} (PostgreSQL, Schema~v4). The authoritative source of truth for v1. \texttt{persist\_result(\dots)} performs an idempotent upsert keyed on \texttt{(device\_id, vdom\_vsys, vendor\_uuid)} into tables such as \texttt{policy\_rule}, \texttt{network\_object}, \texttt{normalized\_object}, and \texttt{normalized\_service}. Schema ownership is delegated to Alembic migrations rather than runtime \texttt{create\_all}, so there is no destructive auto-sync.
+  \item \textbf{Deterministic Anomaly Engine} (\texttt{services/anomaly/}). \texttt{analyze(result)} consumes a reconstructed \texttt{NormalizationResult} and returns a deterministic \texttt{list[Finding]} with no randomness, no mock data, no LLM, and no network access. Determinism is guaranteed by a fixed detector order, a stable rule sort keyed on \texttt{(device\_id, rule\_order, vendor\_uuid, rule\_name)}, and pairwise iteration via \texttt{itertools.combinations} so that the earlier rule always has the lower order. Findings are written as \texttt{rule\_anomaly} rows tied to one \texttt{AnomalyExecutionLog} run (\texttt{engine\_version = "anomaly-engine/1.0.0"}), each carrying the full evidence contract (type, severity, confidence, description, evidence, recommendation, detection mode, affected and related rules).
+  \item \textbf{Risk Scoring} (\texttt{services/risk/}). A separate engine that does \emph{not} replace anomaly detection. \texttt{run\_risk(\dots)} aggregates the findings of each active rule into a 0--100 score and a tier (90--100 Critical, 70--89 High, 40--69 Medium, 1--39 Low, 0 Informational), persisting \texttt{risk\_assessment} rows at both rule and device scope. It is triggered best-effort at the end of each anomaly run; a risk failure must never fail the analysis.
+  \item \textbf{API-based CTI} (\texttt{services/cti/}). \texttt{run\_cti(\dots)} extracts indicators (public IPs, FQDNs, firmware/CVEs) from the normalized rules, generates CTI queries via the LLM layer, calls external CTI APIs, correlates the responses back to rules as threat observations, and updates the risk score. CTI is kept distinct from the deterministic anomaly path.
+  \item \textbf{AI / LLM Reporting} (\texttt{services/llm/}). A provider abstraction (\texttt{LLMProvider}) with a \texttt{GeminiProvider} default and a deterministic, network-free \texttt{OfflineProvider} fallback. Its role is bounded to CTI query generation, CTI review/summary, and evidence-grounded SOC/executive report generation; the LLM is \emph{never} an anomaly authority.
+  \item \textbf{Presentation \& Reporting} (\texttt{frontend/}). A React + TypeScript + Vite single-page application rendering the Dashboard, Device Inventory, Policy Explorer, Anomaly/Risk/CTI/Benchmark Centers, Reports, and a logical-policy graph. The graph represents \emph{configured policy relationships only}, never live runtime traffic.
+\end{enumerate}
+
+The stages are wired together by an asynchronous task chain so that slow firewall polling never blocks analysis: a \texttt{POST /api/devices/\{id\}/poll} request returns \texttt{202~Accepted} immediately after enqueuing \texttt{poll\_device}; that task chains \texttt{normalize\_device}; which chains \texttt{run\_anomaly\_analysis}; which finally invokes \texttt{run\_risk}. Each task runs on a dedicated Celery queue (\texttt{acquisition}, \texttt{normalization}, \texttt{analysis}, \texttt{cti}, \texttt{reporting}) brokered by Redis, with PostgreSQL serving both as the operational state store and as the Celery result backend. The frontend then reads results back over read-only endpoints. This pipeline \emph{is} the project methodology: every requirement in Section~\ref{sec:ch3-functional} is traceable to one of these layers.
+
+\section{User Requirements and System Privileges}
+\label{sec:ch3-users}
+
+LuminaFPM is an analyst- and auditor-facing decision-support tool. Its primary audience is firewall administrators, SOC engineers, and security auditors, together with the cybersecurity development team. Because the platform never enacts changes on firewalls, all user privileges are fundamentally \emph{read-centric}: even the most privileged role manages \emph{platform} configuration (credentials, settings, integrations) rather than \emph{firewall} configuration. The underlying RBAC model defines fine-grained roles (Platform Admin, Firewall Engineer, SOC Analyst, Auditor, Viewer); for the purposes of system analysis these consolidate into three principal user categories, described below.
+
+\subsection{Security Analyst (Firewall Engineer / SOC Analyst)}
+\label{sec:ch3-user-analyst}
+The Security Analyst is the day-to-day operator of the platform. This user registers firewall devices, configures their read-only poll credentials, triggers acquisition and analysis runs, and investigates the resulting findings. The analyst browses normalized policies in the Policy Explorer, inspects anomaly findings and their evidence in the Anomaly Center, reviews rule- and device-level risk scores in the Risk Center, examines CTI threat observations, and reads AI-generated SOC reports. The analyst's responsibility is to interpret the platform's evidence and to recommend (but not apply, through the platform) remediations to firewall owners.
+
+\subsection{SOC Lead / Administrator (Platform Admin)}
+\label{sec:ch3-user-admin}
+The SOC Lead / Administrator superset the analyst's capabilities and additionally owns \emph{platform} administration: managing device credentials (create, rotate, test), configuring integrations (CTI API keys, LLM provider and model selection), managing users and roles, and tuning system settings. This role is the trust anchor for the encrypted credential store and is the only role permitted to alter platform-wide configuration. Crucially, even this role holds no capability to modify a firewall — the read-only mandate applies uniformly.
+
+\subsection{Auditor / Viewer}
+\label{sec:ch3-user-auditor}
+The Auditor / Viewer is a strictly read-only consumer of evidence. An Auditor reviews historical findings, risk assessments, benchmark results, and reports as audit evidence, relying on the immutable per-run logs (\texttt{anomaly\_execution\_log}, raw-artifact SHA-256 manifests) for traceability; a Viewer sees only dashboards and summary pages. Neither can trigger analysis runs, manage credentials, or alter configuration.
+
+Table~\ref{tab:ch3-privileges} summarizes the responsibilities and privileges of the three categories. A check mark ($\checkmark$) denotes a granted privilege and a cross ($\times$) denotes a denied one.
+
+\begin{longtable}{L{0.36\textwidth} C{0.18\textwidth} C{0.18\textwidth} C{0.18\textwidth}}
+\caption{User categories, responsibilities, and platform privileges.}\label{tab:ch3-privileges}\\
+\hline
+\hcell{Privilege / Responsibility} & \hcell{Security Analyst} & \hcell{SOC Lead / Admin} & \hcell{Auditor / Viewer} \\
+\hline
+\endfirsthead
+\hline
+\hcell{Privilege / Responsibility} & \hcell{Security Analyst} & \hcell{SOC Lead / Admin} & \hcell{Auditor / Viewer} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow Register / edit firewall devices & $\checkmark$ & $\checkmark$ & $\times$ \\
+\altrow Configure read-only poll credentials & $\checkmark$ & $\checkmark$ & $\times$ \\
+\hrow Trigger acquisition / analysis runs & $\checkmark$ & $\checkmark$ & $\times$ \\
+\altrow Browse normalized policies (Policy Explorer) & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\hrow View anomaly findings + evidence & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\altrow View rule / device risk scores & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\hrow View CTI threat observations & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\altrow Read AI-generated SOC reports & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\hrow View benchmark results / dashboards & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\altrow Rotate / test device credentials & $\times$ & $\checkmark$ & $\times$ \\
+\hrow Manage CTI / LLM integrations & $\times$ & $\checkmark$ & $\times$ \\
+\altrow Manage users, roles, system settings & $\times$ & $\checkmark$ & $\times$ \\
+\hrow Modify firewall configuration (any kind) & $\times$ & $\times$ & $\times$ \\
+\end{longtable}
+
+\section{Assumptions, Constraints, Limitations, and Dependencies}
+\label{sec:ch3-acld}
+
+\subsection{Assumptions}
+\label{sec:ch3-assumptions}
+The analysis assumes that each managed firewall exposes a reachable management API (FortiOS REST for FortiGate, PAN-OS XML for Palo Alto) and that a \emph{dedicated, least-privilege, read-only} API account is provisioned on the device for LuminaFPM to use. It assumes that the network objects and services referenced by the rule base (address objects, service objects, zones) already exist on the device, so that normalization can resolve rule references. It assumes that the operator deploys the supporting infrastructure (PostgreSQL, Redis, the Celery worker) as specified by the Docker Compose stack, and that an encryption key (\texttt{ENCRYPTION\_KEY}) is configured so that stored credentials can be encrypted and later decrypted. Finally, it assumes that human operators, not the platform, carry out any remediation on the firewalls.
+
+\subsection{Constraints}
+\label{sec:ch3-constraints}
+The dominant constraint is the \textbf{strict read-only mandate}: the platform must never modify, push, delete, reorder, enable, disable, or commit firewall configuration, and no write/commit code path exists in any connector. A second hard constraint is the \textbf{normalized-only analysis rule}: the anomaly engine must analyze normalized records only and must never read raw vendor JSON/XML. The v1 \textbf{vendor scope} is constrained to Fortinet FortiGate and Palo Alto PAN-OS only. The \textbf{datastore} is constrained to PostgreSQL as the single authoritative source of truth (MongoDB is explicitly excluded). Acquisition is constrained to run \textbf{asynchronously} on Celery workers and never inside the FastAPI request cycle. Security constraints further require that device credentials be encrypted at rest with Fernet, never hardcoded, never committed to source control, never exposed to the frontend, and never written to logs (a secret-redacting log filter enforces the last point).
+
+\subsection{Limitations}
+\label{sec:ch3-limitations}
+Several limitations are deliberate v1 scope boundaries rather than defects, and are stated plainly. First, although the formal anomaly taxonomy enumerates 46 categories, v1 ships the \emph{config-only core}: 14 deterministic detectors (plus one CTI-driven \texttt{threat\_exposure} finding) are implemented, all emitting \texttt{detection\_mode = "config\_only"}; runtime-dependent modes (\texttt{conditional}, \texttt{simulated}, \texttt{future\_enhanced}) are defined in the schema but not yet emitted, because v1 has no live telemetry. Second, the platform performs \emph{no live traffic analysis} — no NetFlow, packet capture, session analysis, or deep packet inspection — and the policy graph therefore represents logical, configured intent only, never observed packet forwarding. Third, the dark-web / LTI subsystem is present in the codebase but disabled by default and treated as optional future research. Fourth, the Docker Compose deployment runs a single Celery worker that drains all routed queues; the specification's recommended horizontal split into per-queue workers is not yet provisioned. Fifth, the backend \texttt{requirements.txt} is unpinned, which is a build-reproducibility caveat worth noting for formal documentation.
+
+\subsection{Dependencies}
+\label{sec:ch3-dependencies}
+LuminaFPM depends on a Python~3.11 / FastAPI backend, a Celery worker pool, Redis (Celery broker), and PostgreSQL~16 (operational store and Celery result backend), all orchestrated by Docker Compose. The backend depends on \texttt{requests} for FortiGate REST calls and \texttt{defusedxml} for hardened PAN-OS XML parsing, on \texttt{cryptography} (Fernet) for credential encryption, and on a multi-provider LLM stack (Google Gemini SDK by default, with offline fallback). The frontend depends on React~19, React~Router~7, Vite, Recharts, and the Cytoscape graph stack. Externally, the platform depends on the managed firewalls' management APIs being reachable, on third-party CTI API services when CTI is enabled, and on the configured LLM provider's API when online reporting is used (the offline provider removes this dependency for deterministic, network-free reports).
+
+\section{Intended Technologies}
+\label{sec:ch3-technologies}
+
+The technology stack is determined directly by the dependency manifests — \texttt{backend/requirements.txt}, \texttt{frontend/package.json}, and \texttt{docker-compose.yml} — and by the build images \texttt{backend/Dockerfile} (\texttt{python:3.11-slim}) and \texttt{frontend/Dockerfile} (\texttt{node:22-slim}). Backend dependencies are unpinned (resolved at image-build time); frontend dependencies are pinned with caret ranges. Table~\ref{tab:ch3-techstack} maps each architectural layer to the technologies that realize it and the role each plays.
+
+\begin{longtable}{L{0.20\textwidth} L{0.34\textwidth} L{0.40\textwidth}}
+\caption{Intended technology stack by architectural layer.}\label{tab:ch3-techstack}\\
+\hline
+\hcell{Layer} & \hcell{Technology} & \hcell{Role} \\
+\hline
+\endfirsthead
+\hline
+\hcell{Layer} & \hcell{Technology} & \hcell{Role} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow API / web framework & FastAPI + Uvicorn (ASGI) & REST API surface (routers, dependency injection, OpenAPI); served by Uvicorn. \\
+\altrow Data access / ORM & SQLAlchemy + Alembic & ORM models and sessions; schema owned by Alembic migrations (no runtime \texttt{create\_all}). \\
+\hrow Validation / config & Pydantic + pydantic-settings & Request/response schemas, normalized-model validation, typed env configuration. \\
+\hrow Database & PostgreSQL 16 & Single authoritative source of truth (Schema v4); Celery result backend. \\
+\altrow Task queue & Celery (\texttt{celery[redis]}) & Async acquisition / normalization / analysis / CTI / reporting jobs on routed queues. \\
+\hrow Broker / cache & Redis 7 & Celery broker and SSE Pub/Sub transport. \\
+\altrow Firewall acquisition & \texttt{requests} (FortiOS REST/JSON) & Read-only HTTP client for FortiGate \texttt{cmdb}/\texttt{monitor} GET endpoints. \\
+\hrow Firewall acquisition & \texttt{defusedxml} (PAN-OS XML) & Hardened XML parsing of Palo Alto \texttt{keygen}/\texttt{config show}/\texttt{op} responses. \\
+\altrow Credential security & \texttt{cryptography} (Fernet) & AES-128-CBC + HMAC encryption of device secrets at rest. \\
+\hrow LLM / AI & \texttt{google-generativeai} (Gemini) + LangChain bindings & Default LLM provider for CTI query/review and SOC reporting; offline fallback for deterministic output. \\
+\altrow Streaming & \texttt{sse-starlette} & Server-Sent Events for streaming progress / LLM tokens to the UI. \\
+\hrow Frontend framework & React 19 + TypeScript + Vite & Single-page dashboard application; Vite dev server and build tool. \\
+\altrow Routing & React Router 7 & Client-side routing across the Centers. \\
+\hrow Charts / graph & Recharts + Cytoscape (\texttt{cytoscape-dagre}, \texttt{react-cytoscapejs}) & Dashboard charts and the logical-policy graph view. \\
+\altrow Styling / icons & Tailwind CSS 4 + \texttt{lucide-react} & Utility-first styling and icon set. \\
+\hrow Orchestration & Docker Compose + Nginx & Multi-service deployment; Nginx prepared for production static serving. \\
+\end{longtable}
+
+\section{Functional Requirements}
+\label{sec:ch3-functional}
+
+The functional requirements (FRs) below define the behaviours the platform must exhibit. They are organized by pipeline layer and prioritized as \emph{Must} (mandatory for v1), \emph{Should} (important but degradable), or \emph{Could} (desirable / future-leaning). Each FR is traceable to a layer described in Section~\ref{sec:ch3-methodology}. Table~\ref{tab:ch3-fr} enumerates FR-01 through FR-27.
+
+\begin{longtable}{C{0.08\textwidth} L{0.70\textwidth} C{0.12\textwidth}}
+\caption{Functional requirements (FR-01 -- FR-27).}\label{tab:ch3-fr}\\
+\hline
+\hcell{ID} & \hcell{Requirement} & \hcell{Priority} \\
+\hline
+\endfirsthead
+\hline
+\hcell{ID} & \hcell{Requirement} & \hcell{Priority} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow FR-01 & The system shall acquire firewall configuration from FortiGate over the FortiOS REST/JSON API using read-only endpoints only. & Must \\
+\altrow FR-02 & The system shall acquire firewall configuration from Palo Alto over the PAN-OS XML API (\texttt{keygen}, \texttt{config show}, \texttt{op}) using read-only operations only. & Must \\
+\hrow FR-03 & The system shall persist each raw vendor response as a \texttt{RawArtifact} on disk with a SHA-256 manifest, and record artifact metadata in the database for replay and audit. & Must \\
+\altrow FR-04 & The system shall run all acquisition asynchronously on Celery workers and never inside the FastAPI request cycle, returning \texttt{202~Accepted} with a job identifier. & Must \\
+\hrow FR-05 & The system shall track each acquisition job through a defined lifecycle (queued, running, success, partial\_success, failed, and error sub-states). & Must \\
+\altrow FR-06 & The system shall parse raw FortiGate JSON and Palo Alto XML into vendor-tagged parser models without performing any anomaly logic. & Must \\
+\hrow FR-07 & The system shall normalize vendor parser models into a single canonical rule/object/service model, mapping vendor actions to canonical actions while preserving original vendor values. & Must \\
+\altrow FR-08 & The system shall build an object correlation model that preserves vendor-owned objects and links them to canonical objects via mapping tables. & Must \\
+\hrow FR-09 & The system shall persist normalized data idempotently into PostgreSQL keyed on \texttt{(device\_id, vdom\_vsys, vendor\_uuid)}, supporting incremental re-synchronization. & Must \\
+\altrow FR-10 & The system shall run the deterministic anomaly engine over the normalized repository only, never over raw vendor data. & Must \\
+\hrow FR-11 & The system shall detect single-rule anomalies including over-permissive rules, any-to-sensitive access, unprotected allows, wide port ranges, missing logging, missing descriptions, disabled-rule review, and object sprawl. & Must \\
+\altrow FR-12 & The system shall detect intra-device pairwise anomalies including shadowing, redundancy, duplicate rules, and conflicts. & Must \\
+\hrow FR-13 & The system shall produce deterministic, repeatable findings with a fixed detector order and a stable rule sort (no randomness, network, or LLM in the engine). & Must \\
+\altrow FR-14 & Every finding shall carry a full evidence contract: anomaly type, severity, confidence, description, evidence facts, recommendation, detection mode, and affected/related rules. & Must \\
+\hrow FR-15 & The system shall detect cross-device anomalies (cross-device inconsistency and cross-device security-posture inconsistency) by analyzing all devices together. & Must \\
+\altrow FR-16 & The system shall compute a 0--100 risk score and tier (Critical/High/Medium/Low/Informational) per rule and per device, persisting \texttt{risk\_assessment} rows while retaining cross-run history. & Must \\
+\hrow FR-17 & The system shall trigger risk scoring best-effort at the end of each anomaly run such that a risk failure never fails the analysis. & Must \\
+\altrow FR-18 & The system shall extract indicators (public IPs, FQDNs, firmware/CVEs) and enrich them via external CTI APIs, correlating threat observations back to rules. & Should \\
+\hrow FR-19 & The system shall update risk scores from CTI verdicts and label CTI-derived findings with \texttt{detection\_mode = "cti"}. & Should \\
+\altrow FR-20 & The system shall generate AI-assisted, evidence-grounded SOC/executive reports and CTI queries via a provider abstraction, with a deterministic offline fallback. & Should \\
+\hrow FR-21 & The LLM layer shall never act as an anomaly authority; AI output is bounded to query generation, CTI review, and reporting. & Must \\
+\altrow FR-22 & The system shall provide a benchmark framework that scores engine findings against documented ground truth (precision, recall, F1) as an acceptance gate. & Should \\
+\hrow FR-23 & The system shall expose read-only REST endpoints for jobs, devices, normalized rules/objects, anomalies, risk, CTI, benchmark, and reports. & Must \\
+\altrow FR-24 & The system shall present a React dashboard with Policy Explorer and Anomaly/Risk/CTI/Benchmark Centers plus a logical-policy graph that never depicts live traffic. & Must \\
+\hrow FR-25 & The system shall allow operators to create, rotate, and test device credentials, returning status only and never exposing secrets to the frontend. & Must \\
+\altrow FR-26 & The system shall never write, push, delete, reorder, enable, disable, or commit any firewall configuration (strict read-only enforcement). & Must \\
+\hrow FR-27 & The system shall negotiate transport scheme per device (HTTPS by default; HTTP only for explicitly configured lab hosts) while keeping all requests read-only. & Should \\
+\end{longtable}
+
+\section{Non-Functional Requirements}
+\label{sec:ch3-nonfunctional}
+
+The non-functional requirements (NFRs) constrain \emph{how well} the platform must satisfy its functional behaviours. They are grouped by quality attribute below and summarized in Table~\ref{tab:ch3-nfr}.
+
+\subsection{Security}
+\label{sec:ch3-nfr-security}
+Security is the platform's defining quality attribute. The read-only mandate is a security control as much as a functional one: by holding only read-only poll keys and containing no write code path, even a compromised LuminaFPM instance cannot alter a firewall. Device secrets are encrypted at rest with Fernet (AES-128-CBC + HMAC), decrypted only in backend/worker memory, never returned to the frontend, and never logged — a secret-redacting log filter masks API keys, tokens, passwords, and bearer headers. CORS is a restricted allowlist (wildcard-with-credentials is rejected), and PostgreSQL and Redis are not published to the host (internal Docker network only).
+
+\subsection{Reliability and Availability}
+\label{sec:ch3-nfr-reliability}
+The asynchronous pipeline is tuned for crash-safety: Celery uses late acknowledgement (\texttt{task\_acks\_late}) so a task is acknowledged only after completion, a prefetch multiplier of one to avoid greedy prefetch, and PostgreSQL as a durable result backend. Acquisition tolerates partial failure (\texttt{partial\_success}) when an optional endpoint fails, and risk scoring is best-effort so it cannot fail an analysis run. The job state machine and immutable per-run logs make failures observable and recoverable.
+
+\subsection{Performance}
+\label{sec:ch3-nfr-performance}
+Per-job-type queue routing ensures slow firewall polling never blocks analysis, CTI, or reporting. The anomaly engine is purely in-memory over the normalized model and uses stable sorting and pairwise combinations, giving predictable, deterministic runtimes. The threat-intel scan path enforces hard and soft time limits (1800\,s / 1500\,s) to bound worst-case execution.
+
+\subsection{Maintainability and Extensibility}
+\label{sec:ch3-nfr-maintainability}
+The strict layering and the connector/parser registry pattern make the system extensible: a new vendor is added by implementing a connector and a parser behind the existing interfaces, without touching the analytical core. Schema evolution is managed by Alembic migrations. The LLM and CTI providers sit behind abstractions (\texttt{LLMProvider}, \texttt{CTIProvider}), allowing providers to be swapped via configuration.
+
+\subsection{Usability}
+\label{sec:ch3-nfr-usability}
+Findings are explainable by construction: every finding carries the concrete evidence that produced it and a remediation recommendation, so analysts can act on results without re-deriving them. The dashboard organizes work into purpose-built Centers, and the logical-policy graph is clearly labelled as configured intent rather than live traffic to avoid misinterpretation.
+
+\subsection{Portability}
+\label{sec:ch3-nfr-portability}
+The entire stack is containerized via Docker Compose and built from standard base images (\texttt{python:3.11-slim}, \texttt{node:22-slim}), so it can be reproduced on any Docker-capable host. Device-local state (the \texttt{.env} file, the \texttt{postgres\_data} volume, and the lab network) is documented as non-transferable, and the credential-encryption key derivation tolerates either a pre-generated Fernet key or a passphrase.
+
+\begin{longtable}{C{0.08\textwidth} L{0.22\textwidth} L{0.58\textwidth}}
+\caption{Non-functional requirements summary.}\label{tab:ch3-nfr}\\
+\hline
+\hcell{ID} & \hcell{Attribute} & \hcell{Requirement} \\
+\hline
+\endfirsthead
+\hline
+\hcell{ID} & \hcell{Attribute} & \hcell{Requirement} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow NFR-01 & Security & The platform shall be strictly read-only and shall hold no firewall write capability anywhere in its trust boundary. \\
+\altrow NFR-02 & Security & Device credentials shall be encrypted at rest (Fernet), decrypted only in memory, and never exposed to the frontend or logs. \\
+\hrow NFR-03 & Security & The API shall enforce a CORS allowlist and shall not publish the database or cache to the host network. \\
+\altrow NFR-04 & Reliability & Tasks shall acknowledge only after completion and persist results durably so that worker crashes do not lose work. \\
+\hrow NFR-05 & Reliability & Acquisition shall degrade gracefully to partial success, and risk scoring shall never fail an analysis run. \\
+\altrow NFR-06 & Performance & Firewall polling shall not block analysis, CTI, or reporting, via per-job-type queue routing. \\
+\hrow NFR-07 & Performance & The anomaly engine shall be deterministic and in-memory, with bounded, repeatable runtimes. \\
+\altrow NFR-08 & Maintainability & New vendors shall be addable via connector/parser extensions without modifying the anomaly engine. \\
+\hrow NFR-09 & Maintainability & Database schema changes shall be managed exclusively through Alembic migrations. \\
+\altrow NFR-10 & Usability & Every finding shall be explainable, carrying evidence facts and a remediation recommendation. \\
+\hrow NFR-11 & Portability & The full stack shall be reproducible via Docker Compose on any Docker-capable host. \\
+\end{longtable}
+
+\section{Virtual Environment and Laboratory Topology}
+\label{sec:ch3-lab}
+
+LuminaFPM was developed and validated against a controlled, parallel, shared-network \textbf{VMware laboratory} that hosts both v1 firewalls. The lab follows the \emph{Hybrid Parallel Shared-Network} model: the FortiGate and the Palo Alto firewall both connect to the same logical subnets but operate as \textbf{independent policy engines} — they are not inline, and no production traffic is routed from one through the other. This model is deliberately chosen because it is the cleanest environment for controlled cross-vendor anomaly detection under \emph{identical} logical network conditions: it avoids unnecessary routing complexity, supports clean API extraction from each device, and enables benchmark-driven evaluation of the deterministic engine. The lab is primarily a controlled anomaly-\emph{generation} environment, not a realistic enterprise routing simulation. Figure~\ref{fig:labtopo} shows the topology, its subnets, and the device IP plan.
+
+%%FIG:fig:labtopo%%
+
+\subsection*{Networks and IP plan}
+The lab is partitioned into one management/API network and three data-plane subnets:
+
+\begin{itemize}[leftmargin=1.6em]
+  \item \textbf{ADMIN/API network} \texttt{192.168.55.0/24} — management and read-only API access. FortiGate management interface is \texttt{192.168.55.10}, Palo Alto management is \texttt{192.168.55.20}, the Kali / API host is \texttt{192.168.55.100}, and the VMware host adapter is \texttt{192.168.55.1}. LuminaFPM reaches both firewalls only over this network.
+  \item \textbf{LAN} \texttt{10.10.10.0/24} — internal user network (FortiGate \texttt{port1} \texttt{10.10.10.1}; Palo Alto \texttt{eth1/1} \texttt{10.10.10.2}, zone \texttt{trust}).
+  \item \textbf{DMZ} \texttt{10.10.20.0/24} — public-services segment (FortiGate \texttt{port2} \texttt{10.10.20.1}; Palo Alto \texttt{eth1/2} \texttt{10.10.20.2}, zone \texttt{dmz}).
+  \item \textbf{DB} \texttt{10.10.30.0/24} — database segment (FortiGate \texttt{port3} \texttt{10.10.30.1}; Palo Alto \texttt{eth1/3} \texttt{10.10.30.2}, zone \texttt{db}).
+\end{itemize}
+
+\subsection*{Read-only poll accounts versus the provisioner's write keys}
+The lab makes the read-only boundary structural rather than merely procedural by \emph{splitting credentials across trust boundaries}. LuminaFPM is configured with \textbf{read-only poll accounts only} — a dedicated FortiGate read-only API token and a read-only Palo Alto API key (or user/password), stored encrypted in the platform. The \textbf{write-capable admin keys} that build the benchmark rule bases live entirely with the parallel-lab provisioning tooling under \texttt{lab/} (\texttt{provision\_benchmark.py}, \texttt{benchmark\_dataset.py}), \emph{outside} LuminaFPM's trust boundary. That tooling is operator write tooling, not part of the read-only platform; it defaults to \texttt{--dry-run} and requires both \texttt{--apply} and \texttt{--confirm} (plus separate write tokens) to push policy. Consequently, even a fully compromised LuminaFPM instance holds no key capable of altering a firewall. After the provisioner writes the benchmark policy set (13 FortiGate rules and 8 Palo Alto rules with documented expected anomalies and cross-device pairs), LuminaFPM read-syncs the devices and runs the engine; the recorded live lab run covered 2 devices, 20 rules, and 54 findings, with benchmark precision/recall/F1 of 100\% (47/47).
+
+\subsection*{FortiGate-VM constraints}
+Two lab-specific FortiGate-VM constraints shaped the implementation. First, the evaluation FortiGate-VM enforces a \textbf{10-policy cap}, which bounds the size of the benchmark rule set that can be provisioned on that device. Second, the FortiGate-VM's HTTPS admin service (\texttt{httpsd}) does not reliably bind port~443 in the lab, so its REST API is \textbf{not reachable over HTTPS}. To accommodate this without weakening production behaviour, acquisition negotiates the transport scheme per device: HTTPS by default, falling back to plain \textbf{HTTP only} for hosts explicitly listed in the \texttt{FIREWALL\_INSECURE\_HTTP\_HOSTS} setting (\texttt{scheme = "http" if device.management\_ip in settings.firewall\_insecure\_http\_hosts else "https"}). This escape hatch applies to FortiGate only — the Palo Alto connector hardcodes HTTPS — and the configuration explicitly warns that it must never be enabled in production, where API tokens would otherwise traverse the network unencrypted.

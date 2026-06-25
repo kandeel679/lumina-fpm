@@ -1,0 +1,80 @@
+\chapter{Conclusion and Future Work}
+\label{sec:ch5-intro}
+
+This final chapter draws the project to a close. Section~\ref{sec:ch5-conclusion} consolidates what \textsc{LuminaFPM} achieved against the objectives that motivated it, summarising the read-only multi-vendor pipeline, the deterministic set-theoretic detection engine, and the empirical validation obtained on the live laboratory. Section~\ref{sec:ch5-future} then sets out a concrete, grounded roadmap of enhancements that follow naturally from the v1 architecture, distinguishing engineering hardening from genuine capability extensions.
+
+\section{Conclusion}
+\label{sec:ch5-conclusion}
+
+The goal of this project was to design and build a vendor-neutral platform that could read firewall policy from heterogeneous devices, reason about that policy in a single unified model, and surface the latent anomalies --- shadowing, redundancy, correlation, generalisation, and cross-device inconsistency --- that accumulate silently in production rule bases and that human operators are poorly equipped to find by manual inspection. \textsc{LuminaFPM} delivers that platform as a working, integrated system rather than a paper design.
+
+\subsection{What was achieved}
+\label{sec:ch5-achieved}
+
+The central engineering claim of this work is realised end to end. \textsc{LuminaFPM} acquires firewall configuration from two distinct vendors --- Fortinet FortiGate over the FortiOS REST/JSON API and Palo Alto Networks PAN-OS over the XML-API --- through a strictly \emph{read-only} connector layer (\texttt{ConnectorInterface}, with \texttt{FortiGateConnector} and \texttt{PaloAltoConnector} implementations) that issues only \texttt{GET}-equivalent retrieval calls and never writes, pushes, or commits to a device. This read-only guarantee is not merely a policy statement: it is enforced structurally in the connector contract and is preserved through every downstream layer, so the platform can be deployed against live production firewalls without any risk of altering their posture.
+
+Acquired policy from these dissimilar vendors is then \emph{normalised} into a single canonical model persisted in PostgreSQL, which serves as the system's source of truth. The normalisation layer correlates heterogeneous network and service objects across vendors --- recording each correspondence in \texttt{object\_normalization\_mapping} with an explicit \texttt{match\_method} (for example \texttt{exact\_name\_value}, \texttt{exact\_value}, or \texttt{name\_similarity}) and a numeric confidence --- so that a FortiGate address object and an equivalent PAN-OS address object are reasoned about as one logical entity. This normalisation is the foundation that makes genuine cross-vendor analysis possible, including the detection of cross-device inconsistencies that no single-vendor tool can express.
+
+On top of the normalised model runs the project's analytical core: a \emph{deterministic} anomaly-detection engine. The engine is best understood through the set-theory framing developed in the earlier chapters --- each rule is treated as a tuple of sets over source, destination, service, and action, with shadowing expressed as a subset/superset relation, redundancy as set equivalence, and conflict as overlapping match with differing action --- but its implementation is a transparent, rule-based engine over the unified model, not a machine-learning classifier. Determinism is a deliberate and load-bearing design decision: every finding is reproducible, explainable, and traceable to the exact pair of rules and the exact set relation that produced it. In v1 this engine ships its ``config-only core'' --- fourteen detectors in \texttt{ALL\_DETECTORS} emitting fourteen distinct \texttt{anomaly\_type} values --- which together with the CTI-derived \texttt{threat\_exposure} type yields fifteen persisted anomaly classes drawn from the broader forty-six-category taxonomy.
+
+Around this deterministic spine the platform layers three further capabilities that turn raw findings into operator-actionable intelligence. A deterministic \emph{risk-scoring} subsystem (\texttt{RISK\_VERSION} \texttt{1.0.0}) assigns each finding and each device a bounded $0$--$100$ score from a fixed, auditable formula combining anomaly severity, exposure, asset sensitivity, security posture, logging, cross-vendor weight, CTI signal, and lifecycle factors, and assigns tier bands so that operators can triage by priority. An API-based \emph{cyber threat intelligence} layer correlates policy exposure against external indicators. Finally, an \emph{AI-assisted reporting} layer generates SOC-oriented and executive reports through an LLM provider abstraction (\texttt{GeminiProvider} as the documented default, with a deterministic, network-free \texttt{OfflineProvider} fallback). Crucially, the LLM is never an anomaly authority: it ``explains, never detects.'' Every generated report is \emph{evidence-grounded}, carrying explicit \texttt{evidence\_refs} that point back to the database identifiers of the deterministic findings it describes, so that no claim in a report exists without a verifiable, machine-checked basis in the engine's output. This separation --- deterministic engine as the source of truth, LLM as a bounded narrator --- is what makes \textsc{LuminaFPM}'s AI output trustworthy in a security context.
+
+%%FIG:fig:ch5-achievement-summary%%
+
+\subsection{Empirical validation}
+\label{sec:ch5-validation}
+
+The system's correctness was not asserted but measured. A dedicated benchmark subsystem (\texttt{services/benchmark/} comprising \texttt{ground\_truth.py}, \texttt{scorer.py}, and \texttt{runner.py}, surfaced through \texttt{/api/v1/benchmark}) scores the live engine output against a hand-curated ground-truth matrix at \emph{(rule, anomaly\_type)} granularity, computing true positives, false positives, false negatives, and the standard information-retrieval metrics precision $=\text{TP}/(\text{TP}+\text{FP})$, recall $=\text{TP}/(\text{TP}+\text{FN})$, and $F_1 = 2PR/(P+R)$, together with a severity-match rate.
+
+Run against the parallel VMware laboratory --- a live FortiGate (\texttt{192.168.55.10}) and a live Palo Alto (\texttt{192.168.55.20}) on the shared \texttt{192.168.55.0/24} network --- the platform read-synced both devices, executed an all-scope detection run, and produced \textbf{54 findings across 2 devices and 20 rules}. Scored against the ground truth, the deterministic engine achieved \textbf{precision, recall, and $F_1$ all equal to $1.0$}, with \textbf{zero false positives and zero false negatives} (47/47 expected cases matched). This is the project's headline result: on the validated laboratory corpus the engine detected every anomaly it was expected to detect and reported no spurious findings, confirming both the soundness of the set-theoretic model and the fidelity of its deterministic implementation. Because the benchmark is wired as a first-class, re-runnable acceptance gate in both the API and the user interface (the Benchmark Center), this result functions as a standing regression guard rather than a one-off measurement.
+
+In summary, \textsc{LuminaFPM} meets its objectives: it is a strictly read-only, multi-vendor firewall anomaly-management platform whose normalised model and deterministic, explainable engine were validated at perfect precision, recall, and $F_1$ on a live two-vendor laboratory, and whose risk-scoring, threat-intelligence, and evidence-grounded AI-reporting layers translate findings into intelligence a security operations team can act on with confidence.
+
+\section{Future Work}
+\label{sec:ch5-future}
+
+The v1 system is complete and validated within its declared scope, and that scope was deliberately bounded to guarantee a working, defensible deliverable. The following enhancements are the natural next steps; they are grouped into capability extensions, security/operational hardening, and platform breadth. Each is grounded in a concrete gap or seam already present in the codebase.
+
+\subsection{Interactive logical topology on Cytoscape.js}
+\label{sec:ch5-cytoscape}
+
+The current topology view (\texttt{frontend/src/topology.jsx}) renders real platform data --- firewalls, zones, monitored assets, and CTI threat vectors --- but does so through a hand-rolled static SVG layout of roughly a thousand lines. The approved stack already names Cytoscape.js (the \texttt{cytoscape}, \texttt{cytoscape-dagre}, and \texttt{react-cytoscapejs} packages are present in \texttt{package.json} but presently unimported). The clear next step is to rebuild the topology as a true interactive graph on Cytoscape.js with an automatic directed layout (Dagre), giving operators draggable nodes, expand/collapse, live filtering, and focus traversal over the logical policy relationships. It must be stressed that this graph would continue to depict \emph{logical policy intent} --- the relationships configured in policy --- and never live packet forwarding, NetFlow, sessions, or deep packet inspection; that distinction is architectural and must remain explicit in the user interface.
+
+\subsection{Real authentication and RBAC enforcement}
+\label{sec:ch5-rbac}
+
+The security model specifies five read-centric roles, and a demonstration security-key login exists at the UI layer, but the API route handlers themselves currently carry no authorisation dependency --- \texttt{get\_db\_session} is the only \texttt{Depends} on the reviewed routers, so per-endpoint authorization is not yet enforced in code. A priority hardening task is therefore to implement real authentication (session or token based) and to wire genuine role-based access control as a route-level dependency across every endpoint, so that the documented five-role model is enforced rather than merely described. This is a prerequisite for any multi-tenant or production deployment.
+
+\subsection{Broadening the deterministic engine to the full taxonomy}
+\label{sec:ch5-taxonomy}
+
+v1 implements the fourteen-detector config-only core out of the specified forty-six-category taxonomy. A substantial body of future work is to implement the remaining specified-but-unimplemented categories --- for example ordering anomalies, temporary-rule decay, poor-naming hygiene, zone mismatch, NAT risk, and asymmetric-rule detection. A particularly valuable subset is the \emph{conditional} and \emph{telemetry/history-based} categories, which depend on signals beyond static configuration. Extending the engine to these would require carefully introduced, optional data sources while preserving the determinism and full explainability that are the engine's defining strengths: any history-aware detector must still emit reproducible findings traceable to concrete evidence.
+
+\subsection{Activating the threat-intelligence and dark-web module}
+\label{sec:ch5-lti}
+
+The Lumina Threat-Intel (LTI/Robin) subsystem, including dark-web and OSINT source curation and a richer LLM model-routing layer, already exists in the codebase but is off by default and treated as optional. Maturing this module --- enabling its curated clear-net and dark-web feeds, validating its correlation against the deterministic findings, and integrating its output into the risk score and reports under explicit operator control --- would extend \textsc{LuminaFPM} from policy-posture analysis toward proactive, externally-informed exposure assessment. As with the LLM reporter, any such integration must keep the deterministic engine as the authority and the threat-intel layer as an evidence-grounded enrichment, never an unverifiable signal.
+
+\subsection{Additional vendors}
+\label{sec:ch5-vendors}
+
+v1 supports FortiGate and Palo Alto only; Cisco was explicitly de-scoped (ADR-004), and the connector registry contains no Cisco connector. Because the architecture cleanly separates vendor-specific acquisition (the \texttt{ConnectorInterface} contract) from the vendor-neutral normalised model and engine, adding a vendor is principally a matter of writing a new read-only connector and its normalisation mapping. Cisco (for example ASA/Firepower) is the obvious first candidate for a future release; the platform's normalisation and detection layers would absorb a third vendor without modification, and would immediately gain the ability to detect Cisco-versus-Fortinet and Cisco-versus-Palo-Alto cross-device inconsistencies. (Any residual Cisco/ASA strings remaining in demo seed data and UI styling should be removed until a real connector exists, to avoid implying unsupported capability.)
+
+\subsection{Report export to PDF}
+\label{sec:ch5-pdf}
+
+The platform already generates evidence-grounded SOC and executive reports and offers CSV and SVG exports in several screens. A frequently-requested operational feature is direct export of the generated reports to PDF, producing a self-contained, distributable artefact suitable for audit trails, management reporting, and compliance evidence, while preserving the underlying \texttt{evidence\_refs} linkage so that every exported claim remains traceable.
+
+\subsection{Operator-supplied topology and asset context}
+\label{sec:ch5-topology-input}
+
+In v1 the platform derives logical relationships, zones, and monitored assets purely from \emph{configured intent} in the acquired policy; there is no ingestion path for an external or observed topology. A valuable enhancement is an explicit operator-supplied topology/asset input --- allowing an operator to declare zones, asset sensitivity, and business context --- which would sharpen risk scoring (asset sensitivity in particular) and enrich the logical graph. This would remain a description of intended/declared structure, consistent with the platform's principle of reasoning over configured posture rather than observed traffic.
+
+\subsection{Production hardening}
+\label{sec:ch5-hardening}
+
+Finally, several engineering tasks separate the validated laboratory build from a production deployment: removing declared-but-unused frontend dependencies and dead vendor code paths; pinning and auditing dependency versions; tightening secret and encryption-key management; expanding automated test and CI coverage around the connectors and engine; production-grade observability and structured logging; and hardening the Docker Compose deployment for resilient, secured operation. None of these alters the core architecture; together they raise the system from a demonstrably-correct prototype to a deployable product.
+
+%%FIG:fig:ch5-future-roadmap%%
+
+Taken together, these directions extend \textsc{LuminaFPM} along three axes --- deeper analysis (full taxonomy, threat-intel), broader coverage (more vendors, richer topology input), and production readiness (RBAC, hardening, PDF export) --- while preserving the two principles that define the platform: it remains strictly read-only with respect to the firewalls it analyses, and its findings remain deterministic, explainable, and evidence-grounded.

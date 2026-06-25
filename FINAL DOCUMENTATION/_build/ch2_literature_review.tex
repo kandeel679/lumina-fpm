@@ -1,0 +1,189 @@
+\chapter{Literature Review}
+\label{ch2-literature-review}
+
+This chapter situates LuminaFPM within the academic and commercial landscape of firewall policy management (FPM). It first establishes the theoretical background that underpins the platform's design: the nature of firewall rulebases, the classical taxonomy of policy anomalies introduced by Al-Shaer and Hamed, the problem of normalising heterogeneous multi-vendor policies into a single analysable model, the contrast between deterministic (formal) and machine-learning (ML) approaches to policy analysis, and the role of Cyber Threat Intelligence (CTI) in deriving exposure from configuration. It then surveys the market and the dominant commercial systems --- Tufin, AlgoSec, FireMon, Skybox and Palo Alto Panorama --- and analyses them comparatively against LuminaFPM. Finally, it summarises the primary user survey conducted during the Term-1 phase, presents the project's marketing positioning through the Four P's framework, and distils the research gaps that motivate the built system. Throughout, the discussion is grounded in the system as actually implemented: a strictly read-only, multi-vendor firewall anomaly management platform for Fortinet FortiGate (REST/JSON) and Palo Alto PAN-OS (XML), whose detection engine is a deterministic, benchmark-validated rule-based engine, and whose CTI and AI-assisted reporting are evidence-grounded subsystems layered above --- never replacing --- that deterministic core.
+
+\section{Background}
+\label{sec:ch2-background}
+
+\subsection{Firewall Policy Management}
+A firewall enforces a network security policy as an ordered list of access-control rules. Each rule matches packets on a set of fields --- typically source address, destination address, service (protocol and port), and optionally application, zone, schedule and user --- and applies an action such as \emph{allow}, \emph{deny} or \emph{reject}. Because rules are evaluated top-down with first-match semantics, the \emph{order} of rules is as significant as their content: a packet is handled by the first rule whose match space contains it, and all later rules that would also match are never consulted. This ordering dependence is the source of most of the subtle defects that FPM tools exist to detect.
+
+In production, firewall rulebases grow organically. Temporary access rules, migration exceptions, third-party vendor access, emergency changes and outdated business requirements are routinely added but rarely removed, because operators fear disrupting business-critical flows whose dependencies are no longer documented. The result is a condition widely described as \emph{rule bloat}: rulebases swell into the hundreds or thousands of entries, accumulating shadowing, redundancy, conflicts, duplicate rules, overly broad ``any--any'' access, missing logging, missing inspection profiles, and stale temporary rules. As a rulebase grows, the number of pairwise rule interactions grows combinatorially, making manual verification of the interaction between every pair of rules effectively intractable for a human operator. A change to one rule can silently alter the reachability of a distant rule, and the security posture of the device becomes opaque even to the team that maintains it. Firewall policy management is the discipline of restoring visibility and correctness to this state --- acquiring the live configuration, analysing it for anomalies and risk, and presenting actionable findings to administrators, auditors and Security Operations Centre (SOC) analysts.
+
+\subsection{The Firewall Policy-Anomaly Taxonomy}
+\label{sec:ch2-taxonomy}
+The formal study of firewall policy anomalies originates with Al-Shaer and Hamed's \emph{Firewall Policy Advisor} framework (2003--2004), which introduced a rigorous classification of the ways two rules in a policy can relate inconsistently. Their taxonomy distinguishes four canonical anomaly classes, each defined by the set-relationship between the match spaces of a pair of rules and by whether their actions agree:
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Shadowing.} A rule $R_y$ is \emph{shadowed} by a preceding rule $R_x$ when $R_x$ matches every packet that $R_y$ would match (i.e.\ $R_y$'s match space is a subset of $R_x$'s) but the two rules enforce \emph{different} actions. Because $R_x$ has priority, $R_y$ is unreachable code: it can never be triggered, and the security control it was intended to enforce is silently neutralised. Shadowing is the most dangerous class because it gives auditors a false sense of coverage.
+  \item \textbf{Redundancy.} A rule $R_y$ is \emph{redundant} when a preceding rule (or set of rules) matches the same packet space and enforces the \emph{same} action. The redundant rule does not change the security outcome, but it inflates the rulebase, wastes lookup cycles, and complicates maintenance.
+  \item \textbf{Correlation.} Two rules are \emph{correlated} when their match spaces overlap partially --- neither is a subset of the other --- and their actions \emph{differ}. The outcome for a packet falling in the intersection depends entirely on rule order, creating ambiguity and a latent security gap.
+  \item \textbf{Generalization.} A rule $R_x$ is a \emph{generalization} of a following rule $R_y$ when $R_x$ matches a superset of $R_y$'s traffic with a different action. This is the structural inverse of shadowing and typically indicates a specific exception being overridden by a broader subsequent policy.
+\end{itemize}
+
+This taxonomy is the conceptual seed of LuminaFPM's detection engine. The platform retains the \textbf{set-theoretic framing} as its formal model: a firewall rule is treated as a tuple of sets over source, destination and service, so that shadowing reduces to a subset/superset relation, redundancy to set equivalence under equal action, and conflict to a non-empty intersection under differing action. LuminaFPM extends the classical four-class model into a broader \textbf{46-category anomaly framework} that additionally captures operationally important defects --- duplicate rules, overly permissive access, missing logging, missing inspection, stale temporary rules, weak descriptions --- and, critically, \emph{cross-device} inconsistencies between rules on different vendors' firewalls, which the original intra-firewall framework did not address. Whereas Al-Shaer and Hamed's work analysed conflicts within a single rulebase, modern multi-vendor estates require inter-firewall analysis in which an upstream policy on one device may render a downstream rule on another irrelevant.
+
+\subsection{Normalisation of Heterogeneous Vendor Policies}
+A precondition for any cross-vendor analysis is \emph{normalisation}: the translation of disparate, proprietary vendor representations into a single, vendor-agnostic policy model. Each vendor represents policies, address and service objects, zones, applications, logging and inspection differently, and exposes them through incompatible management interfaces. LuminaFPM's v1 targets two deliberately heterogeneous styles --- Fortinet FortiGate over a REST/JSON API and Palo Alto PAN-OS over an XML API (\texttt{type=keygen}, \texttt{type=config\&action=show}, \texttt{type=op}). These two interface paradigms maximally exercise the normalisation layer and make the cross-vendor contribution credible: a finding that holds across both REST/JSON and XML representations cannot be an artefact of one vendor's data format.
+
+Without normalisation, administrators must manually reconcile incompatible structures and terminology before they can even begin to reason about consistency. LuminaFPM resolves this with a deterministic normalisation engine that maps each vendor's parsed model into a canonical rule/object/service model, mapping vendor actions onto canonical ones (for example \texttt{accept}/\texttt{allow}/\texttt{permit} $\rightarrow$ \texttt{allow}) while retaining the original vendor value for audit traceability. Objects and services are reconciled through a \textbf{correlation model}: vendor-owned objects are preserved unchanged, canonical normalised objects are created \emph{above} them, and mapping tables link the two. This design enables device ownership and vendor traceability, object-mismatch and duplicate detection, drift analysis over time, and --- most importantly --- the cross-vendor rule comparison that the deterministic anomaly engine consumes. The engine operates strictly on normalised data, never on raw vendor configuration, so that the same logical defect is detected identically regardless of which vendor produced the rule.
+
+\subsection{Deterministic and Formal Methods versus Machine Learning}
+There are two broad philosophies for policy analysis. \emph{Heuristic and machine-learning} approaches infer ``likely'' anomalies from statistical features or learned patterns; they scale to unstructured signals but produce probabilistic verdicts, suffer from false-positive fatigue, require labelled training data, and --- decisively for a security-auditing tool --- cannot \emph{prove} that a reported anomaly exists. \emph{Deterministic and formal} approaches, by contrast, define anomalies as precise set-relationships over rule match spaces and decide them exactly: a shadowing finding is not an estimate but a proof that one rule's match space is contained in another's under a conflicting action.
+
+LuminaFPM is firmly in the deterministic camp. Its anomaly engine is a deterministic, rule-based engine whose findings are repeatable, explainable and benchmarkable; the design explicitly bars artificial intelligence from being the anomaly authority. Detection uses canonical correlation keys and a small algebra of set predicates --- coverage (subset under an ``any'' sentinel), overlap (non-empty intersection), and same-access equality --- to decide redundancy, shadowing and conflict over rule pairs. Every finding carries evidence, a timestamp, the affected rule, the related rule where applicable, severity, confidence and a recommended action, so that a human can verify the conclusion from the evidence alone. This determinism is also what makes the engine \emph{benchmarkable}: because identical inputs always produce identical outputs, the engine's correctness can be proven against a ground-truth matrix of expected anomalies rather than asserted by visual inspection (Section~\ref{sec:ch2-gaps}). Machine learning and large language models are retained in LuminaFPM only for tasks where probabilistic reasoning is appropriate and where their output is grounded in deterministic evidence: CTI query generation and SOC report synthesis.
+
+\subsection{CTI and Policy-Derived Exposure}
+A rulebase that is internally consistent today can become risky tomorrow if a referenced address or domain turns malicious, or if a CVE emerges for the deployed firmware version. This is the gap that Cyber Threat Intelligence (CTI) addresses: correlating static configuration against the dynamic external threat landscape to surface \emph{exposure} that no purely structural analysis could reveal. Crucially, this is a fundamentally different kind of judgement from deterministic anomaly detection --- it is probabilistic, time-varying and dependent on external feeds --- and LuminaFPM therefore keeps it in a \textbf{separate risk/CTI engine}, decoupled from the deterministic anomaly authority.
+
+LuminaFPM's CTI subsystem extracts indicators (public IP addresses, CIDRs and FQDNs) from normalised network objects under a strict \emph{data-minimisation} rule: internal RFC1918, loopback and link-local addresses, and the ``any'' sentinels (\texttt{0.0.0.0/0}, \texttt{::/0}), are never transmitted to external providers unless an operator explicitly opts in. Indicators are enriched through a provider abstraction (\texttt{CtiProvider}) that always includes a deterministic, network-free offline provider --- so the capability is demonstrable without internet access --- and activates real REST providers such as AbuseIPDB only when an API key is supplied. The runner picks the worst verdict per indicator and performs \emph{cross-device correlation}: for a malicious indicator it locates every rule across all managed devices that references the matching object and raises a \texttt{threat\_exposure} finding only on rules whose action is \texttt{allow} --- that is, rules that actually permit traffic to or from a known-bad indicator. This yields a policy-derived, blast-radius-style notion of exposure that is grounded in configured intent rather than live packet telemetry, consistent with the platform's logical (not runtime) analysis model.
+
+\section{Market Analysis}
+\label{sec:ch2-market}
+Firewall and network-security policy management sits within the broader network-security-policy-management (NSPM) segment, which industry analysts size in the low single-digit billions of US dollars annually and project to grow at a double-digit compound annual rate through the latter half of the decade. Several structural drivers sustain this growth. First, the proliferation of \emph{hybrid and multi-vendor estates} --- enterprises rarely standardise on a single firewall vendor, and the addition of cloud security groups multiplies the number of distinct policy dialects an organisation must manage. Second, \emph{regulatory pressure} from frameworks such as NIST SP~800-41, PCI-DSS, ISO~27001 and a tightening international regulatory climate mandates demonstrable, repeatable evidence that rulebases enforce least-privilege and are free of conflict. Third, the chronic shortage of skilled security staff forces organisations to \emph{automate} audit work that was historically performed manually in spreadsheets. Fourth, the convergence of policy management with threat intelligence reflects a demand for \emph{context-aware} risk rather than static compliance snapshots.
+
+The market segments along several axes. By \emph{buyer size}, the incumbents (Tufin, AlgoSec, FireMon, Skybox) target large enterprises and the Fortune~500, with licensing that frequently reaches six figures and deployment complexity that excludes small and medium enterprises (SMEs), educational institutions and smaller security teams. By \emph{primary function}, vendors cluster into change-orchestration platforms, application-connectivity platforms, real-time compliance/risk platforms, and vendor-native managers (Panorama, FortiManager). By \emph{delivery model}, the market is shifting from monolithic on-premises appliances toward modular, container-deployable and increasingly SaaS-native offerings. LuminaFPM positions itself in an under-served gap of this segmentation: an open, academically transparent, container-deployable platform whose differentiator is not change orchestration but \emph{provable}, cross-vendor anomaly detection with evidence-grounded AI reporting --- accessible to the SME and education tier that the incumbents price out.
+
+\section{Related Projects and Similar Systems}
+\label{sec:ch2-related}
+The following subsections review the dominant commercial systems, each examined for its overview, principal features, limitations, and the specific gap that LuminaFPM addresses relative to it.
+
+\subsection{Tufin Orchestration Suite}
+\textbf{Overview.} Tufin is widely regarded as the industry standard for network-security-policy \emph{orchestration}, tailored to large enterprises. Its central strength is automating the change-request lifecycle, from ticket to implementation, across a heterogeneous device estate.
+\textbf{Features.} Extensive vendor-support ecosystem (Check Point, Cisco, Juniper, Palo Alto, cloud security groups); deep integration with IT-service-management platforms such as ServiceNow; robust topology mapping and path analysis; automated rule-recertification and compliance workflows.
+\textbf{Limitations.} Licensing is prohibitive for SMEs, frequently reaching six figures; the platform is complex to deploy and operate; and its threat-intelligence capabilities are secondary to compliance automation, relying on conventional feeds rather than evidence-grounded correlation against the specific deployed inventory.
+\textbf{Gap addressed.} LuminaFPM forgoes write-back orchestration in favour of a strictly read-only, provable detection core that is accessible to organisations Tufin prices out, and it treats cross-vendor inconsistency and policy-derived CTI exposure as first-class outputs rather than add-ons.
+
+\subsection{AlgoSec Security Management Suite}
+\textbf{Overview.} AlgoSec distinguishes itself with a business-application-centric model, mapping technical rules to business services (for example, a ``Billing App'') to preserve connectivity and uptime through change.
+\textbf{Features.} Best-in-class visualisation of application traffic flows; highly automated reporting for PCI-DSS, HIPAA and similar standards; ``zero-touch'' change automation; risk and connectivity analysis tied to applications.
+\textbf{Limitations.} The interface is dated relative to SaaS-native platforms; like Tufin, its intelligence is largely reactive --- driven by published vulnerabilities rather than by correlation of the live inventory against current threat indicators --- and it is an enterprise-priced, closed product.
+\textbf{Gap addressed.} LuminaFPM contributes a deterministic, mathematically provable anomaly core (minimising false-positive fatigue) and an evidence-grounded AI reporting layer, in an open, academically reproducible form.
+
+\subsection{FireMon}
+\textbf{Overview.} FireMon focuses on \emph{real-time} security-policy management, continuous compliance assessment and rule-usage analytics across large, distributed firewall estates.
+\textbf{Features.} Continuous monitoring and change detection; rule-usage and ``rule-effectiveness'' analytics that flag unused or overly permissive rules; customisable compliance assessments; API-driven integration into security operations.
+\textbf{Limitations.} Enterprise pricing and operational complexity; analytics are predominantly heuristic and usage-driven rather than founded on a formal, provable model of rule relationships; multi-vendor normalisation is a means to inventory rather than a vehicle for cross-vendor \emph{proof}.
+\textbf{Gap addressed.} LuminaFPM replaces heuristic effectiveness scoring with a deterministic, benchmark-validated anomaly model whose every finding is independently verifiable from its evidence.
+
+\subsection{Skybox Security}
+\textbf{Overview.} Skybox builds a model of the network from firewall and routing configurations to perform attack-surface and vulnerability analysis, including access-path simulation and exposure assessment.
+\textbf{Features.} Network and attack-surface modelling; access-path analysis across multi-vendor topologies; vulnerability-context prioritisation; change and compliance management.
+\textbf{Limitations.} Heavyweight to deploy and model-maintain; expensive and enterprise-oriented; its strength is path/attack modelling rather than a transparent, provable rule-anomaly taxonomy, and its threat context derives from conventional vulnerability data rather than evidence-grounded, inventory-specific correlation.
+\textbf{Gap addressed.} LuminaFPM offers a lightweight, container-deployable alternative whose cross-vendor analysis is grounded in an explicit, reproducible anomaly framework and whose CTI is correlated specifically to rules that permit traffic to known-bad indicators.
+
+\subsection{Palo Alto Panorama}
+\textbf{Overview.} Panorama is Palo Alto Networks' \emph{vendor-native} centralised management platform for PAN-OS firewalls, providing unified configuration, logging and policy administration.
+\textbf{Features.} Centralised, authoritative management and \emph{write-back} configuration of Palo Alto devices; aggregated logging and reporting; templates and device groups for scale; deep native integration with the PAN-OS ecosystem.
+\textbf{Limitations.} It is single-vendor by design --- it does not manage or normalise Fortinet (or other) policies --- and it is an operational management tool, not an independent, vendor-neutral auditor; cross-vendor inconsistency detection is outside its scope.
+\textbf{Gap addressed.} LuminaFPM is explicitly multi-vendor and read-only: it normalises FortiGate and PAN-OS into one model and reasons across them, providing the independent cross-vendor consistency view that no single vendor's native manager can offer.
+
+\subsection{Comparative Feature Analysis}
+\label{sec:ch2-comparison}
+Table~\ref{tab:ch2-comparison} compares the surveyed systems against LuminaFPM across the capability dimensions most relevant to this project. A \checkmark{} denotes full support, $\times$ denotes absence, and ``partial'' denotes limited or indirect support. The comparison emphasises the dimensions on which LuminaFPM is differentiated: multi-vendor normalisation feeding a \emph{provable} anomaly model, explicit cross-vendor inconsistency detection, a strictly read-only operating mode, integrated risk scoring, API-based CTI enrichment, AI evidence-grounded reporting, benchmark-based validation of detection correctness, and open/academic availability.
+
+\begin{longtable}{L{0.30\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.095\textwidth} C{0.105\textwidth}}
+\caption{Comparative feature analysis of LuminaFPM versus representative commercial firewall policy-management systems.}
+\label{tab:ch2-comparison}\\
+\hline
+\hcell{Capability} & \hcell{Tufin} & \hcell{AlgoSec} & \hcell{FireMon} & \hcell{Skybox} & \hcell{Panorama} & \hcell{Lumina\-FPM} \\
+\hline
+\endfirsthead
+\hline
+\hcell{Capability} & \hcell{Tufin} & \hcell{AlgoSec} & \hcell{FireMon} & \hcell{Skybox} & \hcell{Panorama} & \hcell{Lumina\-FPM} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow
+Multi-vendor normalisation & \checkmark & \checkmark & \checkmark & \checkmark & $\times$ & \checkmark \\
+\altrow
+Deterministic anomaly proof & partial & partial & $\times$ & partial & $\times$ & \checkmark \\
+\hrow
+Cross-vendor inconsistency detection & partial & partial & partial & \checkmark & $\times$ & \checkmark \\
+\altrow
+Strictly read-only operation & $\times$ & $\times$ & $\times$ & \checkmark & $\times$ & \checkmark \\
+\hrow
+Integrated risk scoring & \checkmark & \checkmark & \checkmark & \checkmark & partial & \checkmark \\
+\altrow
+API-based CTI enrichment & partial & partial & partial & partial & partial & \checkmark \\
+\hrow
+AI evidence-grounded reporting & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
+\altrow
+Benchmark-validated detection & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
+\hrow
+Open / academically accessible & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
+\end{longtable}
+
+The comparison makes LuminaFPM's positioning explicit. The incumbents lead on breadth of vendor support and change orchestration, but none combines a strictly read-only mandate, a \emph{provable} (benchmark-validated) deterministic anomaly model, and evidence-grounded AI reporting in an open, reproducible package. Panorama, as a vendor-native manager, is the clearest contrast: it is authoritative and write-capable for a single vendor, where LuminaFPM is deliberately read-only and multi-vendor.
+
+\section{Survey and User Insights}
+\label{sec:ch2-survey}
+To validate the problem framing, a structured survey was conducted during the Term-1 phase, targeting practitioners across the cybersecurity and IT-infrastructure domains. Respondents spanned network security architects and engineers, SOC analysts, compliance managers and auditors, and DevSecOps engineers --- the same stakeholder spectrum the platform is designed to serve. The instrument probed the perceived complexity of managing multi-vendor firewall estates, the prevalence and impact of human error in rulebase maintenance, the perceived value of mathematically provable (rather than heuristic) anomaly detection, the importance of AI assistance, and the preference for a single consolidated dashboard over fragmented per-vendor tools.
+
+The dominant themes were consistent and reinforced the project's core hypotheses. A large majority of respondents rated multi-vendor policy management as \emph{complex} or \emph{highly complex}, attributing this directly to incompatible vendor terminology and the absence of a unified view. Human error in rulebase maintenance was widely recognised as a leading cause of misconfiguration, with respondents acknowledging that manual verification of large rulebases is impractical. The value of \emph{mathematically provable} anomaly detection was rated highly: practitioners expressed clear preference for findings they can verify over heuristic alerts that erode trust through false positives. AI assistance was viewed favourably for accelerating analysis and report generation, provided it remains grounded in verifiable evidence rather than acting as an unaccountable authority. Finally, an overwhelming preference emerged for a single ``one dashboard for everything'' console that unifies inventory, anomalies, risk, threat intelligence and reporting. Table~\ref{tab:ch2-survey} summarises the principal survey dimensions and their findings.
+
+\begin{longtable}{L{0.34\textwidth} L{0.58\textwidth}}
+\caption{Summary of Term-1 survey dimensions and principal findings.}
+\label{tab:ch2-survey}\\
+\hline
+\hcell{Survey dimension} & \hcell{Principal finding} \\
+\hline
+\endfirsthead
+\hline
+\hcell{Survey dimension} & \hcell{Principal finding} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\hrow
+Respondent roles & Network security architects/engineers, SOC analysts, compliance managers/auditors and DevSecOps engineers --- the platform's intended audience. \\
+\altrow
+Complexity of multi-vendor management & A clear majority rated it complex or highly complex, citing incompatible vendor terminology and the lack of a unified view. \\
+\hrow
+Human error in rulebase maintenance & Widely recognised as a leading cause of misconfiguration; manual verification of large rulebases is regarded as impractical. \\
+\altrow
+Value of provable (math-based) anomalies & Rated highly; strong preference for verifiable findings over heuristic alerts prone to false positives. \\
+\hrow
+Importance of AI assistance & Viewed favourably for accelerating analysis and reporting, conditional on evidence-grounding rather than autonomous decision-making. \\
+\altrow
+Preference for one consolidated dashboard & Strong preference for a single console unifying inventory, anomalies, risk, CTI and reports over fragmented per-vendor tools. \\
+\end{longtable}
+
+These insights directly shaped LuminaFPM's design priorities: a unified normalised model and single console answer the complexity and one-dashboard findings; the deterministic, benchmark-validated engine answers the demand for provable anomalies and the distrust of false positives; and the evidence-grounded, non-authoritative role assigned to the LLM answers the qualified appetite for AI assistance.
+
+\section{The Four P's of Marketing}
+\label{sec:ch2-fourps}
+
+\subsection{Product}
+LuminaFPM is positioned as a strictly read-only, multi-vendor \emph{firewall anomaly management platform} that converges deterministic policy auditing with evidence-grounded threat intelligence. Its core value is a single pane of glass that acquires FortiGate and PAN-OS policies, normalises them into one canonical model, and produces \emph{provable} anomaly findings, rule- and device-level risk scores, API-based CTI exposure correlation, and AI-assisted SOC and executive reports --- all without ever writing to a firewall. The differentiators are the benchmark-validated deterministic engine, explicit cross-vendor inconsistency detection, and the read-only mandate that makes the platform safe to deploy against production infrastructure.
+
+\subsection{Price}
+LuminaFPM follows an open, academically transparent model rather than enterprise licensing. The platform is container-deployable via Docker Compose, so adopters incur only infrastructure cost and, optionally, metered API usage for an external LLM provider (Gemini by default) or CTI provider (for example AbuseIPDB) --- both of which degrade gracefully to a deterministic, network-free offline fallback when unkeyed. This zero-licence posture deliberately targets the SME, education and smaller-security-team tier that the six-figure incumbents exclude.
+
+\subsection{Place}
+Distribution is through containerised images and a public source repository, enabling consistent deployment across Linux, Windows and private-cloud environments that support Docker. Because all analysis runs on-premises or in a private cloud, sensitive configuration data --- addressing, topology, rule content --- never leaves the organisation's control boundary, which is itself a distribution advantage for security-sensitive and regulated adopters. The academic provenance of the project also places it naturally within university and research contexts as a reproducible reference implementation.
+
+\subsection{Promotion}
+Promotion relies on the openness and reproducibility of the work rather than on a commercial sales motion: a transparent, benchmark-validated methodology that practitioners can independently verify; technical write-ups demonstrating provable anomaly detection and cross-vendor normalisation; and engagement with the practitioner and academic security communities. The benchmark framework itself doubles as a promotional asset, because it provides objective, reproducible evidence of detection correctness rather than unverifiable marketing claims.
+
+\section{Research Gaps}
+\label{sec:ch2-gaps}
+The literature and the commercial landscape together reveal several gaps that LuminaFPM is designed to close:
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{From intra-firewall to cross-vendor proof.} Classical anomaly theory (Al-Shaer and Hamed) addresses conflicts within a single rulebase, and commercial tools provide multi-vendor inventory, but none elevates \emph{cross-vendor} inconsistency --- the same logical access expressed differently, or with differing action/logging/inspection, on a FortiGate versus a PAN-OS device --- to a provable, first-class finding over a unified normalised model.
+  \item \textbf{Provability over heuristics.} Commercial ``rule-effectiveness'' analytics are largely heuristic or usage-driven and produce probabilistic alerts. There is a gap for a deterministic, set-theoretic engine whose every finding is independently verifiable from its evidence, eliminating false-positive fatigue.
+  \item \textbf{Benchmark-validated detection.} Detection correctness in industry tools is typically asserted, not demonstrated against ground truth. LuminaFPM closes this with an explicit benchmark framework that scores engine output against an authoritative expected-anomaly matrix --- computing true positives, false positives, false negatives, precision, recall, $F_1$ and severity-match rate --- making the benchmark the \emph{acceptance gate} for the engine.
+  \item \textbf{Evidence-grounded AI, not AI authority.} Where AI appears in this domain it is often opaque. LuminaFPM constrains the LLM to query generation, CTI review and report synthesis, grounded in deterministic evidence, and explicitly bars it from being the anomaly authority --- a disciplined separation that the survey indicates practitioners want.
+  \item \textbf{Accessibility.} Provable, cross-vendor policy analysis has been the preserve of expensive enterprise platforms. An open, container-deployable, academically reproducible implementation lowers the barrier for SMEs, educational institutions and researchers.
+\end{enumerate}
+
+\section{Summary}
+\label{sec:ch2-summary}
+This chapter established the academic and commercial context for LuminaFPM. It traced firewall policy management from the problem of rule bloat in growing multi-vendor estates, through Al-Shaer and Hamed's foundational anomaly taxonomy (shadowing, redundancy, correlation, generalization), to the requirement for normalisation of heterogeneous vendor policies and the decisive contrast between deterministic and machine-learning approaches to policy analysis. It positioned CTI as a complementary, deliberately separate source of policy-derived exposure. A market analysis and a comparative review of Tufin, AlgoSec, FireMon, Skybox and Palo Alto Panorama (Table~\ref{tab:ch2-comparison}) showed that, while incumbents lead on vendor breadth and change orchestration, none combines a strictly read-only mandate, a benchmark-validated deterministic anomaly model, explicit cross-vendor inconsistency detection, and evidence-grounded AI reporting in an open form. The Term-1 survey (Table~\ref{tab:ch2-survey}) corroborated the problem framing and the demand for provable anomalies and a unified console. From these foundations, five research gaps were identified that LuminaFPM directly addresses. The chapters that follow detail the system description, requirements, design and implementation that realise these contributions.
