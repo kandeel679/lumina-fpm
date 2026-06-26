@@ -75,40 +75,42 @@ def _rule_context(db: Session, rule_id: int, run_id: int) -> Tuple[dict, dict, s
     return ctx, evidence_refs, prompts.render_rule_prompt(ctx)
 
 
-def _executive_context(db: Session, run_id: int) -> Tuple[dict, dict, str]:
-    rows = (db.query(models.RiskAssessment)
-            .filter(models.RiskAssessment.scope_type == "rule",
-                    models.RiskAssessment.analysis_run_id == run_id)
-            .order_by(models.RiskAssessment.risk_score.desc()).all())
-    tier_counts: dict = {}
-    for r in rows:
-        tier_counts[r.risk_tier] = tier_counts.get(r.risk_tier, 0) + 1
-    names = {pr.rule_id: (pr.rule_name, pr.vendor_type)
-             for pr in db.query(models.PolicyRule).all()}
-    top = []
-    for r in rows[:5]:
-        nm, vt = names.get(r.scope_id, ("?", "?"))
-        top.append({"risk_id": r.risk_id, "rule_name": nm, "vendor_type": vt,
-                    "risk_score": r.risk_score, "risk_tier": r.risk_tier})
-    total_findings = (db.query(func.count(models.RuleAnomaly.anomaly_id))
-                      .filter(models.RuleAnomaly.analysis_run_id == run_id).scalar())
-    ctx = {"analysis_run_id": run_id, "total_findings": total_findings,
-           "tier_counts": tier_counts, "top_rules": top}
-    evidence_refs = {"risk_ids": [t["risk_id"] for t in top], "analysis_run_id": run_id}
-    return ctx, evidence_refs, prompts.render_executive_prompt(ctx)
-
-
 def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None) -> dict:
     run_id = _latest_run_id(db)
     if run_id is None:
         return {"error": "no analysis run found"}
 
+    document = None
+    deterministic_md = None
     if scope_type == "rule":
         if scope_id is None:
             return {"error": "scope_id (rule_id) required for a rule report"}
-        ctx, evidence_refs, user_prompt = _rule_context(db, scope_id, run_id)
+        _ctx, evidence_refs, user_prompt = _rule_context(db, scope_id, run_id)
     elif scope_type == "executive":
-        ctx, evidence_refs, user_prompt = _executive_context(db, run_id)
+        from .report_builder import build_executive_document
+        document, deterministic_md = build_executive_document(db, run_id)
+        tot = document["totals"]
+        prompt_ctx = {
+            "analysis_run_id": run_id,
+            "total_findings": tot["open_findings"],
+            "tier_counts": tot["tier_counts"],
+            "top_rules": [
+                {"risk_id": None, "rule_name": f"{r['pol']} {r['rule_name']}",
+                 "vendor_type": r["vendor_type"], "risk_score": r["risk_score"],
+                 "risk_tier": r["risk_tier"]}
+                for r in document["remediation"][:6]
+            ],
+            "firmware_cves": [
+                {"device": fc["device"], "firmware": fc["firmware"],
+                 "cves": [c["reference"] for c in fc["cves"]]}
+                for fc in document["firmware_cves"]
+            ],
+        }
+        user_prompt = prompts.render_executive_prompt(prompt_ctx)
+        evidence_refs = {
+            "analysis_run_id": run_id,
+            "remediation_rule_ids": [r["rule_id"] for r in document["remediation"][:10]],
+        }
     else:
         return {"error": f"unsupported scope_type '{scope_type}'"}
 
@@ -118,10 +120,23 @@ def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None
     note = ("AI analysis grounded in the referenced evidence IDs; not itself evidence."
             if provider.name != "offline" else
             "Deterministic rendering of evidence (no LLM configured).")
+
+    # The AI authors ONLY the executive summary; the deterministic tables stand on their
+    # own, so a failed/offline LLM still yields a complete report (V10 §11).
+    executive_summary = None
+    markdown = None
+    if scope_type == "executive":
+        executive_summary = result.output
+        summ = (executive_summary or "").strip()
+        # avoid a double heading when the LLM emits its own "## ..." header
+        summ_block = summ if summ.lstrip().startswith("#") else f"## Executive Summary\n\n{summ}"
+        markdown = f"# {document['title']}\n\n{summ_block}\n\n{deterministic_md}"
+
     report = models.LlmReport(
         scope_type=scope_type, scope_id=scope_id, provider=result.provider,
         model=result.model, prompt_version=prompts.PROMPT_VERSION,
         evidence_refs=evidence_refs, output=result.output,
+        document=document, markdown=markdown, executive_summary=executive_summary,
         confidence_note=note, status=result.status,
     )
     db.add(report)
@@ -133,5 +148,6 @@ def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None
         "report_id": report.report_id, "scope_type": scope_type, "scope_id": scope_id,
         "provider": result.provider, "model": result.model, "status": result.status,
         "prompt_version": prompts.PROMPT_VERSION, "evidence_refs": evidence_refs,
-        "output": result.output, "error": result.error,
+        "output": result.output, "document": document, "markdown": markdown,
+        "executive_summary": executive_summary, "error": result.error,
     }

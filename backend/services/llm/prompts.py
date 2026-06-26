@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-PROMPT_VERSION = "soc-report/1.0"
+PROMPT_VERSION = "soc-report/2.0"
 
 SYSTEM_PROMPT = (
     "You are a cybersecurity analyst assistant for LuminaFPM, a READ-ONLY firewall "
@@ -71,14 +71,21 @@ def render_executive_prompt(ctx: Dict) -> str:
     lines = [
         f"SCOPE: executive summary for analysis run {ctx.get('analysis_run_id')}",
         f"\nTOTALS: {ctx.get('total_findings')} findings; risk tiers={ctx.get('tier_counts')}",
-        f"\nTOP RISKY RULES:",
+        f"\nTOP RULES TO FIX FIRST (already prioritized by risk):",
     ]
     for t in ctx.get("top_rules", []):
-        lines.append(f"  - [risk_id={t['risk_id']}] {t['rule_name']} ({t['vendor_type']}): "
-                     f"{t['risk_score']} {t['risk_tier']}")
+        lines.append(f"  - {t['rule_name']} ({t['vendor_type']}): {t['risk_score']} {t['risk_tier']}")
+    fw = ctx.get("firmware_cves", [])
+    if fw:
+        lines.append("\nFIRMWARE VULNERABILITIES (device axis):")
+        for f in fw:
+            lines.append(f"  - {f['device']} ({f['firmware']}): {', '.join(f['cves'])}")
     lines.append(
-        "\nTASK: Write a brief executive summary (no jargon) of the firewall posture: "
-        "overall risk, the few rules to fix first (cite risk_id), and themes. "
-        "Use ONLY the evidence above; label prose as analysis."
+        "\nTASK: Write a concise, professional EXECUTIVE SUMMARY (3-5 short paragraphs, no "
+        "jargon) of the firewall posture: the overall risk picture, the few rules that must be "
+        "fixed first and why, any firmware-vulnerability exposure, and the recurring themes "
+        "(e.g. unprotected allows, missing logging, overly permissive rules). Use ONLY the "
+        "evidence above; do NOT invent findings, CVEs, or remediations. This summary sits ABOVE "
+        "the deterministic remediation/evidence tables, so do not restate every row — synthesize."
     )
     return "\n".join(lines)

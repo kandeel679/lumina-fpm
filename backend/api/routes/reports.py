@@ -7,6 +7,7 @@ detects. Read-only against firewalls.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -54,5 +55,16 @@ def get_report(report_id: int, db: Session = Depends(get_db_session)):
         "report_id": r.report_id, "scope_type": r.scope_type, "scope_id": r.scope_id,
         "provider": r.provider, "model": r.model, "prompt_version": r.prompt_version,
         "evidence_refs": r.evidence_refs, "confidence_note": r.confidence_note,
-        "status": r.status, "output": r.output, "created_at": r.created_at,
+        "status": r.status, "output": r.output,
+        "document": r.document, "markdown": r.markdown, "executive_summary": r.executive_summary,
+        "created_at": r.created_at,
     }
+
+
+@router.get("/{report_id}/markdown", response_class=PlainTextResponse)
+def get_report_markdown(report_id: int, db: Session = Depends(get_db_session)):
+    """The downloadable Markdown render (executive summary + deterministic tables)."""
+    r = db.query(models.LlmReport).filter(models.LlmReport.report_id == report_id).first()
+    if r is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return PlainTextResponse(r.markdown or r.output or "", media_type="text/markdown")

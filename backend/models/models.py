@@ -539,7 +539,11 @@ class LlmReport(Base):
     model = Column(String(80), nullable=True)
     prompt_version = Column(String(40), nullable=True)
     evidence_refs = Column(JSONB, nullable=True)           # DB evidence IDs
-    output = Column(Text, nullable=True)
+    output = Column(Text, nullable=True)                   # legacy/back-compat: the AI prose
+    # ── Structured report (V10 §8) — deterministic sections + downloadable render ──
+    document = Column(JSONB, nullable=True)                # deterministic structured sections (tables)
+    markdown = Column(Text, nullable=True)                 # full GFM render (summary + tables) for download
+    executive_summary = Column(Text, nullable=True)        # AI-authored executive summary ONLY
     confidence_note = Column(Text, nullable=True)
     status = Column(String(20), default="complete")        # complete|partial|failed
     created_at = Column(DateTime(timezone=True), default=utcnow)

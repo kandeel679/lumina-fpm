@@ -327,8 +327,44 @@ export interface ReportSummary {
   created_at: string | null;
 }
 
+// ── Structured SOC report document (deterministic sections; V10 §8) ──
+export interface SocFinding {
+  anomaly_id: number; anomaly_type: string; severity: string;
+  detection_mode: string | null; confidence: number | null;
+  description: string | null; recommendation: string | null; related_rule: string | null;
+}
+export interface SocRemediation {
+  priority: number; pol: string; rule_name: string; vendor_type: string | null;
+  device: string; anomaly_types: string[]; max_severity: string;
+  risk_score: number; risk_tier: string; recommendation: string;
+}
+export interface SocEvidence {
+  pol: string; rule_name: string; vendor_type: string | null; device: string;
+  risk_score: number; risk_tier: string;
+  factor_breakdown: Record<string, number> | null; findings: SocFinding[];
+}
+export interface SocDeviceRisk {
+  device: string; vendor_type: string | null; firmware: string | null;
+  risk_score: number; risk_tier: string; factor_breakdown: Record<string, number> | null;
+}
+export interface SocFirmwareCve {
+  device: string; vendor_type: string | null; firmware: string | null; firmware_modifier: number;
+  cves: { reference: string | null; provider: string; severity: string; confidence: number | null; summary: string | null }[];
+}
+export interface SocDocument {
+  title: string; scope: string; analysis_run_id: number;
+  totals: { open_findings: number; rules_with_findings: number; rules_scored: number; devices: number; tier_counts: Record<string, number> };
+  remediation: SocRemediation[];
+  evidence: SocEvidence[];
+  risk_posture: { tier_counts: Record<string, number>; devices: SocDeviceRisk[] };
+  firmware_cves: SocFirmwareCve[];
+}
+
 export interface ReportDetail extends ReportSummary {
   output: string;
+  document?: SocDocument | null;        // present for executive reports
+  markdown?: string | null;             // downloadable GFM render
+  executive_summary?: string | null;    // AI-authored summary only
 }
 
 export const reports = {

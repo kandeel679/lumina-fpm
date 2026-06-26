@@ -54,11 +54,16 @@ def test_rule_prompt_embeds_evidence_ids():
 
 
 def test_executive_prompt():
+    # soc-report/2.0: the AI writes ONLY the executive summary above deterministic tables;
+    # the prompt carries prioritized rules + a firmware-vulnerability rollup.
     ctx = {"analysis_run_id": 15, "total_findings": 45, "tier_counts": {"critical": 4},
-           "top_rules": [{"risk_id": 1, "rule_name": "FGT_ANY_DB", "vendor_type": "fortinet",
-                          "risk_score": 99, "risk_tier": "critical"}]}
+           "top_rules": [{"risk_id": None, "rule_name": "POL-008 FGT_ANY_DB", "vendor_type": "fortinet",
+                          "risk_score": 99, "risk_tier": "critical"}],
+           "firmware_cves": [{"device": "FGT-LAB", "firmware": "v7.0.5", "cves": ["CVE-2024-21762"]}]}
     out = render_executive_prompt(ctx)
-    assert "risk_id=1" in out and "FGT_ANY_DB" in out
+    assert "FGT_ANY_DB" in out and "99" in out and "critical" in out
+    assert "FGT-LAB" in out and "CVE-2024-21762" in out      # firmware rollup
+    assert "executive summary" in out.lower()
 
 
 if __name__ == "__main__":
