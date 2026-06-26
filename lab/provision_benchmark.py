@@ -38,19 +38,13 @@ from benchmark_dataset import (  # noqa: E402
 )
 
 # Logical zone token (used in benchmark_dataset src_zone/dst_zone) -> vendor selector.
-# FortiGate now uses NAMED ZONES (created on the VM, bound to interfaces) so the topology
-# surfaces named segments (LAN/DMZ/DB-TIER) instead of bare port1/2/3. Keys stay the
-# uppercase logical tokens; only the VALUE is the VM-side name. 'ANY' = literal vendor 'any'.
-FGT_INTF = {"LAN": "LAN", "DMZ": "DMZ", "DB": "DB-TIER", "ANY": "any"}
+# FortiGate maps the logical tokens DIRECTLY to its interfaces (which already carry the segment
+# IPs and the aliases LAN/DMZ/DB on the lab VM; port4 is the 192.168.55.10 mgmt interface).
+# Named FortiGate zones were dropped: a zone cannot be created while its interface is still
+# referenced by existing policies, so zone-create raced the policy push and failed (-651),
+# and zones are DETECTION-NEUTRAL anyway. 'ANY' = literal vendor 'any'.
+FGT_INTF = {"LAN": "port1", "DMZ": "port2", "DB": "port3", "ANY": "any"}
 PAN_ZONE = {"LAN": "trust", "DMZ": "dmz", "DB": "db", "ANY": "any"}
-
-# FortiGate zone NAME -> (member interface, "ip netmask") created idempotently before
-# policies. Asset placement in the topology needs the interface to carry the segment subnet.
-FGT_ZONES = {
-    "LAN": ("port1", "10.10.10.1 255.255.255.0"),
-    "DMZ": ("port2", "10.10.20.1 255.255.255.0"),
-    "DB-TIER": ("port3", "10.10.30.1 255.255.255.0"),
-}
 
 
 def _fgt_sel(token: str) -> str:
@@ -135,34 +129,6 @@ def build_pan_element(r: dict) -> str:
 
 
 # ─────────────────────────── apply (live) ───────────────────────────
-def _ensure_fgt_zones(api_root: str, headers: dict, verify: bool) -> None:
-    """Idempotently create the named zones (LAN/DMZ/DB-TIER) bound to their interfaces and
-    set the member-interface subnets, BEFORE policies, so the topology surfaces named
-    segments and places /32 assets by subnet containment. Skip-if-present."""
-    import requests
-    zone_base = f"{api_root}/system/zone"
-    intf_base = f"{api_root}/system/interface"
-    try:
-        existing = {z["name"] for z in requests.get(
-            zone_base, headers=headers, verify=verify, timeout=30).json().get("results", [])}
-    except Exception as exc:  # noqa: BLE001
-        print(f"  [FGT] zone list failed: {str(exc)[:100]}")
-        existing = set()
-    for zname, (intf, ipmask) in FGT_ZONES.items():
-        # set the member interface IP/subnet (PUT — idempotent)
-        requests.put(f"{intf_base}/{intf}", headers=headers, verify=verify, timeout=30,
-                     data=json.dumps({"ip": ipmask, "mode": "static"}))
-        if zname in existing:
-            print(f"  [FGT] zone {zname} exists ({intf})")
-            continue
-        resp = requests.post(zone_base, headers=headers, verify=verify, timeout=30,
-                             data=json.dumps({"name": zname,
-                                              "interface": [{"interface-name": intf}],
-                                              "intrazone": "allow"}))
-        print(f"  [FGT] zone {zname} {'created' if resp.status_code < 400 else 'FAILED'} "
-              f"({intf}, http {resp.status_code})")
-
-
 def _ensure_fgt_objects(api_root: str, headers: dict, verify: bool) -> None:
     """Idempotently ensure the MALICIOUS_IP address object (FGT_ANY_DB references it), so a
     fresh lab does not push a rule with a dangling reference. Skip-if-present; the remaining
@@ -192,7 +158,6 @@ def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: 
     api_root = f"{scheme}://{host}/api/v2/cmdb"
     base = f"{api_root}/firewall/policy"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    _ensure_fgt_zones(api_root, headers, verify)
     _ensure_fgt_objects(api_root, headers, verify)
     existing = requests.get(base, headers=headers, verify=verify, timeout=30).json()
     by_name = {e["name"]: e["policyid"] for e in existing.get("results", [])}
@@ -230,6 +195,11 @@ def _ensure_pan_objects(base: str, key: str, verify: bool) -> None:
         ("service TCP_HIGH",
          "/config/devices/entry/vsys/entry/service/entry[@name='TCP_HIGH']",
          "<protocol><tcp><port>1024-65535</port></tcp></protocol>"),
+        # DNS is not a PAN-OS predefined service (only service-http/https are); the lab lacked a
+        # custom one, so PA_CLEAN_DNS failed its set. Create it (udp/53) like the others.
+        ("service DNS",
+         "/config/devices/entry/vsys/entry/service/entry[@name='DNS']",
+         "<protocol><udp><port>53</port></udp></protocol>"),
     ]
     for label, xpath, element in objects:
         resp = requests.get(base, params={"type": "config", "action": "set", "key": key,
@@ -248,12 +218,12 @@ def _pan_commit(base: str, key: str, verify: bool) -> bool:
     import time
     import xml.etree.ElementTree as ET
     import requests
-    resp = requests.get(base, params={"type": "commit", "cmd": "<commit></commit>", "key": key},
-                        headers={"X-PAN-KEY": key}, verify=verify, timeout=60)
     try:
+        resp = requests.get(base, params={"type": "commit", "cmd": "<commit></commit>", "key": key},
+                            headers={"X-PAN-KEY": key}, verify=verify, timeout=90)
         root = ET.fromstring(resp.text)
-    except ET.ParseError:
-        print(f"  [PAN] commit FAILED — unparseable response (http {resp.status_code})")
+    except (requests.RequestException, ET.ParseError) as exc:
+        print(f"  [PAN] commit request failed: {str(exc)[:160]}")
         return False
     if root.get("status") != "success":
         msg = " ".join(t.strip() for t in root.itertext() if t.strip())
@@ -264,14 +234,14 @@ def _pan_commit(base: str, key: str, verify: bool) -> bool:
         print(f"  [PAN] commit: nothing to commit (http {resp.status_code})")
         return True
     print(f"  [PAN] commit job {job} enqueued; polling job-status ...")
-    for _ in range(60):  # bounded poll, ~120s
-        time.sleep(2)
-        jr = requests.get(base, params={"type": "op", "key": key,
-                                        "cmd": f"<show><jobs><id>{job}</id></jobs></show>"},
-                          headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+    for _ in range(90):  # bounded poll, ~180s — the mgmt plane is slow DURING a commit, so a
+        time.sleep(2)    # transient timeout/connection error must retry the next tick, NOT crash.
         try:
+            jr = requests.get(base, params={"type": "op", "key": key,
+                                            "cmd": f"<show><jobs><id>{job}</id></jobs></show>"},
+                              headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
             jroot = ET.fromstring(jr.text)
-        except ET.ParseError:
+        except (requests.RequestException, ET.ParseError):
             continue
         if jroot.findtext(".//job/status") != "FIN":
             continue
