@@ -286,15 +286,16 @@ def _pan_commit(base: str, key: str, verify: bool) -> bool:
     return False
 
 
-def _pan_delete_stale(base: str, key: str, verify: bool) -> None:
-    """Under --replace, delete security rules present on the device but absent from the new set, so
-    a re-provision does not leave OLD benchmark rules polluting the result (mirrors the FortiGate
-    stale-policy cleanup). Only custom rules in vsys rulebase/security/rules are touched; PAN-OS
-    predefined intrazone/interzone defaults live under rulebase/default-security-rules and are
-    untouched. Deletes run on the candidate config and are committed by the caller."""
+def _pan_clear_benchmark_rules(base: str, key: str, verify: bool) -> None:
+    """Under --replace, delete ALL existing vsys security rules so the new set is recreated in the
+    exact dataset ORDER. This matters because the benchmark is order-sensitive (shadowing/redundancy/
+    conflict attach to the LATER rule) and PAN-OS 'set' on an existing rule updates it IN PLACE,
+    never reordering — so a rule that kept its old position (e.g. PA_ANY_DB ahead of PA_DB_ACCESS_XDEV)
+    would corrupt the order-sensitive findings. Setting onto a cleared rulebase appends in call order,
+    which is the dataset order. PAN-OS predefined intrazone/interzone defaults live under
+    rulebase/default-security-rules and are NOT touched. Runs on the candidate config; the caller commits."""
     import xml.etree.ElementTree as ET
     import requests
-    expected = {r["name"] for r in PALOALTO_RULES}
     resp = requests.get(base, params={
         "type": "config", "action": "get", "key": key,
         "xpath": "/config/devices/entry/vsys/entry/rulebase/security/rules",
@@ -302,17 +303,15 @@ def _pan_delete_stale(base: str, key: str, verify: bool) -> None:
     try:
         root = ET.fromstring(resp.text)
     except ET.ParseError:
-        print("  [PAN] rule list unparseable — skipping stale cleanup")
+        print("  [PAN] rule list unparseable — skipping rulebase clear")
         return
     names = [e.get("name") for e in root.findall(".//rules/entry") if e.get("name")]
     for name in names:
-        if name in expected:
-            continue
         d = requests.get(base, params={"type": "config", "action": "delete", "key": key,
                                        "xpath": PAN_XPATH.format(name=name)},
                          headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
         ok = d.status_code < 400 and 'status="success"' in d.text
-        print(f"  [PAN] {'deleted stale' if ok else 'FAILED delete'} {name} (http {d.status_code})")
+        print(f"  [PAN] {'cleared' if ok else 'FAILED delete'} {name} (http {d.status_code})")
 
 
 def apply_paloalto(host: str, key: str, verify: bool, replace: bool = False) -> bool:
@@ -321,9 +320,10 @@ def apply_paloalto(host: str, key: str, verify: bool, replace: bool = False) -> 
     base = f"https://{host}/api/"
     # Bootstrap the benchmark object dependencies first so the rule 'set's + commit validate.
     _ensure_pan_objects(base, key, verify)
-    # Remove stale benchmark rules (present on device, absent from the new set) before adding new.
+    # Clear the rulebase before adding new, so rules are recreated in the order-sensitive dataset
+    # order (PAN-OS 'set' updates in place and never reorders existing rules).
     if replace:
-        _pan_delete_stale(base, key, verify)
+        _pan_clear_benchmark_rules(base, key, verify)
     # Create the inspection profile group next (the lab PAN-OS has none) so the
     # inspection-ON rules can reference it. Idempotent (set).
     if any(r["inspection"] for r in PALOALTO_RULES):
