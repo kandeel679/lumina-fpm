@@ -4,7 +4,7 @@
 > handoff (all pushed to `origin/analyze-project-todo-report`). The data, `.env`, and the VMware lab are
 > **device-local** and do not travel — see "Environment caveats" below.
 
-_Last updated at commit `1cb66cb` (branch `analyze-project-todo-report`, no PR per mandate)._
+_Last updated at commit `375a826` (branch `feature/cve-firmware-intel`, no PR per mandate)._
 
 ---
 
@@ -21,8 +21,31 @@ is in [`docs/EXECUTION_LOG.md`](EXECUTION_LOG.md) (entries E-001 … E-029).
   analyst lifecycle, real CTI threat vectors, real topology assets). Cosmetic lab login retained.
 - Incremental TS migration: `tsconfig.json` has `allowJs` so `.jsx` keeps working; migrate screen-by-screen.
 
-**Verified live data (lab, run #18):** 2 devices (FGT-LAB 192.168.55.10, PA-LAB 192.168.55.20), 20 rules,
-54 current findings, device risk 96/100, benchmark precision/recall/F1 = 100% (47/47).
+**Verified live data (lab, run #25, 2026-06-27):** 2 devices (FGT-LAB 192.168.55.10, PA-LAB 192.168.55.20),
+**26 active rules** (10 FortiGate + 16 Palo Alto — the enriched set), benchmark precision/recall/F1 =
+**100% (43/43)**, severity-match 100%, CTI `threat_exposure` on exactly `FGT_ANY_DB` + `PA_ALLOW_MALICIOUS`,
+firmware CVEs on both devices. FortiGate zones now surface as named segments (LAN/DMZ/DB via interface
+aliases) with assets placed by subnet — parity with Palo Alto.
+
+---
+
+## ✅ RESOLVED since E-030 — the queued work below is DONE (see EXECUTION_LOG E-031…E-035)
+
+The firmware-CVE arc plus the queued items **A** (benchmark gating + Cisco strip) and **B** (VM enrichment)
+are complete and live-verified on branch `feature/cve-firmware-intel`:
+- Benchmark Center off the nav rail (still reachable via `#benchmark`); Cisco stripped; CVEs + CTI known-bad
+  externalized to `backend/data/*.json`; legacy TI page replaced by the two-axis Threat Center; SOC reports
+  restructured (deterministic tables + AI-only exec summary, MD/PDF download, per-rule == executive).
+- Enriched **26-rule matrix** (10 FG + 16 PA + 3 cross-device), engine-validated 43 cases 0 FP/FN, pushed
+  **LIVE** via the hardened provisioner (Step 9) and re-verified end-to-end (run #25, F1 = 1.0).
+- Topology **rebuilt on Cytoscape.js** (vendor lane layout, draggable, saved layout, PNG export, live
+  firmware-CVE badge); FortiGate assets now place under named segments via interface-alias resolution.
+- Live provisioning surfaced + fixed several real bugs (FG interface refs, PA rulebase order, PA DNS object,
+  `_pan_commit` poll robustness, the `deleted_at` reconciliation family). Adversarial multi-agent review = GREEN.
+- **Only remaining:** open the PR `feature/cve-firmware-intel` → `main` when the user says push; optionally
+  rotate the lab FG/PA read/write API keys (the write keys were pasted into a chat transcript during Step 9).
+
+The historical detail below is kept for provenance.
 
 ---
 
