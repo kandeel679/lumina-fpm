@@ -41,7 +41,9 @@ function Rail({ current, onNav, criticalCount }) {
     { id: 'topology',  icon: I.Network,   label: 'Topology' },
     { id: 'threats',   icon: I.Threat,    label: 'Threat Intelligence' },
     { id: 'reports',   icon: I.Code,      label: 'SOC Reports' },
-    { id: 'benchmark', icon: I.CheckCirc, label: 'Benchmark' },
+    // Benchmark Center is an internal QA/acceptance-gate tool, not customer-facing.
+    // It stays a valid route (reachable at #benchmark) but is intentionally NOT in
+    // the rail. See app.jsx VALID_PAGES — do not add it back here.
     { id: 'settings',  icon: I.Settings,  label: 'Settings' },
   ];
   return (
