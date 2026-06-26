@@ -286,12 +286,44 @@ def _pan_commit(base: str, key: str, verify: bool) -> bool:
     return False
 
 
-def apply_paloalto(host: str, key: str, verify: bool) -> bool:
+def _pan_delete_stale(base: str, key: str, verify: bool) -> None:
+    """Under --replace, delete security rules present on the device but absent from the new set, so
+    a re-provision does not leave OLD benchmark rules polluting the result (mirrors the FortiGate
+    stale-policy cleanup). Only custom rules in vsys rulebase/security/rules are touched; PAN-OS
+    predefined intrazone/interzone defaults live under rulebase/default-security-rules and are
+    untouched. Deletes run on the candidate config and are committed by the caller."""
+    import xml.etree.ElementTree as ET
+    import requests
+    expected = {r["name"] for r in PALOALTO_RULES}
+    resp = requests.get(base, params={
+        "type": "config", "action": "get", "key": key,
+        "xpath": "/config/devices/entry/vsys/entry/rulebase/security/rules",
+    }, headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError:
+        print("  [PAN] rule list unparseable — skipping stale cleanup")
+        return
+    names = [e.get("name") for e in root.findall(".//rules/entry") if e.get("name")]
+    for name in names:
+        if name in expected:
+            continue
+        d = requests.get(base, params={"type": "config", "action": "delete", "key": key,
+                                       "xpath": PAN_XPATH.format(name=name)},
+                         headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+        ok = d.status_code < 400 and 'status="success"' in d.text
+        print(f"  [PAN] {'deleted stale' if ok else 'FAILED delete'} {name} (http {d.status_code})")
+
+
+def apply_paloalto(host: str, key: str, verify: bool, replace: bool = False) -> bool:
     """Push the PA rule set and commit. Returns True only if the commit is VERIFIED live."""
     import requests
     base = f"https://{host}/api/"
     # Bootstrap the benchmark object dependencies first so the rule 'set's + commit validate.
     _ensure_pan_objects(base, key, verify)
+    # Remove stale benchmark rules (present on device, absent from the new set) before adding new.
+    if replace:
+        _pan_delete_stale(base, key, verify)
     # Create the inspection profile group next (the lab PAN-OS has none) so the
     # inspection-ON rules can reference it. Idempotent (set).
     if any(r["inspection"] for r in PALOALTO_RULES):
@@ -389,7 +421,7 @@ def main(argv=None) -> int:
             print("ERROR: Palo Alto API key required (--pan-key / PAN_API_KEY).", file=sys.stderr)
             return 2
         print(f"Pushing Palo Alto rules to {args.pan_host} ...")
-        pan_ok = apply_paloalto(args.pan_host, args.pan_key, verify)
+        pan_ok = apply_paloalto(args.pan_host, args.pan_key, verify, args.replace)
     if not pan_ok:
         print("\nWARNING: the Palo Alto commit did NOT confirm success — the benchmark may not be "
               "live. Review the commit job output above (a likely cause is a missing object the "
