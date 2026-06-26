@@ -39,6 +39,35 @@ def _md_table(headers: List[str], rows: List[List]) -> str:
     return "\n".join(out)
 
 
+def _firmware_cves(db: Session, device_ids: Optional[List[int]],
+                   device_risk: Dict[int, "models.RiskAssessment"]) -> List[dict]:
+    """firmware_cves section entries (device axis). device_ids=None => all devices."""
+    devs = {d.device_id: d for d in db.query(models.FirewallDevice).all()}
+    q = db.query(models.CtiIndicator).filter(
+        models.CtiIndicator.type == "firmware_version",
+        models.CtiIndicator.source_device_id.isnot(None))
+    if device_ids is not None:
+        q = q.filter(models.CtiIndicator.source_device_id.in_(device_ids))
+    out: List[dict] = []
+    for ind in q.all():
+        cves = [{
+            "reference": o.provider_reference, "provider": o.provider,
+            "severity": o.severity, "confidence": o.confidence, "summary": o.summary,
+        } for o in ind.observations if o.threat_type == "vulnerability"]
+        if not cves:
+            continue
+        d = devs.get(ind.source_device_id)
+        dr = device_risk.get(ind.source_device_id)
+        out.append({
+            "device": d.hostname if d else str(ind.source_device_id),
+            "vendor_type": d.vendor_type if d else None,
+            "firmware": ind.value,
+            "firmware_modifier": (dr.factor_breakdown or {}).get("firmware_modifier", 0) if dr else 0,
+            "cves": sorted(cves, key=lambda c: _SEV_RANK.get(c["severity"], 0), reverse=True),
+        })
+    return out
+
+
 def build_executive_document(db: Session, run_id: int) -> Tuple[dict, str]:
     """Return (document, markdown) for the executive (whole-run) SOC report."""
     devices = {d.device_id: d for d in db.query(models.FirewallDevice).all()}
@@ -124,26 +153,7 @@ def build_executive_document(db: Session, run_id: int) -> Tuple[dict, str]:
         })
 
     # ── 4. Firmware CVEs (device axis; benchmark-excluded) ──
-    firmware_cves: List[dict] = []
-    fw_inds = db.query(models.CtiIndicator).filter(
-        models.CtiIndicator.type == "firmware_version",
-        models.CtiIndicator.source_device_id.isnot(None)).all()
-    for ind in fw_inds:
-        d = devices.get(ind.source_device_id)
-        cves = [{
-            "reference": o.provider_reference, "provider": o.provider,
-            "severity": o.severity, "confidence": o.confidence, "summary": o.summary,
-        } for o in ind.observations if o.threat_type == "vulnerability"]
-        if not cves:
-            continue
-        dr = device_risk.get(ind.source_device_id)
-        firmware_cves.append({
-            "device": dev_name(ind.source_device_id),
-            "vendor_type": d.vendor_type if d else None,
-            "firmware": ind.value,
-            "firmware_modifier": (dr.factor_breakdown or {}).get("firmware_modifier", 0) if dr else 0,
-            "cves": sorted(cves, key=lambda c: _SEV_RANK.get(c["severity"], 0), reverse=True),
-        })
+    firmware_cves = _firmware_cves(db, device_ids=None, device_risk=device_risk)
 
     total_findings = sum(len(v) for v in findings_by_rule.values())
     document = {
@@ -197,6 +207,97 @@ def build_executive_document(db: Session, run_id: int) -> Tuple[dict, str]:
         for fc in firmware_cves:
             md.append(f"### {fc['device']} — {fc['vendor_type']} {fc['firmware']} "
                       f"(+{fc['firmware_modifier']} risk)\n")
+            md.append(_md_table(
+                ["CVE", "Severity", "Provider", "Summary"],
+                [[c["reference"], c["severity"], c["provider"], c["summary"]] for c in fc["cves"]]) + "\n")
+
+    return document, "\n".join(md)
+
+
+def build_rule_document(db: Session, rule_id: int, run_id: int) -> Tuple[dict, str]:
+    """Return (document, markdown) for a single-rule SOC report — same shape as the
+    executive document (so the UI/Markdown/PDF render it identically), scoped to one rule."""
+    rule = db.query(models.PolicyRule).filter(models.PolicyRule.rule_id == rule_id).first()
+    if rule is None:
+        raise ValueError(f"rule {rule_id} not found")
+    device = db.query(models.FirewallDevice).filter(
+        models.FirewallDevice.device_id == rule.device_id).first()
+    dev_name = device.hostname if device else str(rule.device_id)
+
+    flist = db.query(models.RuleAnomaly).filter(
+        models.RuleAnomaly.rule_id == rule_id,
+        models.RuleAnomaly.analysis_run_id == run_id).all()
+    flist.sort(key=lambda x: _SEV_RANK.get(x.severity_level, 0), reverse=True)
+    rr = db.query(models.RiskAssessment).filter(
+        models.RiskAssessment.scope_type == "rule", models.RiskAssessment.scope_id == rule_id,
+        models.RiskAssessment.analysis_run_id == run_id).first()
+    dr = db.query(models.RiskAssessment).filter(
+        models.RiskAssessment.scope_type == "device", models.RiskAssessment.scope_id == rule.device_id,
+        models.RiskAssessment.analysis_run_id == run_id).first()
+
+    worst = _worst([f.severity_level for f in flist])
+    rec = next((f.recommendation for f in flist if f.recommendation), None)
+    risk_score = rr.risk_score if rr else 0
+    risk_tier = rr.risk_tier if rr else "informational"
+
+    remediation = [{
+        "priority": 1, "rule_id": rule_id, "pol": _pol(rule_id), "rule_name": rule.rule_name,
+        "vendor_type": rule.vendor_type, "device": dev_name,
+        "anomaly_types": sorted({f.anomaly_type for f in flist}), "max_severity": worst,
+        "risk_score": risk_score, "risk_tier": risk_tier,
+        "recommendation": rec or "Review per the finding evidence.",
+    }] if flist else []
+
+    evidence = [{
+        "pol": _pol(rule_id), "rule_name": rule.rule_name, "vendor_type": rule.vendor_type,
+        "device": dev_name, "risk_score": risk_score, "risk_tier": risk_tier,
+        "factor_breakdown": rr.factor_breakdown if rr else None,
+        "findings": [{
+            "anomaly_id": f.anomaly_id, "anomaly_type": f.anomaly_type,
+            "severity": f.severity_level, "detection_mode": f.detection_mode,
+            "confidence": f.confidence, "description": f.description,
+            "recommendation": f.recommendation,
+            "related_rule": _pol(f.related_rule_id) if f.related_rule_id else None,
+        } for f in flist],
+    }]
+
+    device_rows = [{
+        "device": dev_name, "vendor_type": device.vendor_type if device else None,
+        "firmware": device.firmware_version if device else None,
+        "risk_score": dr.risk_score, "risk_tier": dr.risk_tier,
+        "factor_breakdown": dr.factor_breakdown,
+    }] if dr else []
+    firmware_cves = _firmware_cves(db, device_ids=[rule.device_id],
+                                   device_risk={rule.device_id: dr} if dr else {})
+
+    document = {
+        "title": f"LuminaFPM SOC Report — Rule {_pol(rule_id)} {rule.rule_name}",
+        "scope": "rule", "analysis_run_id": run_id,
+        "totals": {"open_findings": len(flist), "rules_with_findings": 1 if flist else 0,
+                   "rules_scored": 1, "devices": 1, "tier_counts": {risk_tier: 1}},
+        "remediation": remediation, "evidence": evidence,
+        "risk_posture": {"tier_counts": {risk_tier: 1}, "devices": device_rows},
+        "firmware_cves": firmware_cves,
+    }
+
+    md: List[str] = []
+    md.append(f"_Rule {_pol(rule_id)} '{rule.rule_name}' ({rule.vendor_type}, {dev_name}, "
+              f"action={rule.action}) · risk {risk_score} ({risk_tier}) · {len(flist)} findings_\n")
+    if flist:
+        md.append("## Findings\n")
+        md.append(_md_table(
+            ["anomaly_id", "type", "severity", "mode", "recommendation"],
+            [[f.anomaly_id, f.anomaly_type, f.severity_level, f.detection_mode, f.recommendation or "—"]
+             for f in flist]) + "\n")
+    else:
+        md.append("_No findings for this rule._\n")
+    if rr and rr.factor_breakdown:
+        md.append("## Risk Factors\n")
+        md.append(_md_table(["factor", "points"],
+                            [[k, v] for k, v in rr.factor_breakdown.items()]) + "\n")
+    if firmware_cves:
+        md.append("## Device Firmware Vulnerabilities (device axis · excluded from the config benchmark)\n")
+        for fc in firmware_cves:
             md.append(_md_table(
                 ["CVE", "Severity", "Provider", "Summary"],
                 [[c["reference"], c["severity"], c["provider"], c["summary"]] for c in fc["cves"]]) + "\n")

@@ -86,6 +86,8 @@ def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None
         if scope_id is None:
             return {"error": "scope_id (rule_id) required for a rule report"}
         _ctx, evidence_refs, user_prompt = _rule_context(db, scope_id, run_id)
+        from .report_builder import build_rule_document
+        document, deterministic_md = build_rule_document(db, scope_id, run_id)
     elif scope_type == "executive":
         from .report_builder import build_executive_document
         document, deterministic_md = build_executive_document(db, run_id)
@@ -121,15 +123,16 @@ def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None
             if provider.name != "offline" else
             "Deterministic rendering of evidence (no LLM configured).")
 
-    # The AI authors ONLY the executive summary; the deterministic tables stand on their
-    # own, so a failed/offline LLM still yields a complete report (V10 §11).
+    # The AI authors ONLY the summary; the deterministic tables stand on their own, so a
+    # failed/offline LLM still yields a complete report (V10 §11). Both scopes (executive
+    # and rule) now build a structured document + Markdown.
     executive_summary = None
     markdown = None
-    if scope_type == "executive":
+    if document is not None:
         executive_summary = result.output
         summ = (executive_summary or "").strip()
         # avoid a double heading when the LLM emits its own "## ..." header
-        summ_block = summ if summ.lstrip().startswith("#") else f"## Executive Summary\n\n{summ}"
+        summ_block = summ if summ.lstrip().startswith("#") else f"## Summary\n\n{summ}"
         markdown = f"# {document['title']}\n\n{summ_block}\n\n{deterministic_md}"
 
     report = models.LlmReport(

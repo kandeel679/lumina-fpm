@@ -60,10 +60,11 @@ def render_rule_prompt(ctx: Dict) -> str:
         f"{_fmt_findings(ctx.get('findings', []))}\n"
         f"CTI PROVIDER EVIDENCE (separate from the engine):\n"
         f"{_fmt_cti(ctx.get('cti', []))}\n"
-        "TASK: Write a SOC technical report for this rule with sections: "
-        "1) Summary, 2) Why it is risky (cite the anomaly_id / risk_id / observation_id "
-        "evidence above), 3) Recommended remediation (grounded ONLY in the evidence). "
-        "Label your prose as analysis, not new evidence."
+        "TASK: Write a CONCISE analytical SUMMARY of this rule's risk (2-4 short paragraphs): "
+        "what the rule allows, why it is risky, and how urgently to fix it — citing the "
+        "anomaly_id / risk_id / observation_id evidence above. The per-finding details and "
+        "recommendations are TABULATED BELOW this summary, so synthesize rather than restate every "
+        "row. Use ONLY the evidence above; do not invent findings/CVEs/remediations. Label prose as analysis."
     )
 
 

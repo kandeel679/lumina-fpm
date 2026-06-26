@@ -218,7 +218,7 @@ table{border-collapse:collapse;width:100%;margin:6px 0 12px;} th,td{border:1px s
 .summary{white-space:pre-wrap;line-height:1.55;}</style></head>
 <body><h1>${esc(doc?.title || 'LuminaFPM SOC Report')}</h1>
 <div class="meta">${esc(rep.provider)} · ${esc(rep.model)} · ${esc(rep.prompt_version)} · run #${esc(doc?.analysis_run_id ?? '')}</div>
-<h2>Executive Summary</h2><div class="summary">${esc(summary)}</div>${body}</body></html>`;
+<h2>Summary</h2><div class="summary">${esc(summary)}</div>${body}</body></html>`;
 }
 
 export function Reports() {
