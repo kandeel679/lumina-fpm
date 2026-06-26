@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "source": "lab-offline",
+  "description": "Curated, offline CTI known-bad indicator list for the rule-exposure (CTI) axis. Real, documented bad IPs; loaded by services.cti.providers.LabOfflineProvider so the CTI axis is demonstrable and reproducible offline (no key, no network). The live AbuseIPDBProvider layers real-world reputation ON TOP when CTI_PROVIDER_KEYS=abuseipdb=<key> is set in .env (worst-verdict-wins, so a key only adds coverage). Override this path with CTI_INDICATORS_PATH. 185.220.101.1 is the indicator the lab benchmark rules reference (MALICIOUS_IP).",
+  "indicators": [
+    {
+      "value": "185.220.101.1",
+      "threat_type": "tor_exit",
+      "severity": "high",
+      "confidence": 0.85,
+      "summary": "Known Tor exit node / repeated abuse source (curated lab list)."
+    },
+    {
+      "value": "45.137.21.9",
+      "threat_type": "c2",
+      "severity": "high",
+      "confidence": 0.8,
+      "summary": "Reported command-and-control / malware distribution host (curated lab list)."
+    },
+    {
+      "value": "193.142.146.35",
+      "threat_type": "scanner",
+      "severity": "medium",
+      "confidence": 0.7,
+      "summary": "Mass-scanner / SSH brute-force source (curated lab list)."
+    }
+  ]
+}

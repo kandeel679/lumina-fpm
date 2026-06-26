@@ -42,6 +42,13 @@ def test_extract_minimizes_internal():
     assert "10.10.10.0/24" in allv
 
 
+def test_known_bad_loaded_from_file():
+    # The known-bad list is loaded from backend/data/cti_indicators.json (not hardcoded);
+    # a missing/empty file must fail loudly here rather than silently disable CTI.
+    assert len(LabOfflineProvider.KNOWN_BAD) >= 1
+    assert MALICIOUS_IP in LabOfflineProvider.KNOWN_BAD
+
+
 def test_offline_provider_verdict():
     p = LabOfflineProvider()
     v = p.lookup_ip(MALICIOUS_IP)
@@ -66,6 +73,7 @@ if __name__ == "__main__":
     test_public_vs_private()
     test_classify()
     test_extract_minimizes_internal()
+    test_known_bad_loaded_from_file()
     test_offline_provider_verdict()
     test_build_providers()
     test_threat_exposure_adds_cti_risk()

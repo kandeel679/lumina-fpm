@@ -13,12 +13,42 @@ from __future__ import annotations
 
 import abc
 import hashlib
+import json
+import os
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Offline known-bad indicator list lives in a versioned data file (not hardcoded),
+# mirroring backend/data/cve_reference.json. Override with CTI_INDICATORS_PATH.
+_CTI_INDICATORS_PATH = os.getenv(
+    "CTI_INDICATORS_PATH",
+    str(Path(__file__).resolve().parents[2] / "data" / "cti_indicators.json"),
+)
+
+
+@lru_cache(maxsize=1)
+def _load_known_bad() -> dict:
+    """Load the offline known-bad list -> {value: (threat_type, severity, confidence, summary)}.
+    Returns {} on any read/parse error (runtime resilience); the test suite asserts the file
+    is present and non-empty so a missing file fails loudly in CI."""
+    try:
+        with open(_CTI_INDICATORS_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {
+            i["value"]: (i.get("threat_type"), i.get("severity", "high"),
+                         float(i.get("confidence", 0.85)), i.get("summary", ""))
+            for i in data.get("indicators", []) if i.get("value")
+        }
+    except Exception as exc:  # noqa: BLE001 — never hard-fail import; tests gate completeness
+        logger.warning("CTI indicator list load failed from %s (non-fatal): %s",
+                       _CTI_INDICATORS_PATH, str(exc)[:150])
+        return {}
 
 
 @dataclass
@@ -48,12 +78,9 @@ class LabOfflineProvider(CtiProvider):
     """Deterministic, network-free provider for offline validation (lab indicators)."""
 
     name = "lab_offline"
-    # Well-known-bad indicators used by the benchmark lab (grounded in reality:
-    # 185.220.101.1 is a long-standing Tor exit / abuse source).
-    KNOWN_BAD = {
-        "185.220.101.1": ("tor_exit", "high", 0.85,
-                          "Known Tor exit node / repeated abuse source (static lab list)."),
-    }
+    # Loaded from backend/data/cti_indicators.json (not hardcoded). Real, documented bad
+    # IPs (e.g. 185.220.101.1 — a long-standing Tor exit / abuse source).
+    KNOWN_BAD = _load_known_bad()
 
     def lookup_ip(self, value: str) -> Optional[CtiVerdict]:
         hit = self.KNOWN_BAD.get(value)
