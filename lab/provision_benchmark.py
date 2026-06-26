@@ -36,10 +36,34 @@ from benchmark_dataset import (  # noqa: E402
     PALOALTO_RULES,
 )
 
-# Logical zone -> vendor selector (override here if your lab differs).
-# Confirmed against the lab PAN-OS: zones trust(eth1/1)/dmz(eth1/2)/db(eth1/3).
-FGT_INTF = {"LAN": "port1", "DMZ": "port2", "DB": "port3", "ANY": "any"}
+# Logical zone token (used in benchmark_dataset src_zone/dst_zone) -> vendor selector.
+# FortiGate now uses NAMED ZONES (created on the VM, bound to interfaces) so the topology
+# surfaces named segments (LAN/DMZ/DB-TIER) instead of bare port1/2/3. Keys stay the
+# uppercase logical tokens; only the VALUE is the VM-side name. 'ANY' = literal vendor 'any'.
+FGT_INTF = {"LAN": "LAN", "DMZ": "DMZ", "DB": "DB-TIER", "ANY": "any"}
 PAN_ZONE = {"LAN": "trust", "DMZ": "dmz", "DB": "db", "ANY": "any"}
+
+# FortiGate zone NAME -> (member interface, "ip netmask") created idempotently before
+# policies. Asset placement in the topology needs the interface to carry the segment subnet.
+FGT_ZONES = {
+    "LAN": ("port1", "10.10.10.1 255.255.255.0"),
+    "DMZ": ("port2", "10.10.20.1 255.255.255.0"),
+    "DB-TIER": ("port3", "10.10.30.1 255.255.255.0"),
+}
+
+
+def _fgt_sel(token: str) -> str:
+    sel = FGT_INTF.get(token)
+    if sel is None:
+        raise KeyError(f"unknown FortiGate zone token {token!r}; expected {sorted(FGT_INTF)}")
+    return sel
+
+
+def _pan_sel(token: str) -> str:
+    sel = PAN_ZONE.get(token)
+    if sel is None:
+        raise KeyError(f"unknown Palo Alto zone token {token!r}; expected {sorted(PAN_ZONE)}")
+    return sel
 
 PAN_XPATH = "/config/devices/entry/vsys/entry/rulebase/security/rules/entry[@name='{name}']"
 
@@ -63,8 +87,8 @@ PAN_PROFILE_GROUP_ELEMENT = (
 def build_fgt_payload(r: dict) -> dict:
     body = {
         "name": r["name"],
-        "srcintf": [{"name": FGT_INTF[r["src_zone"]]}],
-        "dstintf": [{"name": FGT_INTF[r["dst_zone"]]}],
+        "srcintf": [{"name": _fgt_sel(r["src_zone"])}],
+        "dstintf": [{"name": _fgt_sel(r["dst_zone"])}],
         "srcaddr": [{"name": o} for o in r["src"]],
         "dstaddr": [{"name": o} for o in r["dst"]],
         "action": "accept" if r["action"] == "allow" else "deny",
@@ -89,8 +113,8 @@ def _members(tag: str, names) -> str:
 
 def build_pan_element(r: dict) -> str:
     parts = [
-        _members("from", [PAN_ZONE[r["src_zone"]]]),
-        _members("to", [PAN_ZONE[r["dst_zone"]]]),
+        _members("from", [_pan_sel(r["src_zone"])]),
+        _members("to", [_pan_sel(r["dst_zone"])]),
         _members("source", r["src"]),
         _members("destination", r["dst"]),
         "<application><member>any</member></application>",
@@ -110,12 +134,52 @@ def build_pan_element(r: dict) -> str:
 
 
 # ─────────────────────────── apply (live) ───────────────────────────
+def _ensure_fgt_zones(api_root: str, headers: dict, verify: bool) -> None:
+    """Idempotently create the named zones (LAN/DMZ/DB-TIER) bound to their interfaces and
+    set the member-interface subnets, BEFORE policies, so the topology surfaces named
+    segments and places /32 assets by subnet containment. Skip-if-present."""
+    import requests
+    zone_base = f"{api_root}/system/zone"
+    intf_base = f"{api_root}/system/interface"
+    try:
+        existing = {z["name"] for z in requests.get(
+            zone_base, headers=headers, verify=verify, timeout=30).json().get("results", [])}
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [FGT] zone list failed: {str(exc)[:100]}")
+        existing = set()
+    for zname, (intf, ipmask) in FGT_ZONES.items():
+        # set the member interface IP/subnet (PUT — idempotent)
+        requests.put(f"{intf_base}/{intf}", headers=headers, verify=verify, timeout=30,
+                     data=json.dumps({"ip": ipmask, "mode": "static"}))
+        if zname in existing:
+            print(f"  [FGT] zone {zname} exists ({intf})")
+            continue
+        resp = requests.post(zone_base, headers=headers, verify=verify, timeout=30,
+                             data=json.dumps({"name": zname,
+                                              "interface": [{"interface-name": intf}],
+                                              "intrazone": "allow"}))
+        print(f"  [FGT] zone {zname} {'created' if resp.status_code < 400 else 'FAILED'} "
+              f"({intf}, http {resp.status_code})")
+
+
 def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: str = "https") -> None:
     import requests
-    base = f"{scheme}://{host}/api/v2/cmdb/firewall/policy"
+    assert len(FORTIGATE_RULES) <= 10, (
+        f"FortiGate (unlicensed VM) cap is 10 policies; dataset has {len(FORTIGATE_RULES)}")
+    api_root = f"{scheme}://{host}/api/v2/cmdb"
+    base = f"{api_root}/firewall/policy"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    _ensure_fgt_zones(api_root, headers, verify)
     existing = requests.get(base, headers=headers, verify=verify, timeout=30).json()
     by_name = {e["name"]: e["policyid"] for e in existing.get("results", [])}
+    expected = {r["name"] for r in FORTIGATE_RULES}
+    # delete stale policies (present on the device, absent from the new set) so the 10-cap is
+    # respected and no orphan rule pollutes the benchmark (requires --replace).
+    if replace:
+        for name, pid in list(by_name.items()):
+            if name not in expected:
+                requests.delete(f"{base}/{pid}", headers=headers, verify=verify, timeout=30)
+                print(f"  [FGT] deleted stale {name}")
     for r in FORTIGATE_RULES:
         name = r["name"]
         if name in by_name:
