@@ -60,6 +60,12 @@ def test_cvss_to_severity_bands():
 
 # ── offline lab dataset ──
 
+def test_lab_dataset_loaded_from_reference_file():
+    # The offline dataset is loaded from backend/data/cve_reference.json (not hardcoded).
+    # A missing/empty file must fail loudly here rather than silently degrade to [].
+    assert len(LAB_CVE_FINDINGS) == 5, f"expected 5 curated CVEs, got {len(LAB_CVE_FINDINGS)}"
+
+
 def test_lab_dataset_is_cisco_free():
     vendors = {f.vendor_type for f in LAB_CVE_FINDINGS}
     assert vendors == {"fortinet", "paloalto"}, vendors
@@ -126,6 +132,7 @@ if __name__ == "__main__":
     test_version_tuple()
     test_version_in_range_bounds()
     test_cvss_to_severity_bands()
+    test_lab_dataset_loaded_from_reference_file()
     test_lab_dataset_is_cisco_free()
     test_lab_dataset_matches_lab_firmware()
     test_cve_does_not_cross_vendor()

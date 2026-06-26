@@ -29,8 +29,12 @@ inlined below.
 from __future__ import annotations
 
 import datetime
+import json
+import os
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session
@@ -228,68 +232,49 @@ def decide_vulnerable_devices(db: Session, finding: CveFinding,
 
 
 # =====================================================================
-# OFFLINE lab dataset (v1) — curated, network-free, mirrors LabOfflineProvider.
-# Real CVE ids / CVSS / KEV status; affected ranges curated to the lab firmware
-# (FortiOS 7.4.x, PAN-OS 11.1.x / 11.0.x). This stands in for the live NVD/KEV
-# feed (deferred to v2). Distinguishable in evidence by source='lab-offline'.
+# OFFLINE lab dataset (v1) — loaded from a versioned reference FILE, not hardcoded.
+# backend/data/cve_reference.json holds curated, network-free CVE entries (real CVE
+# ids / CVSS / KEV status; affected ranges curated to the lab firmware), mirroring
+# cti.providers.LabOfflineProvider. Keeping the data out of source lets the CVE set
+# be edited/refreshed without a code change. Stands in for the live NVD/KEV feed
+# (deferred to v2). Override the path with CVE_REFERENCE_PATH.
 # =====================================================================
 
-LAB_CVE_FINDINGS: List[CveFinding] = [
-    CveFinding(
-        cve="CVE-2024-21762", product="fortios", severity="critical", cvss=9.8,
-        kev=True, ransomware=True, source="lab-offline",
-        title="FortiOS SSL-VPN out-of-bounds write (pre-auth RCE)",
-        summary="Out-of-bounds write in FortiOS SSL-VPN allows a remote unauthenticated "
-                "attacker to execute code via crafted requests. CISA KEV, known ransomware use.",
-        reference="https://nvd.nist.gov/vuln/detail/CVE-2024-21762",
-        affected_ranges=[{"startIncl": "7.4.0", "endExcl": "7.4.5"},
-                         {"startIncl": "7.2.0", "endExcl": "7.2.8"},
-                         {"startIncl": "7.0.0", "endExcl": "7.0.14"}],
-    ),
-    CveFinding(
-        cve="CVE-2024-23113", product="fortios", severity="critical", cvss=9.8,
-        kev=True, source="lab-offline",
-        title="FortiOS fgfmd format-string RCE",
-        summary="Use of an externally-controlled format string in the FortiOS fgfmd daemon "
-                "allows a remote unauthenticated attacker to execute code/commands. CISA KEV.",
-        reference="https://nvd.nist.gov/vuln/detail/CVE-2024-23113",
-        affected_ranges=[{"startIncl": "7.4.0", "endExcl": "7.4.5"},
-                         {"startIncl": "7.2.0", "endExcl": "7.2.8"}],
-    ),
-    CveFinding(
-        cve="CVE-2024-3400", product="pan_os", severity="critical", cvss=10.0,
-        kev=True, ransomware=True, source="lab-offline",
-        title="PAN-OS GlobalProtect command injection (pre-auth RCE)",
-        summary="Command injection in the GlobalProtect feature of PAN-OS allows an "
-                "unauthenticated attacker to execute arbitrary code with root privileges. "
-                "CISA KEV, exploited in the wild (Operation MidnightEclipse).",
-        reference="https://nvd.nist.gov/vuln/detail/CVE-2024-3400",
-        affected_ranges=[{"startIncl": "11.1.0", "endIncl": "11.1.2"},
-                         {"startIncl": "11.0.0", "endIncl": "11.0.4"},
-                         {"startIncl": "10.2.0", "endIncl": "10.2.9"}],
-    ),
-    CveFinding(
-        cve="CVE-2024-0012", product="pan_os", severity="critical", cvss=9.3,
-        kev=True, source="lab-offline",
-        title="PAN-OS management web interface authentication bypass",
-        summary="Authentication bypass in the PAN-OS management web interface lets a network "
-                "attacker gain administrator privileges and run admin actions. CISA KEV.",
-        reference="https://nvd.nist.gov/vuln/detail/CVE-2024-0012",
-        affected_ranges=[{"startIncl": "11.1.0", "endExcl": "11.1.5"},
-                         {"startIncl": "11.0.0", "endExcl": "11.0.6"},
-                         {"startIncl": "10.2.0", "endExcl": "10.2.12"}],
-    ),
-    CveFinding(
-        cve="CVE-2025-0108", product="pan_os", severity="high", cvss=7.8,
-        kev=False, source="lab-offline",
-        title="PAN-OS management web interface authentication bypass",
-        summary="Authentication bypass in the PAN-OS management web interface allows an "
-                "unauthenticated attacker with network access to invoke certain PHP scripts.",
-        reference="https://nvd.nist.gov/vuln/detail/CVE-2025-0108",
-        affected_ranges=[{"startIncl": "11.1.0", "endExcl": "11.1.7"},
-                         {"startIncl": "11.0.0", "endExcl": "11.0.7"}],
-    ),
-]
+# Only the STORED CveFinding fields are read from JSON; vendor_type/provider are
+# derived @property and must never be stored (storing them would shadow the property).
+_CVE_FINDING_FIELDS = {
+    "cve", "product", "severity", "title", "summary", "cvss",
+    "kev", "ransomware", "reference", "source", "affected_ranges",
+}
+_CVE_REFERENCE_PATH = os.getenv(
+    "CVE_REFERENCE_PATH",
+    str(Path(__file__).resolve().parents[2] / "data" / "cve_reference.json"),
+)
+
+
+@lru_cache(maxsize=1)
+def _load_offline_cve_findings() -> List[CveFinding]:
+    """Load the curated offline CVE dataset from the versioned JSON reference file.
+
+    Whitelists known fields (a stray key would raise on CveFinding(**obj)) and
+    preserves file order (determinism). Returns [] on any read/parse error for
+    runtime resilience; the test suite asserts the file is present and complete
+    so a missing/empty file fails loudly in CI rather than silently degrading.
+    """
+    try:
+        with open(_CVE_REFERENCE_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        out: List[CveFinding] = []
+        for obj in data.get("findings", []):
+            out.append(CveFinding(**{k: v for k, v in obj.items() if k in _CVE_FINDING_FIELDS}))
+        return out
+    except Exception as exc:  # noqa: BLE001 — never hard-fail import; tests gate completeness
+        logger.warning("CVE reference load failed from %s (non-fatal): %s",
+                       _CVE_REFERENCE_PATH, str(exc)[:150])
+        return []
+
+
+LAB_CVE_FINDINGS: List[CveFinding] = _load_offline_cve_findings()
 
 
 def _offline_cve_findings(vendor_types: set[str]) -> List[CveFinding]:
