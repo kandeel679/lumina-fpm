@@ -152,7 +152,31 @@ def _int(v) -> Optional[int]:
         return None
 
 
-def _parse_rules(text: Optional[str], vdom: Optional[str]) -> List[ParsedRule]:
+def _parse_interfaces(text: Optional[str]) -> Dict[str, str]:
+    """Map FortiGate interface NAME -> operator ALIAS (e.g. port2 -> 'DMZ').
+
+    A well-configured FortiGate labels its segment interfaces with aliases; surfacing the alias
+    as the policy's zone lets Lumina display the real named segment and place assets by subnet
+    containment (like Palo Alto's named zones) instead of a bare portN that carries no subnet.
+    This is read-only — it reports the alias the operator set, never an inferred/guessed one.
+    Interfaces without an alias keep their port name.
+    """
+    out: Dict[str, str] = {}
+    for r in _results(text):
+        name = r.get("name")
+        alias = (r.get("alias") or "").strip()
+        if name and alias:
+            out[name] = alias
+    return out
+
+
+def _parse_rules(text: Optional[str], vdom: Optional[str],
+                 zone_alias: Optional[Dict[str, str]] = None) -> List[ParsedRule]:
+    zone_alias = zone_alias or {}
+
+    def _zones(items) -> List[str]:
+        return [zone_alias.get(n, n) for n in _names(items)]
+
     rules = []
     for order, r in enumerate(_results(text), start=1):
         profiles = {
@@ -173,8 +197,8 @@ def _parse_rules(text: Optional[str], vdom: Optional[str]) -> List[ParsedRule]:
             vendor_uuid=r.get("uuid"),
             vdom_vsys=vdom,
             enabled=(r.get("status") == "enable"),
-            src_zones=_names(r.get("srcintf")),
-            dst_zones=_names(r.get("dstintf")),
+            src_zones=_zones(r.get("srcintf")),
+            dst_zones=_zones(r.get("dstintf")),
             src_addrs=_names(r.get("srcaddr")),
             dst_addrs=_names(r.get("dstaddr")),
             services=_names(r.get("service")),
@@ -201,12 +225,16 @@ def parse(device_id: int, artifacts: Dict[str, str]) -> ParsedDevicePayload:
     except json.JSONDecodeError:
         pass
 
+    # Resolve interface names to operator aliases (port2 -> 'DMZ') so policy zones surface the
+    # real named segment and assets place by subnet — read-only, no inference.
+    zone_alias = _parse_interfaces(artifacts.get("interfaces"))
+
     payload = ParsedDevicePayload(
         device_id=device_id,
         vendor="fortinet",
         firmware_version=_firmware(artifacts),
         vdom_vsys=vdom,
-        rules=_parse_rules(artifacts.get("policies"), vdom),
+        rules=_parse_rules(artifacts.get("policies"), vdom, zone_alias),
         address_objects=_parse_addresses(artifacts.get("address_objects")),
         address_groups=_parse_addrgrps(artifacts.get("address_groups")),
         service_objects=_parse_services(artifacts.get("service_objects")),
