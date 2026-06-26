@@ -555,66 +555,7 @@ export async function updateAnomalyStatus(anomalyId, status, reason) {
   return res.json();
 }
 
-// Threat Intel — scans, reports, SSE progress
-export async function fetchThreatReports(page = 1, status) {
-  const params = new URLSearchParams({ page: String(page), page_size: '20' });
-  if (status) params.set('status', status);
-  const res = await fetch(`/api/v1/threat-intel/scans?${params}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-export async function fetchThreatReportDetail(id) {
-  const res = await fetch(`/api/v1/threat-intel/scans/${id}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-export async function triggerThreatScan(categories, deviceIds) {
-  const body = { trigger_type: 'manual' };
-  if (categories?.length) body.categories = categories;
-  if (deviceIds?.length) body.device_ids = deviceIds.map(Number);
-  const res = await fetch('/api/v1/threat-intel/scans', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-/** Subscribe to scan progress via SSE. Returns an unsubscribe function. */
-export function subscribeThreatScanProgress(reportId, onEvent) {
-  const es = new EventSource(`/api/v1/threat-intel/scans/${reportId}/stream`);
-  let closed = false;
-
-  const close = () => {
-    if (!closed) {
-      closed = true;
-      es.close();
-    }
-  };
-
-  const handleData = (eventType, event) => {
-    try {
-      const data = JSON.parse(event.data || '{}');
-      onEvent({ type: eventType, data });
-      const st = (data.status || eventType || '').toUpperCase();
-      if (st === 'SUCCESS' || st === 'FAILED' || eventType === 'done') close();
-    } catch (e) {
-      console.warn('SSE parse error', e);
-    }
-  };
-
-  es.onmessage = (e) => handleData('message', e);
-  ['running', 'SUCCESS', 'FAILED', 'progress', 'done'].forEach(t => {
-    es.addEventListener(t, (e) => handleData(t, e));
-  });
-
-  es.onerror = () => {
-    onEvent({ type: 'error', data: {} });
-    close();
-  };
-
-  return close;
-}
+// (Retired) The dark-web/Tor threat-intel scan helpers (fetchThreatReports /
+// fetchThreatReportDetail / triggerThreatScan / subscribeThreatScanProgress) were
+// removed with the legacy Threat Intelligence wrapper. The two-axis Threat Center
+// reads /api/v1/cti instead (see cti.tsx / lib/api.ts `cti`).
