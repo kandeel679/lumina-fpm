@@ -420,6 +420,37 @@ export async function fetchLFPMData() {
         };
       });
 
+    // 8c. Firmware-CVE device axis (Volume 8/9). firmware_version indicators are
+    // device-scoped CVE evidence (value is a firmware string, not an IP) and are
+    // deliberately NOT plotted as external network nodes above. Surface them per device
+    // so the topology can badge a firewall whose firmware is vulnerable — re-sourced from
+    // LIVE CTI, replacing the retired dark-web `threats` feed (now empty). Each provider
+    // observation on the indicator is one CVE.
+    const SEV_RANK_FW = { critical: 4, high: 3, medium: 2, low: 1 };
+    const firmwareCves = (ctiData.indicators || [])
+      .filter(ind => ind.type === 'firmware_version' && ind.source_device_id != null)
+      .map(ind => {
+        const obs = ind.observations || [];
+        let worst = null, wr = 0;
+        obs.forEach(o => {
+          const r = SEV_RANK_FW[String(o.severity || '').toLowerCase()] || 0;
+          if (r > wr) { wr = r; worst = o.severity; }
+        });
+        return {
+          deviceId: String(ind.source_device_id),
+          firmware: ind.value,
+          worstSeverity: worst,
+          count: obs.length,
+          critical: obs.filter(o => String(o.severity || '').toLowerCase() === 'critical').length,
+          cves: obs.map(o => ({
+            id: (String(o.reference || '').match(/CVE-\d{4}-\d{4,}/i) || [''])[0].toUpperCase() || o.reference || '',
+            severity: o.severity || null,
+            summary: o.summary || '',
+            reference: o.reference || '',
+          })),
+        };
+      });
+
     /* Derive the affected vendor(s) for a finding from its matched devices,
      * falling back to product keywords in the title/description/tags. Keeps the
      * dashboard's per-vendor CVE counts and the Threats vendor filter accurate. */
@@ -515,6 +546,7 @@ export async function fetchLFPMData() {
       meta,
       zones,
       assets,
+      firmwareCves,
       firmwareTimeline: mockLFPM.firmwareTimeline || [],
       externalNodes,
       activityFeed: liveFeed,
