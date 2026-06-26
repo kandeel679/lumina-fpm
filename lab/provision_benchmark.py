@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from benchmark_dataset import (  # noqa: E402
     CROSS_DEVICE_PAIRS,
     FORTIGATE_RULES,
+    MALICIOUS_IP_VALUE,
     PALOALTO_RULES,
 )
 
@@ -162,6 +163,28 @@ def _ensure_fgt_zones(api_root: str, headers: dict, verify: bool) -> None:
               f"({intf}, http {resp.status_code})")
 
 
+def _ensure_fgt_objects(api_root: str, headers: dict, verify: bool) -> None:
+    """Idempotently ensure the MALICIOUS_IP address object (FGT_ANY_DB references it), so a
+    fresh lab does not push a rule with a dangling reference. Skip-if-present; the remaining
+    referenced objects (LAN_NET/WEB_SERVER/DB_SERVER/...) are pre-existing lab baseline."""
+    import requests
+    addr_base = f"{api_root}/firewall/address"
+    try:
+        existing = {a["name"] for a in requests.get(
+            addr_base, headers=headers, verify=verify, timeout=30).json().get("results", [])}
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [FGT] address list failed: {str(exc)[:100]}")
+        existing = set()
+    if "MALICIOUS_IP" in existing:
+        print("  [FGT] address MALICIOUS_IP exists")
+        return
+    resp = requests.post(addr_base, headers=headers, verify=verify, timeout=30,
+                         data=json.dumps({"name": "MALICIOUS_IP",
+                                          "subnet": f"{MALICIOUS_IP_VALUE} 255.255.255.255"}))
+    print(f"  [FGT] address MALICIOUS_IP {'created' if resp.status_code < 400 else 'FAILED'} "
+          f"(http {resp.status_code})")
+
+
 def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: str = "https") -> None:
     import requests
     assert len(FORTIGATE_RULES) <= 10, (
@@ -170,6 +193,7 @@ def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: 
     base = f"{api_root}/firewall/policy"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     _ensure_fgt_zones(api_root, headers, verify)
+    _ensure_fgt_objects(api_root, headers, verify)
     existing = requests.get(base, headers=headers, verify=verify, timeout=30).json()
     by_name = {e["name"]: e["policyid"] for e in existing.get("results", [])}
     expected = {r["name"] for r in FORTIGATE_RULES}
@@ -193,10 +217,82 @@ def apply_fortigate(host: str, token: str, verify: bool, replace: bool, scheme: 
         print(f"  [FGT] {'created' if ok else 'FAILED'} {name} (http {resp.status_code})")
 
 
-def apply_paloalto(host: str, key: str, verify: bool) -> None:
+def _ensure_pan_objects(base: str, key: str, verify: bool) -> None:
+    """Idempotently create the benchmark object dependencies (set = upsert) BEFORE the rules
+    and the commit, so a referential-validation failure cannot silently sink the commit. The
+    remaining referenced objects are pre-existing lab baseline. TCP_HIGH must be tcp 1024-65535
+    (the wide_port_range case); MALICIOUS_IP must match the CTI known-bad IP."""
+    import requests
+    objects = [
+        ("address MALICIOUS_IP",
+         "/config/devices/entry/vsys/entry/address/entry[@name='MALICIOUS_IP']",
+         f"<ip-netmask>{MALICIOUS_IP_VALUE}/32</ip-netmask>"),
+        ("service TCP_HIGH",
+         "/config/devices/entry/vsys/entry/service/entry[@name='TCP_HIGH']",
+         "<protocol><tcp><port>1024-65535</port></tcp></protocol>"),
+    ]
+    for label, xpath, element in objects:
+        resp = requests.get(base, params={"type": "config", "action": "set", "key": key,
+                                          "xpath": xpath, "element": element},
+                            headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+        ok = resp.status_code < 400 and 'status="success"' in resp.text
+        print(f"  [PAN] object {label} {'set' if ok else 'FAILED'} (http {resp.status_code})")
+
+
+def _pan_commit(base: str, key: str, verify: bool) -> bool:
+    """Issue a candidate->running commit and VERIFY it actually succeeded. PAN-OS commits are
+    asynchronous and can return HTTP 200 with status="error" (referential validation) or enqueue
+    a job that later FAILs — a bare status-code check would report a failed provision as success
+    and the operator would believe the benchmark is live when it is not. Returns True only when
+    the commit job finishes result=OK (or there was nothing to commit)."""
+    import time
+    import xml.etree.ElementTree as ET
+    import requests
+    resp = requests.get(base, params={"type": "commit", "cmd": "<commit></commit>", "key": key},
+                        headers={"X-PAN-KEY": key}, verify=verify, timeout=60)
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError:
+        print(f"  [PAN] commit FAILED — unparseable response (http {resp.status_code})")
+        return False
+    if root.get("status") != "success":
+        msg = " ".join(t.strip() for t in root.itertext() if t.strip())
+        print(f"  [PAN] commit FAILED (http {resp.status_code}): {msg[:200]}")
+        return False
+    job = root.findtext(".//job")
+    if not job:
+        print(f"  [PAN] commit: nothing to commit (http {resp.status_code})")
+        return True
+    print(f"  [PAN] commit job {job} enqueued; polling job-status ...")
+    for _ in range(60):  # bounded poll, ~120s
+        time.sleep(2)
+        jr = requests.get(base, params={"type": "op", "key": key,
+                                        "cmd": f"<show><jobs><id>{job}</id></jobs></show>"},
+                          headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
+        try:
+            jroot = ET.fromstring(jr.text)
+        except ET.ParseError:
+            continue
+        if jroot.findtext(".//job/status") != "FIN":
+            continue
+        result = jroot.findtext(".//job/result")
+        if result == "OK":
+            print(f"  [PAN] commit job {job} OK")
+            return True
+        details = " | ".join(t.strip() for t in jroot.itertext() if t.strip())
+        print(f"  [PAN] commit job {job} {result}: {details[:300]}")
+        return False
+    print(f"  [PAN] commit job {job} did not reach FIN within the poll window")
+    return False
+
+
+def apply_paloalto(host: str, key: str, verify: bool) -> bool:
+    """Push the PA rule set and commit. Returns True only if the commit is VERIFIED live."""
     import requests
     base = f"https://{host}/api/"
-    # Create the inspection profile group first (the lab PAN-OS has none) so the
+    # Bootstrap the benchmark object dependencies first so the rule 'set's + commit validate.
+    _ensure_pan_objects(base, key, verify)
+    # Create the inspection profile group next (the lab PAN-OS has none) so the
     # inspection-ON rules can reference it. Idempotent (set).
     if any(r["inspection"] for r in PALOALTO_RULES):
         resp = requests.get(base, params={
@@ -213,10 +309,9 @@ def apply_paloalto(host: str, key: str, verify: bool) -> None:
         resp = requests.get(base, params=params, headers={"X-PAN-KEY": key}, verify=verify, timeout=30)
         ok = resp.status_code < 400 and 'status="success"' in resp.text
         print(f"  [PAN] {'set' if ok else 'FAILED'} {r['name']} (http {resp.status_code})")
-    # Commit candidate config to running.
-    resp = requests.get(base, params={"type": "commit", "cmd": "<commit></commit>", "key": key},
-                        headers={"X-PAN-KEY": key}, verify=verify, timeout=60)
-    print(f"  [PAN] commit issued (http {resp.status_code})")
+    # Commit candidate config to running — VERIFIED (a silent commit failure would mask a
+    # benchmark that never went live).
+    return _pan_commit(base, key, verify)
 
 
 # ─────────────────────────── ground truth ───────────────────────────
@@ -237,7 +332,11 @@ def export_ground_truth(path: str) -> int:
 
 
 def dry_run() -> None:
-    print("# FortiGate payloads (POST /api/v2/cmdb/firewall/policy):")
+    print("# Object dependencies ensured first (idempotent set/skip-if-present):")
+    print(f"  [FGT] address MALICIOUS_IP = {MALICIOUS_IP_VALUE}/32")
+    print(f"  [PAN] address MALICIOUS_IP = <ip-netmask>{MALICIOUS_IP_VALUE}/32</ip-netmask>")
+    print("  [PAN] service TCP_HIGH = <protocol><tcp><port>1024-65535</port></tcp></protocol>")
+    print("\n# FortiGate payloads (POST /api/v2/cmdb/firewall/policy):")
     for r in FORTIGATE_RULES:
         print(f"  {r['name']}: {json.dumps(build_fgt_payload(r))}")
     print("\n# Palo Alto set elements (type=config&action=set ... + commit):")
@@ -278,6 +377,7 @@ def main(argv=None) -> int:
         return 2
 
     verify = args.verify_tls
+    pan_ok = True
     if args.vendor in ("fortinet", "both"):
         if not args.fgt_token:
             print("ERROR: FortiGate write token required (--fgt-token / FGT_WRITE_TOKEN).", file=sys.stderr)
@@ -289,7 +389,12 @@ def main(argv=None) -> int:
             print("ERROR: Palo Alto API key required (--pan-key / PAN_API_KEY).", file=sys.stderr)
             return 2
         print(f"Pushing Palo Alto rules to {args.pan_host} ...")
-        apply_paloalto(args.pan_host, args.pan_key, verify)
+        pan_ok = apply_paloalto(args.pan_host, args.pan_key, verify)
+    if not pan_ok:
+        print("\nWARNING: the Palo Alto commit did NOT confirm success — the benchmark may not be "
+              "live. Review the commit job output above (a likely cause is a missing object the "
+              "rules reference) BEFORE polling LuminaFPM.", file=sys.stderr)
+        return 1
     print("\nDone. Now run a LuminaFPM poll on each device, then POST /api/v1/anomalies/run (all-scope).")
     return 0
 

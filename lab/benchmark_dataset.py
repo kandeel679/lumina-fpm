@@ -45,6 +45,11 @@ Zones are DETECTION-NEUTRAL — no detector reads src_zone/dst_zone; they only s
 the lab topology.
 """
 
+# Benchmark object dependencies the provisioner self-bootstraps (idempotent). MALICIOUS_IP
+# MUST resolve to the known-bad IP the CTI axis matches (backend/data/cti_indicators.json);
+# if these drift, the CTI threat_exposure on FGT_ANY_DB / PA_ALLOW_MALICIOUS silently stops.
+MALICIOUS_IP_VALUE = "185.220.101.1"
+
 # ── FortiGate phase-1 rules (order = rule_order) — EXACTLY 10 (unlicensed-VM cap) ──
 FORTIGATE_RULES = [
     dict(name="FGT_ALLOW_WEB", src_zone="LAN", dst_zone="DMZ", src=["LAN_NET"], dst=["WEB_SERVER"],
@@ -212,3 +217,9 @@ CROSS_DEVICE_PAIRS = [
      "expected": "cross_device_security_posture_inconsistency",
      "reason": "Equivalent LAN_NET->WEB_SERVER HTTPS allow; FortiGate inspected, Palo Alto unprotected."},
 ]
+
+# ── Module-load invariant (enforced on EVERY path: dry-run, PAN-only, tests, live) ──
+# FortiGate unlicensed-VM hard policy cap. Asserted at import so an over-cap edit fails
+# immediately everywhere, not only on a live FortiGate push (apply_fortigate also re-asserts).
+assert len(FORTIGATE_RULES) <= 10, (
+    f"FortiGate (unlicensed VM) cap is 10 policies; dataset has {len(FORTIGATE_RULES)}")
