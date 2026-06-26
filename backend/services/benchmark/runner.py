@@ -28,7 +28,11 @@ def _latest_run_id(db: Session) -> Optional[int]:
 
 
 def _deployed_rules(db: Session) -> Dict[str, models.PolicyRule]:
-    rows = db.query(models.PolicyRule).filter(models.PolicyRule.is_active.is_(True)).all()
+    # "Deployed" = present on the device, whether enabled or DISABLED — a disabled rule is still
+    # deployed and is exactly what disabled_rule_review flags, so filtering by is_active would
+    # drop its expected case and turn the engine's correct detection into a false positive. Scope
+    # to the live snapshot (deleted_at IS NULL), matching the rule set the anomaly engine analyses.
+    rows = db.query(models.PolicyRule).filter(models.PolicyRule.deleted_at.is_(None)).all()
     return {r.rule_name: r for r in rows}
 
 

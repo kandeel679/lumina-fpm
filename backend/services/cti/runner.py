@@ -69,7 +69,13 @@ def _correlate_threat(db: Session, ind, verdict, run_id: int) -> int:
     ]
     created = 0
     for rule_id in rule_ids:
-        rule = db.query(models.PolicyRule).filter(models.PolicyRule.rule_id == rule_id).first()
+        # Scope to the LIVE snapshot (deleted_at IS NULL): a rule retired by re-acquisition still
+        # has its object mappings, so without this filter a re-provisioned-away rule (and a
+        # superseded duplicate of a current rule) would each raise a stale threat_exposure.
+        rule = db.query(models.PolicyRule).filter(
+            models.PolicyRule.rule_id == rule_id,
+            models.PolicyRule.deleted_at.is_(None),
+        ).first()
         if rule is None or rule.action != "allow":
             continue
         db.add(models.RuleAnomaly(

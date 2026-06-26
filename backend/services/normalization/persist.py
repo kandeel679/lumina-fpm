@@ -397,9 +397,11 @@ def persist_result(db, result: NormalizationResult,
     db.flush()
 
     # ── 4) Rules + rule_object_mapping + rule_service_mapping ──
+    seen_rule_keys = set()  # (device_id, vdom_vsys, vendor_uuid) acquired this run
     for nr in result.rules:
         vendor_type = vendor_type_by_device.get(nr.device_id, nr.vendor)
         rule = _upsert_policy_rule(db, nr, vendor_type)
+        seen_rule_keys.add((nr.device_id, nr.vdom_vsys, nr.vendor_uuid))
         counts["policy_rules"] += 1
 
         # Source / destination object mappings (via network_object).
@@ -441,6 +443,29 @@ def persist_result(db, result: NormalizationResult,
             nsid = norm_svc_pk.get(_ANY_SERVICE_KEY)
             _upsert_rule_service_mapping(db, rule.rule_id, None, nsid)
             counts["rule_service_mappings"] += 1
+
+    # ── 5) Reconcile: retire rules that vanished from the device since the last poll ──
+    # Acquisition is a FULL snapshot per polled device. A PolicyRule still live in the DB but
+    # ABSENT from this acquisition was deleted on the device (e.g. a re-provision that recreated
+    # rules with fresh vendor UUIDs). Soft-delete it so stale/duplicate rows don't pollute the
+    # anomaly engine, risk, or the benchmark. GUARD: only reconcile a device that yielded at
+    # least one rule this run, so a partial/failed parse can never wipe a device's rules.
+    from datetime import datetime, timezone
+    db.flush()
+    retired_at = datetime.now(timezone.utc)
+    counts["policy_rules_retired"] = 0
+    devices_with_rules = {nr.device_id for nr in result.rules}
+    for did in device_ids:
+        if did not in devices_with_rules:
+            continue
+        live = db.query(models.PolicyRule).filter(
+            models.PolicyRule.device_id == did,
+            models.PolicyRule.deleted_at.is_(None),
+        ).all()
+        for row in live:
+            if (row.device_id, row.vdom_vsys, row.vendor_uuid) not in seen_rule_keys:
+                row.deleted_at = retired_at
+                counts["policy_rules_retired"] += 1
 
     db.commit()
     logger.info("persist_result: %s", counts)
