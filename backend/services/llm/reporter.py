@@ -131,9 +131,17 @@ def generate_report(db: Session, scope_type: str, scope_id: Optional[int] = None
     if document is not None:
         executive_summary = result.output
         summ = (executive_summary or "").strip()
-        # avoid a double heading when the LLM emits its own "## ..." header
-        summ_block = summ if summ.lstrip().startswith("#") else f"## Summary\n\n{summ}"
-        markdown = f"# {document['title']}\n\n{summ_block}\n\n{deterministic_md}"
+        # The AI summary is optional. A failed/offline LLM leaves it empty — omit the block
+        # entirely rather than emit a dangling "## Summary" heading in the downloaded Markdown.
+        # If the LLM supplied its own "## ..." header keep it; otherwise wrap under "## Summary".
+        if not summ:
+            summ_block = ""
+        elif summ.lstrip().startswith("#"):
+            summ_block = summ
+        else:
+            summ_block = f"## Summary\n\n{summ}"
+        body = f"{summ_block}\n\n{deterministic_md}" if summ_block else deterministic_md
+        markdown = f"# {document['title']}\n\n{body}"
 
     report = models.LlmReport(
         scope_type=scope_type, scope_id=scope_id, provider=result.provider,

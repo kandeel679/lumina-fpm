@@ -194,14 +194,7 @@ def build_executive_document(db: Session, run_id: int) -> Tuple[dict, str]:
           d["risk_tier"], ", ".join(f"{k} {v}" for k, v in (d["factor_breakdown"] or {}).items())]
          for d in device_rows]) + "\n")
 
-    md.append("## Per-Finding Evidence\n")
-    for e in evidence:
-        md.append(f"### {e['pol']} {e['rule_name']} — risk {e['risk_score']} ({e['risk_tier']})\n")
-        md.append(_md_table(
-            ["anomaly_id", "type", "severity", "mode", "recommendation"],
-            [[f["anomaly_id"], f["anomaly_type"], f["severity"], f["detection_mode"],
-              f["recommendation"] or "—"] for f in e["findings"]]) + "\n")
-
+    # Firmware before Per-Finding Evidence to match the on-screen DocumentView and the PDF order.
     if firmware_cves:
         md.append("## Firmware Vulnerabilities (device axis · excluded from the config benchmark)\n")
         for fc in firmware_cves:
@@ -210,6 +203,14 @@ def build_executive_document(db: Session, run_id: int) -> Tuple[dict, str]:
             md.append(_md_table(
                 ["CVE", "Severity", "Provider", "Summary"],
                 [[c["reference"], c["severity"], c["provider"], c["summary"]] for c in fc["cves"]]) + "\n")
+
+    md.append("## Per-Finding Evidence\n")
+    for e in evidence:
+        md.append(f"### {e['pol']} {e['rule_name']} — risk {e['risk_score']} ({e['risk_tier']})\n")
+        md.append(_md_table(
+            ["anomaly_id", "type", "severity", "mode", "recommendation"],
+            [[f["anomaly_id"], f["anomaly_type"], f["severity"], f["detection_mode"],
+              f["recommendation"] or "—"] for f in e["findings"]]) + "\n")
 
     return document, "\n".join(md)
 
