@@ -47,13 +47,20 @@ function CommandPalette({ open, onClose, onNavigate, onOpenInspector }) {
       return groups;
     }
 
-    /* Filter rules */
+    /* Filter rules. Wildcard equivalence: "any" also matches FortiGate "all" / CIDR "0.0.0.0/0". */
+    const WILDCARDS = new Set(['any', 'all', '0.0.0.0/0', '0.0.0.0', '::/0']);
+    const fieldMatch = (val) => {
+      const v = String(val ?? '').toLowerCase();
+      if (v.includes(term)) return true;
+      return WILDCARDS.has(term) && v.split(/,\s*/).some(tok => WILDCARDS.has(tok.trim()));
+    };
     const rules = LFPM.policies.filter(p =>
       p.id.toLowerCase().includes(term) ||
       p.name.toLowerCase().includes(term) ||
-      p.srcIp.toLowerCase().includes(term) ||
-      p.dstIp.toLowerCase().includes(term) ||
-      p.service.toLowerCase().includes(term)
+      fieldMatch(p.srcIp) ||
+      fieldMatch(p.dstIp) ||
+      fieldMatch(p.service) ||
+      String(p.action ?? '').toLowerCase().includes(term)
     ).slice(0, 6).map(p => ({
       id: 'rule:' + p.id, kind: 'rule',
       icon: I.Audit, label: p.name, meta: p.id, payload: p,

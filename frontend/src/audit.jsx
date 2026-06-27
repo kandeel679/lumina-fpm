@@ -81,15 +81,27 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
     if (minRisk > 0)       data = data.filter(p => p.riskScore >= minRisk);
 
     if (search) {
-      const q = search.toLowerCase();
+      const q = search.toLowerCase().trim();
+      // Wildcard equivalence: a firewall's "match everything" is stored as different literals per
+      // vendor — FortiGate "all", Palo Alto "any", and CIDR "0.0.0.0/0". So a search for "any"
+      // also surfaces "all" / "0.0.0.0/0" rules (and vice-versa), which a substring match misses.
+      const WILDCARDS = new Set(['any', 'all', '0.0.0.0/0', '0.0.0.0', '::/0']);
+      const norm = (v) => String(v ?? '').toLowerCase();
+      const fieldMatch = (val) => {
+        const v = norm(val);
+        if (v.includes(q)) return true;
+        return WILDCARDS.has(q) && v.split(/,\s*/).some(tok => WILDCARDS.has(tok.trim()));
+      };
       data = data.filter(p =>
-        p.id.toLowerCase().includes(q) ||
-        p.name.toLowerCase().includes(q) ||
-        p.srcIp.toLowerCase().includes(q) ||
-        p.dstIp.toLowerCase().includes(q) ||
-        p.service.toLowerCase().includes(q) ||
-        p.srcZone.toLowerCase().includes(q) ||
-        p.dstZone.toLowerCase().includes(q)
+        norm(p.id).includes(q) ||
+        norm(p.name).includes(q) ||
+        fieldMatch(p.srcIp) ||
+        fieldMatch(p.dstIp) ||
+        fieldMatch(p.service) ||
+        fieldMatch(p.srcZone) ||
+        fieldMatch(p.dstZone) ||
+        norm(p.action).includes(q) ||
+        (p.anomalyTypes || []).some(t => norm(t).includes(q) || norm(t).replace(/_/g, ' ').includes(q))
       );
     }
 
@@ -389,7 +401,10 @@ function PolicyAudit({ openInspector, inspectorOpen, selectedRuleId, intent, goT
                       <td className="mono dim">{fw?.display || '—'}</td>
                       <td className="mono dim" style={{ fontSize: 11 }}>{rule.srcIp}</td>
                       <td className="mono dim truncate" style={{ fontSize: 11, maxWidth: 150 }}>{rule.dstIp}</td>
-                      <td className="mono dim" style={{ fontSize: 11 }}>{rule.service}</td>
+                      <td className="mono dim" style={{ fontSize: 11 }}
+                          title={rule.service && rule.service !== 'any' && rule.service !== 'all'
+                            ? `Security profile group "${rule.service}" — the threat-inspection bundle (AV / IPS / anti-spyware / URL / WildFire) attached to this rule. A rule with NO profile group is flagged "unprotected allow".`
+                            : undefined}>{rule.service}</td>
                       <td><span className={`verb ${rule.action}`}>{rule.action}</span></td>
                       <td>
                         <span className={`stat-text ${rule.status === 'clean' ? 'safe' : rule.status}`}
