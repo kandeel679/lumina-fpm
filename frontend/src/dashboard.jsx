@@ -123,6 +123,15 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
 
   const stats = useMemoD(() => {
     const p = LFPM.policies;
+    // The threat KPIs now source the LIVE two-axis CTI data, NOT the retired dark-web feed
+    // (LFPM.threats, now empty): device axis = firmware CVEs (LFPM.firmwareCves), rule axis =
+    // open threat_exposure findings (a permitting rule touches a known-bad indicator).
+    const fwCves = LFPM.firmwareCves || [];
+    const fwCveObs = fwCves.reduce((a, fc) => a + (fc.count || 0), 0);
+    const fwCveCritical = fwCves.reduce((a, fc) => a + (fc.critical || 0), 0);
+    const kevCount = fwCves.reduce((a, fc) => a + (fc.cves || []).filter(c => c.kev === true).length, 0);
+    const exposure = p.reduce((a, x) => a + (x.anomalies || []).filter(
+      an => an.anomaly_type === 'threat_exposure' && (an.status || 'open') === 'open').length, 0);
     return {
       rules:       p.length,
       issues:      p.filter(x => x.status !== 'clean').length,
@@ -131,8 +140,12 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
       clean:       p.filter(x => x.status === 'clean').length,
       findings:    p.reduce((a, x) => a + (x.anomalyCount || 0), 0),
       conflicts:   LFPM.conflicts.length,
-      critCves:    LFPM.threats.filter(t => t.severity === 'critical').length,
-      kev:         LFPM.threats.filter(t => t.kev).length,
+      critCves:    fwCveCritical,             // critical firmware CVEs (device axis)
+      fwCveObs,                               // total firmware CVE observations
+      kev:         kevCount,                  // honest: only CVEs the source flags as CISA-KEV
+      exposure,                               // rule-axis threat_exposure findings
+      externalThreats: (LFPM.externalNodes || []).length,
+      liveThreatFindings: fwCveObs + exposure,
       devices:     LFPM.firewalls.length,
       online:      LFPM.firewalls.filter(f => f.status === 'online').length,
       degraded:    LFPM.firewalls.filter(f => f.status !== 'online').length,
@@ -142,7 +155,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
                      ? Math.round(LFPM.firewalls.reduce((a, f) => a + (f.riskScore || 0), 0) / LFPM.firewalls.length)
                      : 0,
     };
-  }, [timeRange, LFPM.policies, LFPM.conflicts, LFPM.threats, LFPM.firewalls]);
+  }, [timeRange, LFPM.policies, LFPM.conflicts, LFPM.firewalls, LFPM.firmwareCves, LFPM.externalNodes]);
 
   const fleet = useMemoD(() => {
     return LFPM.firewalls.map(fw => {
@@ -261,6 +274,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
           label="avg fleet risk"
           value={stats.avgRisk}
           sub={`${LFPM.fmt.riskLabel(stats.avgRisk)} · ${stats.issues} open issues`}
+          help={"Mean of each device's risk score (0–100). A device score is the V8 blend: 0.6×its worst rule + 0.4×the average of its top-5 rules, plus a critical-rule-count modifier and a firmware-CVE modifier, capped at 100. A device with several critical rules (any→sensitive, overly-permissive) and a critical firmware CVE pins to 100; a device with only low-risk rules scores far lower."}
           color={LFPM.fmt.riskColor(stats.avgRisk)}
           kind={stats.avgRisk >= 60 ? 'high' : 'safe'}
           onClick={() => navigate('audit', { filter:'critical' })}
@@ -278,7 +292,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         <HeroKpi
           label="critical cves"
           value={stats.critCves}
-          sub={`${stats.kev} cisa-kev · actively exploited`}
+          sub={`${stats.fwCveObs} firmware cve${stats.fwCveObs === 1 ? '' : 's'}${stats.kev > 0 ? ` · ${stats.kev} cisa-kev` : ''}`}
           color="var(--sev-critical)"
           kind="crit"
           onClick={() => navigate('threats', { severity:'critical' })}
@@ -295,10 +309,10 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
         />
         <HeroKpi
           label="threat findings"
-          value={meta.totalFindings != null ? meta.totalFindings : LFPM.threats.length}
+          value={meta.lastScanAt ? (meta.totalFindings != null ? meta.totalFindings : LFPM.threats.length) : stats.liveThreatFindings}
           sub={meta.lastScanAt
             ? `${meta.newFindingsLastScan || 0} new · ${meta.correlatedRules || 0} correlated`
-            : `${stats.kev} cisa-kev`}
+            : `${stats.fwCveObs} firmware · ${stats.exposure} exposure`}
           color="var(--accent)"
           kind="accent"
           onClick={() => navigate('threats')}
@@ -598,8 +612,8 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
           {/* Conflicts — each card opens inspector */}
           <div className="panel">
             <div className="panel-head">
-              <div className="panel-title"><I.Zap size={12} /> cross-vendor conflicts</div>
-              <span className="panel-meta">{LFPM.conflicts.length} unresolved</span>
+              <div className="panel-title" title="Paired-rule (relational) anomalies: shadowing, redundancy, duplicate, conflict, and cross-device inconsistencies. Genuine cross-vendor pairs carry a 'cross-device' tag."><I.Zap size={12} /> policy conflicts</div>
+              <span className="panel-meta">{LFPM.conflicts.length} relational</span>
             </div>
             <div className="col" style={{ padding: 0 }}>
               {LFPM.conflicts.map(c => {
@@ -653,7 +667,7 @@ function Dashboard({ openInspector, goTo, timeRange = '24h', onTimeRange, user, 
 }
 
 /* ── Hero KPI card (clickable) ─────────────────────────────────── */
-function HeroKpi({ label, value, sub, delta, deltaKind, color, kind, trail, onClick, cta }) {
+function HeroKpi({ label, value, sub, delta, deltaKind, color, kind, trail, onClick, cta, help }) {
   const I = window.Icons;
   const clickable = typeof onClick === 'function';
   const cls = ['kpi', 'lg', kind || '', clickable ? 'clickable' : ''].filter(Boolean).join(' ');
@@ -664,6 +678,7 @@ function HeroKpi({ label, value, sub, delta, deltaKind, color, kind, trail, onCl
   return (
     <div
       className={cls}
+      title={help}
       onClick={onClick}
       onKeyDown={handleKey}
       role={clickable ? 'button' : undefined}

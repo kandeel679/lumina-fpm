@@ -447,6 +447,9 @@ export async function fetchLFPMData() {
             severity: o.severity || null,
             summary: o.summary || '',
             reference: o.reference || '',
+            // KEV is reported ONLY when the source's own evidence says so (never fabricated):
+            // the curated observation summary states "CISA KEV / actively exploited" for KEV CVEs.
+            kev: /cisa[\s-]*kev|known exploited|actively exploited/i.test(o.summary || ''),
           })),
         };
       });
