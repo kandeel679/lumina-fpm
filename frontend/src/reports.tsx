@@ -96,23 +96,44 @@ function DocumentView({ doc }: { doc: SocDocument }) {
         ))}
       </div>
 
+      {doc.rule_summary && (
+        <>
+          <h4 style={h}>Rule configuration</h4>
+          <table className="t">
+            <tbody>
+              <tr><td className="dim" style={{ width: 130 }}>policy</td><td><span className="mono strong">{doc.rule_summary.pol}</span> <span className="dim">{doc.rule_summary.rule_name}</span></td></tr>
+              <tr><td className="dim">device</td><td className="mono">{doc.rule_summary.device} <span className="dim" style={{ fontSize: 11 }}>({doc.rule_summary.vendor_type || '—'})</span></td></tr>
+              <tr><td className="dim">action</td><td><span className={`chip ${doc.rule_summary.action === 'deny' ? 'safe' : 'medium'}`} style={{ fontSize: 10 }}>{doc.rule_summary.action}</span></td></tr>
+              <tr><td className="dim">zones</td><td className="mono">{doc.rule_summary.src_zone} → {doc.rule_summary.dst_zone}</td></tr>
+              <tr><td className="dim">inspection</td><td>{doc.rule_summary.inspection ? <span className="mono">{doc.rule_summary.inspection}</span> : <span className="chip high" style={{ fontSize: 10 }}>none (unprotected)</span>}</td></tr>
+              <tr><td className="dim">enabled</td><td>{doc.rule_summary.enabled ? 'yes' : <span className="dim">no (disabled)</span>}</td></tr>
+              <tr><td className="dim">risk</td><td><span className="num strong">{doc.rule_summary.risk_score}</span> <span className={`stat-text ${sevClass(doc.rule_summary.risk_tier)}`} style={{ marginLeft: 6 }}><span className="dot" />{doc.rule_summary.risk_tier}</span></td></tr>
+            </tbody>
+          </table>
+        </>
+      )}
+
       <h4 style={h}>Prioritized remediation</h4>
-      <table className="t">
-        <thead><tr><th style={TH}>#</th><th style={TH}>rule</th><th style={TH}>device</th><th style={TH}>anomalies</th><th style={TH}>sev</th><th style={{ textAlign: 'right' }}>risk</th><th style={TH}>recommendation</th></tr></thead>
-        <tbody>
-          {doc.remediation.map((r) => (
-            <tr key={r.pol}>
-              <td className="num dim">{r.priority}</td>
-              <td><span className="mono strong">{r.pol}</span> <span className="dim" style={{ fontSize: 11 }}>{r.rule_name}</span></td>
-              <td className="mono dim" style={{ fontSize: 11 }}>{r.device}</td>
-              <td className="dim" style={{ fontSize: 11 }}>{r.anomaly_types.join(', ')}</td>
-              <td><span className={`chip ${sevClass(r.max_severity)}`} style={{ fontSize: 10 }}>{r.max_severity}</span></td>
-              <td className="num strong" style={{ textAlign: 'right' }}>{r.risk_score}</td>
-              <td style={{ fontSize: 11.5 }}>{r.recommendation}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {doc.remediation.length === 0 ? (
+        <div className="muted" style={{ fontSize: 11.5, padding: '2px 0 8px' }}>No open findings to remediate — this {doc.scope === 'rule' ? 'rule' : 'scope'} is clean.</div>
+      ) : (
+        <table className="t">
+          <thead><tr><th style={TH}>#</th><th style={TH}>rule</th><th style={TH}>device</th><th style={TH}>anomalies</th><th style={TH}>sev</th><th style={{ textAlign: 'right' }}>risk</th><th style={TH}>recommendation</th></tr></thead>
+          <tbody>
+            {doc.remediation.map((r) => (
+              <tr key={r.pol}>
+                <td className="num dim">{r.priority}</td>
+                <td><span className="mono strong">{r.pol}</span> <span className="dim" style={{ fontSize: 11 }}>{r.rule_name}</span></td>
+                <td className="mono dim" style={{ fontSize: 11 }}>{r.device}</td>
+                <td className="dim" style={{ fontSize: 11 }}>{r.anomaly_types.join(', ')}</td>
+                <td><span className={`chip ${sevClass(r.max_severity)}`} style={{ fontSize: 10 }}>{r.max_severity}</span></td>
+                <td className="num strong" style={{ textAlign: 'right' }}>{r.risk_score}</td>
+                <td style={{ fontSize: 11.5 }}>{r.recommendation}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <h4 style={h}>Risk posture</h4>
       <table className="t">
@@ -158,27 +179,32 @@ function DocumentView({ doc }: { doc: SocDocument }) {
       )}
 
       <h4 style={h}>Per-finding evidence</h4>
-      {doc.evidence.map((e) => (
-        <div key={e.pol} style={{ marginBottom: 10 }}>
-          <div className="mono" style={{ fontSize: 11.5, color: 'var(--fg-1)', marginBottom: 3 }}>
-            {e.pol} {e.rule_name} <span className="dim">· risk {e.risk_score} ({e.risk_tier})</span>
+      {doc.evidence.every((e) => e.findings.length === 0) ? (
+        <div className="muted" style={{ fontSize: 11.5, padding: '2px 0 8px' }}>No anomalies detected — nothing to evidence.</div>
+      ) : (
+        doc.evidence.filter((e) => e.findings.length > 0).map((e) => (
+          <div key={e.pol} style={{ marginBottom: 10 }}>
+            <div className="mono" style={{ fontSize: 11.5, color: 'var(--fg-1)', marginBottom: 3 }}>
+              {e.pol} {e.rule_name} <span className="dim">· risk {e.risk_score} ({e.risk_tier})</span>
+            </div>
+            <table className="t">
+              <thead><tr><th style={TH}>id</th><th style={TH}>type</th><th style={TH}>sev</th><th style={TH}>mode</th><th style={TH}>finding</th><th style={TH}>recommendation</th></tr></thead>
+              <tbody>
+                {e.findings.map((f) => (
+                  <tr key={f.anomaly_id}>
+                    <td className="num dim">{f.anomaly_id}</td>
+                    <td className="mono" style={{ fontSize: 11 }}>{f.anomaly_type}</td>
+                    <td><span className={`chip ${sevClass(f.severity)}`} style={{ fontSize: 10 }}>{f.severity}</span></td>
+                    <td className="dim" style={{ fontSize: 10.5 }}>{f.detection_mode}</td>
+                    <td style={{ fontSize: 11 }}>{f.description || '—'}</td>
+                    <td style={{ fontSize: 11 }}>{f.recommendation || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table className="t">
-            <thead><tr><th style={TH}>id</th><th style={TH}>type</th><th style={TH}>sev</th><th style={TH}>mode</th><th style={TH}>recommendation</th></tr></thead>
-            <tbody>
-              {e.findings.map((f) => (
-                <tr key={f.anomaly_id}>
-                  <td className="num dim">{f.anomaly_id}</td>
-                  <td className="mono" style={{ fontSize: 11 }}>{f.anomaly_type}</td>
-                  <td><span className={`chip ${sevClass(f.severity)}`} style={{ fontSize: 10 }}>{f.severity}</span></td>
-                  <td className="dim" style={{ fontSize: 10.5 }}>{f.detection_mode}</td>
-                  <td style={{ fontSize: 11 }}>{f.recommendation || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+        ))
+      )}
     </div>
   );
 }
@@ -196,9 +222,23 @@ function buildPrintHtml(rep: ReportDetail): string {
   const summary = rep.executive_summary || rep.output || '';
   let body = '';
   if (doc) {
-    body += `<h2>Prioritized Remediation</h2>` + htmlTable(
+    if (doc.rule_summary) {
+      const rs = doc.rule_summary;
+      body += `<h2>Rule Configuration</h2>` + htmlTable(['Field', 'Value'], [
+        ['Policy', `${rs.pol} ${rs.rule_name}`],
+        ['Device', `${rs.device} (${rs.vendor_type || '—'})`],
+        ['Action', rs.action],
+        ['Zones', `${rs.src_zone} → ${rs.dst_zone}`],
+        ['Inspection', rs.inspection || 'none (unprotected)'],
+        ['Enabled', rs.enabled ? 'yes' : 'no (disabled)'],
+        ['Risk', `${rs.risk_score} (${rs.risk_tier})`],
+      ]);
+    }
+    const cleanScope = doc.scope === 'rule' ? 'rule' : 'scope';
+    body += `<h2>Prioritized Remediation</h2>` + (doc.remediation.length ? htmlTable(
       ['#', 'Rule', 'Device', 'Anomalies', 'Severity', 'Risk', 'Recommendation'],
-      doc.remediation.map((r) => [r.priority, `${r.pol} ${r.rule_name}`, r.device, r.anomaly_types.join(', '), r.max_severity, `${r.risk_score} (${r.risk_tier})`, r.recommendation]));
+      doc.remediation.map((r) => [r.priority, `${r.pol} ${r.rule_name}`, r.device, r.anomaly_types.join(', '), r.max_severity, `${r.risk_score} (${r.risk_tier})`, r.recommendation]))
+      : `<p class="muted">No open findings to remediate — this ${cleanScope} is clean.</p>`);
     body += `<h2>Risk Posture</h2>` + htmlTable(
       ['Device', 'Vendor', 'Firmware', 'Risk', 'Tier'],
       doc.risk_posture.devices.map((d) => [d.device, d.vendor_type || '—', d.firmware || '—', d.risk_score, d.risk_tier]));
@@ -207,8 +247,10 @@ function buildPrintHtml(rep: ReportDetail): string {
       body += doc.firmware_cves.map((fc) => `<h3>${esc(fc.device)} — ${esc(fc.vendor_type)} ${esc(fc.firmware)} (+${fc.firmware_modifier} risk)</h3>` +
         htmlTable(['CVE', 'Severity', 'Provider', 'Summary'], fc.cves.map((c) => [(c.reference || '').split('/').pop() || '', c.severity, c.provider, c.summary]))).join('');
     }
-    body += `<h2>Per-Finding Evidence</h2>` + doc.evidence.map((e) => `<h3>${esc(e.pol)} ${esc(e.rule_name)} — risk ${e.risk_score} (${e.risk_tier})</h3>` +
-      htmlTable(['anomaly_id', 'type', 'severity', 'mode', 'recommendation'], e.findings.map((f) => [f.anomaly_id, f.anomaly_type, f.severity, f.detection_mode, f.recommendation || '—']))).join('');
+    const ev = doc.evidence.filter((e) => e.findings.length > 0);
+    body += `<h2>Per-Finding Evidence</h2>` + (ev.length ? ev.map((e) => `<h3>${esc(e.pol)} ${esc(e.rule_name)} — risk ${e.risk_score} (${e.risk_tier})</h3>` +
+      htmlTable(['anomaly_id', 'type', 'severity', 'mode', 'finding', 'recommendation'], e.findings.map((f) => [f.anomaly_id, f.anomaly_type, f.severity, f.detection_mode, f.description || '—', f.recommendation || '—']))).join('')
+      : `<p class="muted">No anomalies detected — nothing to evidence.</p>`);
   }
   return `<!doctype html><html><head><meta charset="utf-8"><title>SOC Report ${rep.report_id}</title>
 <style>body{font-family:system-ui,'Segoe UI',Arial,sans-serif;color:#111;max-width:920px;margin:24px auto;padding:0 16px;font-size:12px;}

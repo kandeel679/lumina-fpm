@@ -271,11 +271,23 @@ def build_rule_document(db: Session, rule_id: int, run_id: int) -> Tuple[dict, s
     firmware_cves = _firmware_cves(db, device_ids=[rule.device_id],
                                    device_risk={rule.device_id: dr} if dr else {})
 
+    # Single-rule context so the report has substance even when the rule is clean (no findings):
+    # the rule's own configuration, mirroring what makes a well-configured vs risky policy.
+    rule_summary = {
+        "pol": _pol(rule_id), "rule_name": rule.rule_name, "device": dev_name,
+        "vendor_type": rule.vendor_type, "action": rule.action,
+        "src_zone": rule.src_zone_interface or "any", "dst_zone": rule.dst_zone_interface or "any",
+        "inspection": rule.security_profile_group or None,
+        "enabled": bool(rule.is_active), "order": rule.rule_order,
+        "risk_score": risk_score, "risk_tier": risk_tier,
+    }
+
     document = {
         "title": f"LuminaFPM SOC Report — Rule {_pol(rule_id)} {rule.rule_name}",
         "scope": "rule", "analysis_run_id": run_id,
         "totals": {"open_findings": len(flist), "rules_with_findings": 1 if flist else 0,
                    "rules_scored": 1, "devices": 1, "tier_counts": {risk_tier: 1}},
+        "rule_summary": rule_summary,
         "remediation": remediation, "evidence": evidence,
         "risk_posture": {"tier_counts": {risk_tier: 1}, "devices": device_rows},
         "firmware_cves": firmware_cves,
@@ -284,6 +296,18 @@ def build_rule_document(db: Session, rule_id: int, run_id: int) -> Tuple[dict, s
     md: List[str] = []
     md.append(f"_Rule {_pol(rule_id)} '{rule.rule_name}' ({rule.vendor_type}, {dev_name}, "
               f"action={rule.action}) · risk {risk_score} ({risk_tier}) · {len(flist)} findings_\n")
+    md.append("## Rule Configuration\n")
+    md.append(_md_table(
+        ["Field", "Value"],
+        [["Policy", f"{rule_summary['pol']} {rule_summary['rule_name']}"],
+         ["Device", f"{dev_name} ({rule.vendor_type})"],
+         ["Action", rule_summary["action"]],
+         ["Source zone", rule_summary["src_zone"]],
+         ["Destination zone", rule_summary["dst_zone"]],
+         ["Inspection", rule_summary["inspection"] or "none (unprotected)"],
+         ["Enabled", "yes" if rule_summary["enabled"] else "no"],
+         ["Evaluation order", rule_summary["order"]],
+         ["Risk", f"{risk_score} ({risk_tier})"]]) + "\n")
     if flist:
         md.append("## Findings\n")
         md.append(_md_table(
@@ -291,7 +315,8 @@ def build_rule_document(db: Session, rule_id: int, run_id: int) -> Tuple[dict, s
             [[f.anomaly_id, f.anomaly_type, f.severity_level, f.detection_mode, f.recommendation or "—"]
              for f in flist]) + "\n")
     else:
-        md.append("_No findings for this rule._\n")
+        md.append("## Findings\n")
+        md.append("_No anomalies detected for this rule in the latest analysis run — the rule is clean._\n")
     if rr and rr.factor_breakdown:
         md.append("## Risk Factors\n")
         md.append(_md_table(["factor", "points"],

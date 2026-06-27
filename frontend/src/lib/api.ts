@@ -351,9 +351,15 @@ export interface SocFirmwareCve {
   device: string; vendor_type: string | null; firmware: string | null; firmware_modifier: number;
   cves: { reference: string | null; provider: string; severity: string; confidence: number | null; summary: string | null }[];
 }
+export interface SocRuleSummary {
+  pol: string; rule_name: string; device: string; vendor_type: string | null;
+  action: string; src_zone: string; dst_zone: string; inspection: string | null;
+  enabled: boolean; order: number; risk_score: number; risk_tier: string;
+}
 export interface SocDocument {
   title: string; scope: string; analysis_run_id: number;
   totals: { open_findings: number; rules_with_findings: number; rules_scored: number; devices: number; tier_counts: Record<string, number> };
+  rule_summary?: SocRuleSummary;        // present for per-rule reports only
   remediation: SocRemediation[];
   evidence: SocEvidence[];
   risk_posture: { tier_counts: Record<string, number>; devices: SocDeviceRisk[] };
