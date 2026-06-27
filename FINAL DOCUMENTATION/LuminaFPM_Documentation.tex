@@ -38,6 +38,14 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,shapes.geometric,shapes.misc,fit,calc,backgrounds}
 \usepackage[hidelinks]{hyperref}
+\usepackage{xurl}        % break long URLs and file paths anywhere to prevent margin overflow
+\usepackage{microtype}   % character protrusion + font expansion: removes most minor overfull boxes
+\usepackage{adjustbox}   % cap scaled diagrams to page width AND height so floats never overflow the page
+\usepackage{rotating}    % sidewaysfigure for the large landscape ER diagram
+\usepackage{xltabular}   % multi-page tables with an auto-fitting X column (never overflow \linewidth)
+% Make the underscore a legal break point so long monospace identifiers/paths
+% (e.g. FGT_ANY_ANY, accepted_risk, backend/services/...) wrap instead of overflowing.
+\renewcommand{\_}{\textunderscore\allowbreak}
 
 % ── Colour Palette ────────────────────────────────────────────────────────────
 \definecolor{NavyBlue}{HTML}{1F3864}
@@ -117,7 +125,9 @@
 \setlength{\parskip}{4pt}
 \setlength{\parindent}{1.4em}
 \setstretch{1.12}
-\hbadness=10000 \hfuzz=30pt \vbadness=10000 \vfuzz=30pt
+\widowpenalty=10000 \clubpenalty=10000 \brokenpenalty=10000
+\hbadness=10000 \hfuzz=2pt \vbadness=10000 \vfuzz=2pt \tolerance=4000
+\emergencystretch=3em
 
 \begin{document}
 % ── Cover Page ────────────────────────────────────────────────────────────────
@@ -230,10 +240,13 @@ Modern enterprise networks are defended by large, long-lived, multi-vendor firew
 \chapter*{List of Acronyms and Abbreviations}
 \addcontentsline{toc}{chapter}{List of Acronyms and Abbreviations}
 \begin{center}
+\footnotesize
+\setlength{\arrayrulewidth}{0.4pt}
 \begin{longtable}{|L{2.8cm}|L{11.6cm}|}
 \hline
 %
 \hcell{Acronym} & \hcell{Definition} \\ \hline
+\endhead
 FPM & Firewall Policy Management (LuminaFPM, the platform presented in this project) \\ \hline
 CTI & Cyber Threat Intelligence \\ \hline
 LLM & Large Language Model \\ \hline
@@ -614,15 +627,16 @@ The following subsections review the dominant commercial systems, each examined 
 \label{sec:ch2-comparison}
 Table~\ref{tab:ch2-comparison} compares the surveyed systems against LuminaFPM across the capability dimensions most relevant to this project. A \checkmark{} denotes full support, $\times$ denotes absence, and ``partial'' denotes limited or indirect support. The comparison emphasises the dimensions on which LuminaFPM is differentiated: multi-vendor normalisation feeding a \emph{provable} anomaly model, explicit cross-vendor inconsistency detection, a strictly read-only operating mode, integrated risk scoring, API-based CTI enrichment, AI evidence-grounded reporting, benchmark-based validation of detection correctness, and open/academic availability.
 
-\begin{longtable}{L{0.30\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.085\textwidth} C{0.095\textwidth} C{0.105\textwidth}}
+{\small\setlength{\tabcolsep}{5pt}
+\begin{longtable}{L{4.9cm} *{6}{C{1.15cm}}}
 \caption{Comparative feature analysis of LuminaFPM versus representative commercial firewall policy-management systems.}
 \label{tab:ch2-comparison}\\
 \hline
-\hcell{Capability} & \hcell{Tufin} & \hcell{AlgoSec} & \hcell{FireMon} & \hcell{Skybox} & \hcell{Panorama} & \hcell{Lumina\-FPM} \\
+\hcell{Capability} & \rotatebox{90}{\textbf{Tufin}} & \rotatebox{90}{\textbf{AlgoSec}} & \rotatebox{90}{\textbf{FireMon}} & \rotatebox{90}{\textbf{Skybox}} & \rotatebox{90}{\textbf{Panorama}} & \rotatebox{90}{\textbf{LuminaFPM}} \\
 \hline
 \endfirsthead
 \hline
-\hcell{Capability} & \hcell{Tufin} & \hcell{AlgoSec} & \hcell{FireMon} & \hcell{Skybox} & \hcell{Panorama} & \hcell{Lumina\-FPM} \\
+\hcell{Capability} & \rotatebox{90}{\textbf{Tufin}} & \rotatebox{90}{\textbf{AlgoSec}} & \rotatebox{90}{\textbf{FireMon}} & \rotatebox{90}{\textbf{Skybox}} & \rotatebox{90}{\textbf{Panorama}} & \rotatebox{90}{\textbf{LuminaFPM}} \\
 \hline
 \endhead
 \hline
@@ -647,7 +661,7 @@ AI evidence-grounded reporting & $\times$ & $\times$ & $\times$ & $\times$ & $\t
 Benchmark-validated detection & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
 \hrow
 Open / academically accessible & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
-\end{longtable}
+\end{longtable}}
 
 The comparison makes LuminaFPM's positioning explicit. The incumbents lead on breadth of vendor support and change orchestration, but none combines a strictly read-only mandate, a \emph{provable} (benchmark-validated) deterministic anomaly model, and evidence-grounded AI reporting in an open, reproducible package. Panorama, as a vendor-native manager, is the clearest contrast: it is authoritative and write-capable for a single vendor, where LuminaFPM is deliberately read-only and multi-vendor.
 
@@ -796,7 +810,9 @@ The Auditor / Viewer is a strictly read-only consumer of evidence. An Auditor re
 
 Table~\ref{tab:ch3-privileges} summarizes the responsibilities and privileges of the three categories. A check mark ($\checkmark$) denotes a granted privilege and a cross ($\times$) denotes a denied one.
 
-\begin{longtable}{L{0.36\textwidth} C{0.18\textwidth} C{0.18\textwidth} C{0.18\textwidth}}
+{\small
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{L{6.0cm} C{2.8cm} C{2.8cm} C{2.8cm}}
 \caption{User categories, responsibilities, and platform privileges.}\label{tab:ch3-privileges}\\
 \hline
 \hcell{Privilege / Responsibility} & \hcell{Security Analyst} & \hcell{SOC Lead / Admin} & \hcell{Auditor / Viewer} \\
@@ -824,6 +840,7 @@ Table~\ref{tab:ch3-privileges} summarizes the responsibilities and privileges of
 \altrow Manage users, roles, system settings & $\times$ & $\checkmark$ & $\times$ \\
 \hrow Modify firewall configuration (any kind) & $\times$ & $\times$ & $\times$ \\
 \end{longtable}
+}
 
 \section{Assumptions, Constraints, Limitations, and Dependencies}
 \label{sec:ch3-acld}
@@ -847,9 +864,11 @@ LuminaFPM depends on a Python~3.11 / FastAPI backend, a Celery worker pool, Redi
 \section{Intended Technologies}
 \label{sec:ch3-technologies}
 
-The technology stack is determined directly by the dependency manifests — \texttt{backend/requirements.txt}, \texttt{frontend/package.json}, and \texttt{docker-compose.yml} — and by the build images \texttt{backend/Dockerfile} (\texttt{python:3.11-slim}) and \texttt{frontend/Dockerfile} (\texttt{node:22-slim}). Backend dependencies are unpinned (resolved at image-build time); frontend dependencies are pinned with caret ranges. Table~\ref{tab:ch3-techstack} maps each architectural layer to the technologies that realize it and the role each plays.
+The technology stack is determined directly by the dependency manifests --- \path{backend/requirements.txt}, \path{frontend/package.json}, and \path{docker-compose.yml} --- and by the build images \path{backend/Dockerfile} (\texttt{python:3.11-slim}) and \path{frontend/Dockerfile} (\texttt{node:22-slim}). Backend dependencies are unpinned (resolved at image-build time); frontend dependencies are pinned with caret ranges. Table~\ref{tab:ch3-techstack} maps each architectural layer to the technologies that realize it and the role each plays.
 
-\begin{longtable}{L{0.20\textwidth} L{0.34\textwidth} L{0.40\textwidth}}
+{\small
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{L{2.8cm} L{5.4cm} L{6.4cm}}
 \caption{Intended technology stack by architectural layer.}\label{tab:ch3-techstack}\\
 \hline
 \hcell{Layer} & \hcell{Technology} & \hcell{Role} \\
@@ -880,6 +899,7 @@ The technology stack is determined directly by the dependency manifests — \tex
 \altrow Styling / icons & Tailwind CSS 4 + \texttt{lucide-react} & Utility-first styling and icon set. \\
 \hrow Orchestration & Docker Compose + Nginx & Multi-service deployment; Nginx prepared for production static serving. \\
 \end{longtable}
+}
 
 \section{Functional Requirements}
 \label{sec:ch3-functional}
@@ -958,7 +978,7 @@ Findings are explainable by construction: every finding carries the concrete evi
 \label{sec:ch3-nfr-portability}
 The entire stack is containerized via Docker Compose and built from standard base images (\texttt{python:3.11-slim}, \texttt{node:22-slim}), so it can be reproduced on any Docker-capable host. Device-local state (the \texttt{.env} file, the \texttt{postgres\_data} volume, and the lab network) is documented as non-transferable, and the credential-encryption key derivation tolerates either a pre-generated Fernet key or a passphrase.
 
-\begin{longtable}{C{0.08\textwidth} L{0.22\textwidth} L{0.58\textwidth}}
+\begin{longtable}{C{1.1cm} L{3.0cm} L{10.1cm}}
 \caption{Non-functional requirements summary.}\label{tab:ch3-nfr}\\
 \hline
 \hcell{ID} & \hcell{Attribute} & \hcell{Requirement} \\
@@ -1067,7 +1087,86 @@ The \textbf{integration tier} encapsulates every boundary crossing. Inward, the 
 
 LuminaFPM serves a small set of human actors together with two non-human actors that participate in the platform's automated behaviour. The human actors are distinguished by responsibility rather than by an implemented role-based access-control layer; the route handlers in the current snapshot carry no per-endpoint authorization dependency, so the actor partition below is an \textit{intended} operational model rather than a code-enforced one. Figure~\ref{fig:usecase} summarises the actors and their use cases.
 
-\uiplaceholder{Use Case Diagram}{Actors (Security Analyst, SOC Administrator, Auditor) and the Acquisition Scheduler / LLM / CTI subsystems with their use cases.}{Use case diagram of LuminaFPM.}{fig:usecase}
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\textwidth,max totalheight=0.88\textheight,center}{%
+\begin{tikzpicture}[
+  >={Stealth[length=2.2mm]},
+  actor/.style={
+    font=\scriptsize\bfseries, text=NavyBlue, align=center,
+    minimum width=2.0cm
+  },
+  usecase/.style={
+    draw=NavyBlue, fill=LightGray!35, ellipse, align=center,
+    font=\scriptsize, inner sep=1.2pt, minimum width=3.05cm, minimum height=0.92cm,
+    text=black
+  },
+  assoc/.style={draw=black!65, line width=0.4pt},
+]
+
+% ---------- Actors (left and right) ----------
+% Stick-figure macro
+\newcommand{\stickfigure}[2]{%
+  \begin{scope}[shift={(#1)}, draw=NavyBlue, line width=0.7pt]
+    \draw (0,0.62) circle (0.16);                 % head
+    \draw (0,0.46) -- (0,-0.12);                  % torso
+    \draw (-0.26,0.30) -- (0.26,0.30);            % arms
+    \draw (0,-0.12) -- (-0.20,-0.50);             % left leg
+    \draw (0,-0.12) -- (0.20,-0.50);              % right leg
+    \node[actor, anchor=north, yshift=-0.58cm] at (0,-0.50) {#2};
+  \end{scope}
+}
+
+% Left actors
+\stickfigure{0,7.2}{Security Analyst\,/\\SOC Analyst}
+\stickfigure{0,3.6}{SOC Lead\,/\\Administrator}
+% Right actor
+\stickfigure{18.8,5.4}{Auditor\,/\\Viewer}
+
+% ---------- Use cases inside the system boundary (3 columns) ----------
+% Column 1 (x = 5.6)
+\node[usecase] (uc_dash)   at (5.6,9.7) {View Dashboard};
+\node[usecase] (uc_audit)  at (5.6,8.1) {Audit Policies \&\\Inspect Rules};
+\node[usecase] (uc_anom)   at (5.6,6.5) {View Anomalies};
+\node[usecase] (uc_life)   at (5.6,4.9) {Manage Anomaly\\Lifecycle};
+\node[usecase] (uc_risk)   at (5.6,3.3) {View Risk Posture};
+% Column 2 (x = 9.5)
+\node[usecase] (uc_topo)   at (9.5,9.7) {View Topology};
+\node[usecase] (uc_cti)    at (9.5,8.1) {Run Threat\\Intelligence (CTI)};
+\node[usecase] (uc_report) at (9.5,6.5) {Generate SOC\\Report};
+\node[usecase] (uc_bench)  at (9.5,4.9) {Run Benchmark};
+\node[usecase] (uc_notif)  at (9.5,3.3) {View Notifications};
+% Column 3 (x = 13.4)
+\node[usecase] (uc_cfg)    at (13.4,9.0) {Configure Firewall\\\& Credentials};
+\node[usecase] (uc_poll)   at (13.4,7.2) {Acquire / Poll\\Config (read-only)};
+\node[usecase] (uc_sched)  at (13.4,5.4) {Configure\\Schedules};
+
+% ---------- System boundary ----------
+\begin{scope}[on background layer]
+  \node[draw=NavyBlue, line width=1pt, rounded corners=3pt, fill=MidBlue!5,
+        fit=(uc_dash)(uc_topo)(uc_cfg)(uc_risk)(uc_notif)(uc_sched),
+        inner sep=14pt, inner ysep=20pt] (sysbox) {};
+\end{scope}
+\node[font=\small\bfseries, text=NavyBlue, anchor=north] at (sysbox.north) {LuminaFPM};
+
+% ---------- Associations ----------
+% Security Analyst -> operational use cases
+\foreach \t in {uc_dash,uc_audit,uc_anom,uc_life,uc_risk,uc_topo,uc_cti,uc_report,uc_bench,uc_notif,uc_poll}
+  \draw[assoc] (0,7.0) -- (\t.west);
+
+% SOC Lead / Administrator -> configure + scheduling (full superset, drawn key extras)
+\foreach \t in {uc_cfg,uc_poll,uc_sched,uc_life,uc_audit,uc_anom,uc_report,uc_bench,uc_cti,uc_dash,uc_risk}
+  \draw[assoc] (0,3.4) -- (\t.west);
+
+% Auditor / Viewer -> read-only views only
+\foreach \t in {uc_dash,uc_audit,uc_risk,uc_report,uc_topo}
+  \draw[assoc] (18.8,5.2) -- (\t.east);
+
+\end{tikzpicture}%
+}
+\caption{Use case diagram of LuminaFPM.}
+\label{fig:usecase}
+\end{figure}
 
 The \textbf{Security Analyst} is the primary day-to-day actor. The analyst registers FortiGate and Palo Alto devices, configures and tests their encrypted credentials, and triggers a read-only poll of a device. Once the pipeline completes, the analyst browses the normalized Policy Explorer, reviews anomaly findings in the Anomaly Center, inspects the per-rule and per-device risk scores in the Risk Center, examines the CTI Threat Center, requests an evidence-grounded SOC report, and explores the logical policy graph. The analyst also owns the anomaly lifecycle: a finding may be moved from \texttt{open} to \texttt{resolved}, \texttt{suppressed}, \texttt{accepted\_risk} or \texttt{false\_positive}, with a mandatory justification on the suppressing transitions.
 
@@ -1090,9 +1189,113 @@ Two non-human actors complete the model. The \textbf{Acquisition Scheduler} is t
 
 Because LuminaFPM holds firewall-management credentials and reaches both internal infrastructure and external intelligence APIs, its threat surface is documented through misuse cases: the negative-space counterpart of the use-case model. Each misuse case pairs an abuser goal with the threat actor, the attack vector, and the countermeasure the built system actually implements. Figure~\ref{fig:misuse} overlays these misuse cases on the legitimate actors, and Table~\ref{tab:ch3-misuse} enumerates them.
 
-\uiplaceholder{Misuse Case Diagram}{Threat actors and abuse cases (credential theft, read-only boundary tampering, indicator leakage, injection) mapped to mitigations.}{Misuse case diagram of LuminaFPM.}{fig:misuse}
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\textwidth,max totalheight=0.88\textheight,center}{%
+\begin{tikzpicture}[
+  every node/.style={font=\scriptsize},
+  uc/.style={draw=MidBlue!85, very thick, fill=LightGray, ellipse, align=center,
+             minimum width=3.0cm, minimum height=1.05cm, inner sep=1pt},
+  mc/.style={draw=MisuseRed, very thick, fill=MisuseRed!10, ellipse, align=center,
+             minimum width=3.0cm, minimum height=1.05cm, inner sep=1pt, text=MisuseRed!75!black},
+  mit/.style={draw=MitGreen, very thick, fill=MitGreen!12, rounded corners, align=center,
+              text width=3.0cm, minimum height=1.0cm, inner sep=3pt, text=MitGreen!55!black},
+  actor/.style={align=center, font=\scriptsize\bfseries, text=NavyBlue},
+  misactor/.style={align=center, font=\scriptsize\bfseries, text=MisuseRed},
+  assoc/.style={draw=black!70, thick},
+  threatens/.style={draw=MisuseRed, very thick, dashed, -{Latex[length=2.2mm]}},
+  mitigates/.style={draw=MitGreen, very thick, dashed, -{Latex[length=2.2mm]}},
+  lbl/.style={font=\tiny\itshape, fill=white, inner sep=1pt}]
 
-\begin{longtable}{L{0.21\textwidth} L{0.15\textwidth} L{0.27\textwidth} L{0.30\textwidth}}
+  % ---- local palette (scoped to this picture) ----
+  \definecolor{MisuseRed}{HTML}{B22222}
+  \definecolor{MitGreen}{HTML}{2E7D32}
+
+  % ===== legitimate actor (left) =====
+  \node[actor] (an) at (-7.6,1.2) {SOC Analyst /\\ Auditor};
+  \node[draw=NavyBlue, very thick, circle, minimum size=5mm] (anh) at (-7.6,2.3) {};
+  \draw[NavyBlue, very thick] (anh.south) -- ++(0,-0.55)
+        (-8.1,1.45) -- (-7.1,1.45)
+        (-7.6,0.9) -- ++(-0.4,-0.6) (-7.6,0.9) -- ++(0.4,-0.6);
+
+  % ===== hostile actor (right) =====
+  \node[misactor] (att) at (7.6,1.2) {Attacker /\\ Malicious Insider};
+  \node[draw=MisuseRed, very thick, circle, minimum size=5mm] (atth) at (7.6,2.3) {};
+  \draw[MisuseRed, very thick] (atth.south) -- ++(0,-0.55)
+        (7.1,1.45) -- (8.1,1.45)
+        (7.6,0.9) -- ++(-0.4,-0.6) (7.6,0.9) -- ++(0.4,-0.6);
+
+  % ===== normal use cases (left column, inside) =====
+  \node[uc] (acq)  at (-3.4,3.0)  {Acquire Config\\ (read-only)};
+  \node[uc] (view) at (-3.4,1.0)  {View Findings\\ \& Risk};
+  \node[uc] (cti)  at (-3.4,-1.0) {Enrich via\\ CTI Providers};
+  \node[uc] (rep)  at (-3.4,-3.0) {Generate\\ SOC Report};
+
+  % ===== misuse cases (right column, inside) =====
+  \node[mc] (steal) at (3.4,3.4)  {Steal stored\\ credentials};
+  \node[mc] (write) at (3.4,1.7)  {Attempt firewall\\ write / commit};
+  \node[mc] (xxe)   at (3.4,0.0)  {XML entity-expansion\\ (XXE) injection};
+  \node[mc] (exfil) at (3.4,-1.7) {Exfiltrate internal\\ indicators (RFC1918)};
+  \node[mc] (secret)at (3.4,-3.4) {Read secrets from\\ logs / errors};
+
+  % ===== mitigation use cases (far-bottom band, green) =====
+  \node[mit] (fernet) at (-6.0,-3.0) {Fernet credential\\ encryption};
+  \node[mit] (ro)     at (-2.6,-5.0) {Read-only connector\\ contract (no write verbs)};
+  \node[mit] (xmlh)   at (1.0,-5.4)  {\texttt{defusedxml}\\ hardened parsing};
+  \node[mit] (datam)  at (4.6,-5.0)  {Data-minimization\\ (no RFC1918 sent)};
+  \node[mit] (safelog)at (7.6,-3.0)  {Secret-safe\\ logging};
+
+  % ===== system boundary box =====
+  \begin{scope}[on background layer]
+    \node[draw=NavyBlue, very thick, rounded corners, fill=NavyBlue!4,
+          fit=(acq)(rep)(steal)(secret), inner sep=14pt] (sys) {};
+  \end{scope}
+  \node[anchor=north west, font=\small\bfseries, text=NavyBlue]
+        at ([xshift=4pt,yshift=-3pt]sys.north west) {LuminaFPM};
+
+  % ===== actor associations =====
+  \draw[assoc] (an.east)  -- (acq.west);
+  \draw[assoc] (an.east)  -- (view.west);
+  \draw[assoc] (an.east)  -- (cti.west);
+  \draw[assoc] (an.east)  -- (rep.west);
+  \draw[assoc] (att.west) -- (steal.east);
+  \draw[assoc] (att.west) -- (write.east);
+  \draw[assoc] (att.west) -- (xxe.east);
+  \draw[assoc] (att.west) -- (exfil.east);
+  \draw[assoc] (att.west) -- (secret.east);
+
+  % ===== «threatens» (misuse -> normal use case) =====
+  \draw[threatens] (steal.west)  -- node[lbl,above]{\guillemotleft threatens\guillemotright} (view.east);
+  \draw[threatens] (write.west)  -- node[lbl,above]{\guillemotleft threatens\guillemotright} (acq.east);
+  \draw[threatens] (xxe.west)    -- node[lbl,above]{\guillemotleft threatens\guillemotright} (view.east);
+  \draw[threatens] (exfil.west)  -- node[lbl,above]{\guillemotleft threatens\guillemotright} (cti.east);
+  \draw[threatens] (secret.west) -- node[lbl,below]{\guillemotleft threatens\guillemotright} (rep.east);
+
+  % ===== «mitigates» (mitigation -> misuse case) =====
+  \draw[mitigates] (fernet.north)  -- node[lbl,sloped,above]{\guillemotleft mitigates\guillemotright} (steal.south west);
+  \draw[mitigates] (ro.north)      -- node[lbl,sloped,above]{\guillemotleft mitigates\guillemotright} (write.south);
+  \draw[mitigates] (xmlh.north)    -- node[lbl,sloped,above]{\guillemotleft mitigates\guillemotright} (xxe.south);
+  \draw[mitigates] (datam.north)   -- node[lbl,sloped,above]{\guillemotleft mitigates\guillemotright} (exfil.south);
+  \draw[mitigates] (safelog.north) -- node[lbl,sloped,above]{\guillemotleft mitigates\guillemotright} (secret.south);
+
+  % ===== legend =====
+  \begin{scope}[shift={(-7.9,-4.7)}]
+    \node[uc,  minimum width=1.1cm, minimum height=0.55cm] (l1) at (0,0)    {};
+    \node[anchor=west, font=\tiny] at (l1.east) {use case};
+    \node[mc,  minimum width=1.1cm, minimum height=0.55cm] (l2) at (0,-0.8) {};
+    \node[anchor=west, font=\tiny] at (l2.east) {misuse case};
+    \node[mit, text width=1.1cm, minimum height=0.5cm] (l3) at (0,-1.7) {};
+    \node[anchor=west, font=\tiny] at (l3.east) {mitigation};
+  \end{scope}
+
+\end{tikzpicture}%
+}
+\caption{Misuse case diagram of LuminaFPM.}
+\label{fig:misuse}
+\end{figure}
+
+{\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\linewidth}{L{3.0cm} L{2.6cm} L{3.8cm} X}
 \caption{Misuse cases, threat actors, attack vectors and implemented countermeasures.}
 \label{tab:ch3-misuse}\\
 \hline
@@ -1116,10 +1319,10 @@ Indicator leakage of RFC1918 space & External CTI provider / network eavesdroppe
 \altrow
 SQL injection & External attacker & Crafted input through API query parameters to subvert repository queries & All persistence flows through SQLAlchemy ORM constructs and parameterised queries; no string-concatenated SQL in the route or service layers; inputs validated by Pydantic schemas. \\
 \hrow
-LLM prompt injection & Adversarial firewall configuration / external content & Malicious rule descriptions or object names steering the LLM to fabricate findings or remediations & Guardrail system prompt (\texttt{PROMPT\_VERSION="soc-report/1.0"}): the model must use \textit{only} supplied evidence, must not invent CVEs, exploit claims or reputations, and must separate evidence from interpretation. The deterministic engine --- not the LLM --- decides what is an anomaly; the LLM only explains and prioritises. \\
+LLM prompt injection & Adversarial firewall configuration / external content & Malicious rule descriptions or object names steering the LLM to fabricate findings or remediations & Guardrail system prompt (\texttt{PROMPT\_VERSION="soc-report/2.1"}): the model must use \textit{only} supplied evidence, must not invent CVEs, exploit claims or reputations, and must separate evidence from interpretation. The deterministic engine --- not the LLM --- decides what is an anomaly; the LLM only explains and prioritises. \\
 \altrow
 Token / secret exposure in transit or logs & Eavesdropper / log reader & Harvesting provider keys or device tokens from logs, error messages or job records & Structured, secret-safe logging (\texttt{core/logging.py}); \texttt{AcquisitionJob.error\_message} stores a safe summary with no secrets; \texttt{db} and \texttt{redis} are bound \texttt{expose}-only on the internal Docker network, not published to the host. \\
-\end{longtable}
+\end{xltabular}}
 
 \section{Context Diagram}
 \label{sec:ch3-context}
@@ -1128,6 +1331,7 @@ At the highest level of abstraction LuminaFPM is a single process that sits betw
 
 \begin{figure}[htbp]
 \centering
+\adjustbox{max width=\textwidth,max totalheight=0.88\textheight,center}{%
 \begin{tikzpicture}[
   sys/.style={draw=black!80, very thick, rounded corners, fill=LightGray, align=center, minimum width=3.6cm, minimum height=1.6cm, font=\small},
   ext/.style={draw=black!70, align=center, minimum width=2.7cm, minimum height=10mm, font=\footnotesize},
@@ -1144,6 +1348,7 @@ At the highest level of abstraction LuminaFPM is a single process that sits betw
 \draw[flow] (s)   -- node[above, font=\scriptsize]{prompt} (llm);
 \draw[flow] (s)   -- node[below, font=\scriptsize]{indicators} (cti);
 \end{tikzpicture}
+}
 \caption{Context diagram: LuminaFPM and its external entities. All firewall interaction is strictly read-only.}
 \label{fig:context}
 \end{figure}
@@ -1161,6 +1366,7 @@ The data-flow view decomposes the platform into the six processing stages that t
 
 \begin{figure}[htbp]
 \centering
+\adjustbox{max width=\textwidth,max totalheight=0.88\textheight,center}{%
 \begin{tikzpicture}[
   proc/.style={draw=black!70, circle, fill=LightGray, align=center, minimum size=1.6cm, font=\scriptsize, inner sep=1pt},
   ent/.style={draw=black!70, align=center, minimum width=2.1cm, minimum height=8mm, font=\footnotesize},
@@ -1182,6 +1388,7 @@ The data-flow view decomposes the platform into the six processing stages that t
 \draw[flow] (db) -- (p2);
 \draw[flow] (p3) -- (db);
 \end{tikzpicture}
+}
 \caption{Data flow diagram of the LuminaFPM analysis pipeline.}
 \label{fig:dfd}
 \end{figure}
@@ -1203,40 +1410,207 @@ A parallel benchmark process reads \texttt{rule\_anomaly} (filtered to \texttt{c
 \section{Entity Relationship Diagram}
 \label{sec:ch3-erd}
 
-The persistence layer is a single relational schema (Schema~v4) defined in \texttt{backend/models/models.py} and owned by Alembic migrations. Its design embodies the platform's central idea: vendor-owned records are preserved verbatim, a canonical layer sits above them, and explicit mapping tables connect the two so that cross-vendor equivalence is established through normalized correlation keys rather than raw vendor names. Figure~\ref{fig:erd} shows the core entities and their relationships.
+The persistence layer is a single relational schema (Schema~v4) defined in \path{backend/models/models.py} and owned by Alembic migrations. Its design embodies the platform's central idea: vendor-owned records are preserved verbatim, a canonical layer sits above them, and explicit mapping tables connect the two so that cross-vendor equivalence is established through normalized correlation keys rather than raw vendor names. Figure~\ref{fig:erd} shows the core entities and their relationships.
 
-\begin{figure}[htbp]
+\begin{sidewaysfigure}
 \centering
-\resizebox{\linewidth}{!}{%
+\adjustbox{max width=\textheight,max totalheight=\textwidth,center}{%
 \begin{tikzpicture}[
-  ent/.style={draw=black!75, rounded corners, fill=LightGray, align=center, minimum width=3.0cm, minimum height=9mm, font=\scriptsize},
-  rel/.style={font=\scriptsize, midway}]
-\node[ent] (dev)  at (0,0)    {device};
-\node[ent] (rule) at (4.2,0)  {policy\_rule};
-\node[ent] (obj)  at (8.6,0)  {network\_object};
-\node[ent] (anom) at (0,-2.2) {rule\_anomaly};
-\node[ent] (map)  at (4.2,-2.2) {rule\_object\_mapping};
-\node[ent] (cti)  at (8.6,-2.2) {cti\_indicator};
-\node[ent] (risk) at (0,-4.4) {risk\_assessment};
-\node[ent] (bench)at (4.2,-4.4) {benchmark\_result};
-\node[ent] (texp) at (8.6,-4.4) {threat\_exposure};
-\node[ent] (rep)  at (4.2,-6.4) {llm\_report};
-\draw (dev)  -- node[rel,above]{1..*} (rule);
-\draw (rule) -- node[rel,right]{1..*} (map);
-\draw (obj)  -- node[rel,right]{1..*} (map);
-\draw (rule) -- node[rel,left]{1..*} (anom);
-\draw (rule) -- node[rel,left]{1..1} (risk);
-\draw (cti)  -- node[rel,right]{1..*} (texp);
-\draw (anom) -- node[rel,below]{maps} (bench);
-\draw (rule) -- node[rel,left]{1..*} (rep);
+  font=\scriptsize,
+  % ── entity = colored header strip over a body listing a few key columns ──
+  ehead/.style={draw=NavyBlue, fill=NavyBlue, text=white, font=\scriptsize\bfseries,
+                align=center, minimum width=3.15cm, minimum height=4.8mm,
+                inner sep=2pt, rounded corners=1.2pt},
+  ebody/.style={draw=NavyBlue, fill=LightGray, text=black, font=\scriptsize,
+                align=left, text width=3.15cm, minimum height=4.8mm, inner sep=2.5pt},
+  % bridge / association table — MidBlue header to read as a link table
+  bhead/.style={draw=MidBlue, fill=MidBlue, text=white, font=\scriptsize\bfseries,
+                align=center, minimum width=3.15cm, minimum height=4.8mm,
+                inner sep=2pt, rounded corners=1.2pt},
+  bbody/.style={draw=MidBlue, fill=LightGray, text=black, font=\scriptsize,
+                align=left, text width=3.15cm, minimum height=4.8mm, inner sep=2.5pt},
+  % standalone table — gray header (no FK into the core graph)
+  shead/.style={draw=black!60, fill=black!55, text=white, font=\scriptsize\bfseries,
+                align=center, minimum width=3.15cm, minimum height=4.8mm,
+                inner sep=2pt, rounded corners=1.2pt},
+  sbody/.style={draw=black!60, fill=LightGray, text=black, font=\scriptsize,
+                align=left, text width=3.15cm, minimum height=4.8mm, inner sep=2.5pt},
+  rel/.style={font=\scriptsize\itshape, inner sep=1.2pt, fill=white, fill opacity=0.85,
+              text opacity=1},
+  edge/.style={draw=black!72, -{Latex[length=1.5mm]}},
+  link/.style={draw=MidBlue!85, dashed, -{Latex[length=1.5mm]}},
+  ]
+
+% ====================  COLUMN x: L=0  C=5  R=10  ====================
+% Each entity is a header node with its body placed directly beneath (below=0pt).
+
+% ---------- ownership root (top) ----------
+\node[ehead] (venH) at (0,0) {vendor};
+\node[ebody,below=0pt of venH] (venB)
+  {\underline{vendor\_id}\\name,\ api\_type};
+
+\node[ehead] (devH) at (5,0) {firewall\_device};
+\node[ebody,below=0pt of devH] (devB)
+  {\underline{device\_id}\\vendor\_id (FK)\\vendor\_type, firmware\_version\\management\_ip, use\_http, status};
+
+% ---------- vendor object / rule / service ----------
+\node[ehead] (objH) at (0,-3.7) {network\_object};
+\node[ebody,below=0pt of objH] (objB)
+  {\underline{object\_id}\\device\_id (FK)\\type,\ value};
+
+\node[ehead] (ruleH) at (5,-3.7) {policy\_rule};
+\node[ebody,below=0pt of ruleH] (ruleB)
+  {\underline{rule\_id}\\device\_id (FK)\\action, rule\_order\\logging/inspection\\deleted\_at (soft)};
+
+\node[ehead] (svcH) at (10,-3.7) {service\_object};
+\node[ebody,below=0pt of svcH] (svcB)
+  {\underline{service\_object\_id}\\device\_id (FK)\\protocol,\ ports};
+
+% ---------- rule<->object / rule<->service bridges ----------
+\node[bhead] (romH) at (0,-7.3) {rule\_object\_mapping};
+\node[bbody,below=0pt of romH] (romB)
+  {(rule\_id, object\_id,\\\hspace{1em}mapping\_type) PK\\direction};
+
+\node[bhead] (rsmH) at (10,-7.3) {rule\_service\_mapping};
+\node[bbody,below=0pt of rsmH] (rsmB)
+  {\underline{mapping\_id}\\rule\_id (FK)\\service\_object\_id (FK)};
+
+% ---------- canonical normalization layer ----------
+\node[bhead] (onmH) at (0,-10.9) {object\_norm\_mapping};
+\node[bbody,below=0pt of onmH] (onmB)
+  {\underline{mapping\_id}\\object\_id (FK)\\norm\_object\_id (FK)\\match\_method, conf.};
+\node[ehead] (noH) at (0,-14.5) {normalized\_object};
+\node[ebody,below=0pt of noH] (noB)
+  {\underline{normalized\_object\_id}\\canonical\_value\\sensitivity};
+
+\node[bhead] (snmH) at (10,-10.9) {service\_norm\_mapping};
+\node[bbody,below=0pt of snmH] (snmB)
+  {\underline{mapping\_id}\\service\_object\_id (FK)\\norm\_service\_id (FK)\\match\_method, conf.};
+\node[ehead] (nsH) at (10,-14.5) {normalized\_service};
+\node[ebody,below=0pt of nsH] (nsB)
+  {\underline{normalized\_service\_id}\\protocol, ports, app\_id};
+
+% ---------- analysis : anomaly / run ----------
+\node[ehead] (anomH) at (5,-7.3) {rule\_anomaly};
+\node[ebody,below=0pt of anomH] (anomB)
+  {\underline{anomaly\_id}\\rule\_id (FK)\\related\_rule\_id (FK)\\anomaly\_type, severity\\analysis\_run\_id (FK)\\status};
+
+\node[ehead] (runH) at (5,-11.3) {anomaly\_execution\_log};
+\node[ebody,below=0pt of runH] (runB)
+  {\underline{run\_id}\\scope\_type, status\\findings\_count\\engine\_version};
+
+% ---------- risk (left, under normalization) ----------
+\node[ehead] (riskH) at (0,-18.2) {risk\_assessment};
+\node[ebody,below=0pt of riskH] (riskB)
+  {\underline{risk\_id}\\scope\_type/\_id\\risk\_score, tier\\analysis\_run\_id (FK)};
+
+% ---------- benchmark (center) ----------
+\node[ehead] (bcH) at (5,-15.0) {benchmark\_case};
+\node[ebody,below=0pt of bcH] (bcB)
+  {\underline{case\_id}\\anomaly\_type\\rule\_a/\_b\_id (FK)\\expected\_severity};
+\node[ehead] (brH) at (5,-18.5) {benchmark\_result};
+\node[ebody,below=0pt of brH] (brB)
+  {\underline{result\_id}\\case\_id (FK)\\detected, match\_quality\\detected\_anomaly\_id (FK)};
+
+% ---------- CTI axis (right) ----------
+\node[ehead] (ctiH) at (10,-18.2) {cti\_indicator};
+\node[ebody,below=0pt of ctiH] (ctiB)
+  {\underline{indicator\_id}\\type (ip / firmware)\\value\\source\_device\_id (FK)};
+\node[ehead] (obsH) at (10,-21.8) {cti\_observation};
+\node[ebody,below=0pt of obsH] (obsB)
+  {\underline{observation\_id}\\indicator\_id (FK)\\provider, severity\\threat\_type};
+
+% ---------- acquisition (bottom-left/center) ----------
+\node[ehead] (artH) at (0,-22.3) {raw\_artifact};
+\node[ebody,below=0pt of artH] (artB)
+  {\underline{artifact\_id}\\job\_id (FK)\\type, sha256};
+\node[ehead] (jobH) at (5,-22.3) {acquisition\_job};
+\node[ebody,below=0pt of jobH] (jobB)
+  {\underline{job\_id}\\device\_id (FK)\\status, vendor\_type};
+\node[ehead] (snapH) at (5,-26.0) {rule\_snapshot};
+\node[ebody,below=0pt of snapH] (snapB)
+  {\underline{snapshot\_id}\\rule\_id (FK)\\job\_id (FK)\\content\_hash};
+
+% ---------- reporting + credential ----------
+\node[ehead] (repH) at (0,-26.0) {llm\_report};
+\node[ebody,below=0pt of repH] (repB)
+  {\underline{report\_id}\\scope\_type, provider\\document, markdown\\executive\_summary};
+\node[ehead] (credH) at (10,-26.0) {device\_credential};
+\node[ebody,below=0pt of credH] (credB)
+  {\underline{credential\_id}\\device\_id (FK)\\auth\_type\\secret\_encrypted};
+
+% ---------- standalone NEW tables (gray) ----------
+\node[shead] (schedH) at (10,-29.7) {schedule\_config};
+\node[sbody,below=0pt of schedH] (schedB)
+  {\underline{id}\ \,(standalone)\\operation, mode\\enabled, next\_run\_at};
+\node[shead] (notifH) at (5,-29.7) {notification};
+\node[sbody,below=0pt of notifH] (notifB)
+  {\underline{id}\ \,(standalone)\\level, category\\title, read\_at};
+
+% ============================  RELATIONSHIPS  ============================
+% Cardinality convention: "1 --- *" reads parent(1) to child(many); "0..1" optional.
+
+% ownership  (vendor 1 - * device ; device 1 - * rule/object/service)
+\draw[edge] (devB.west)  -- node[rel,above]{*\ \ 1} (venB.east);
+\draw[edge] (ruleH.north) -- node[rel,right]{*\ \ 1} (devB.south);
+\draw[edge] (objH.north)  -- node[rel,left]{*\ \ 1} (devB.south west);
+\draw[edge] (svcH.north)  -- node[rel,right]{*\ \ 1} (devB.south east);
+
+% rule <-> object  (M:N via rule_object_mapping)
+\draw[link] (romH.north) -- node[rel,left]{*\ \ 1} (objB.south);
+\draw[link] (romB.east)  -- node[rel,below]{*\ \ 1} (ruleB.south west);
+% rule <-> service (M:N via rule_service_mapping)
+\draw[link] (rsmH.north) -- node[rel,right]{*\ \ 1} (svcB.south);
+\draw[link] (rsmB.west)  -- node[rel,below]{*\ \ 1} (ruleB.south east);
+
+% canonical normalization bridges  (object/service <-> normalized via mapping)
+% object axis: object_normalization_mapping links network_object (above) to
+% normalized_object (below). The "up to object" leg routes through the left
+% gutter to clear the rule_object_mapping box that sits between them.
+\draw[link] (onmH.west) to[out=180,in=180,looseness=0.9]
+  node[rel,left]{*\ \ 1} (objB.west);
+\draw[link] (onmB.south) -- node[rel,left]{*\ \ 1} (noH.north);
+% service axis: symmetric, routed through the right gutter.
+\draw[link] (snmH.east) to[out=0,in=0,looseness=0.9]
+  node[rel,right]{*\ \ 1} (svcB.east);
+\draw[link] (snmB.south) -- node[rel,right]{*\ \ 1} (nsH.north);
+
+% analysis : rule 1 - * anomaly ; self-ref related_rule
+\draw[edge] (anomH.north) -- node[rel,right]{*\ \ 1} (ruleB.south);
+\draw[edge] (anomB.east) to[out=0,in=0,looseness=1.1]
+  node[rel,right]{related\_rule (0..1, self)} (ruleB.east);
+% run 1 - * anomaly ; run 1 - * risk
+\draw[edge] (anomB.south) -- node[rel,right]{*\ \ 1} (runH.north);
+\draw[edge] (runB.south) to[out=-90,in=0,looseness=0.9]
+  node[rel,below right]{1 - *} (riskB.east);
+
+% benchmark : case 1 - * result ; result 0..1 anomaly ; case -> rules(anomaly cluster)
+\draw[edge] (brH.north) -- node[rel,right]{*\ \ 1} (bcB.south);
+\draw[edge] (brB.east) to[out=0,in=0,looseness=0.85]
+  node[rel,right]{0..1 detected} (anomB.east);
+
+% CTI : indicator 1 - * observation ; firmware-axis indicator <- device (FK, far above)
+\draw[edge] (obsH.north) -- node[rel,right]{*\ \ 1} (ctiB.south);
+\node[rel, anchor=south west, align=left] at ($(ctiH.north west)+(0,0.18)$)
+  {source\_device\_id FK $\to$ firewall\_device\\(device firmware-CVE axis)};
+
+% acquisition : job 1 - * artifact ; job 1 - * snapshot
+\draw[edge] (artB.east) -- node[rel,above]{*\ \ 1} (jobB.west);
+\draw[edge] (snapH.north) -- node[rel,right]{*\ \ 1} (jobB.south);
+% job * - 1 device  (FK device_id) — short stub annotation, device sits far above
+\node[rel, anchor=west] at ($(jobB.east)+(0.25,0)$) {job, credential, snapshot all FK $\to$ firewall\_device};
 \end{tikzpicture}}
-\caption{Entity--relationship diagram of the normalized policy and analysis schema (core entities).}
+\caption{Entity--relationship diagram of LuminaFPM Schema~v4. NavyBlue boxes are entities and MidBlue boxes are association (bridge) tables; gray boxes are standalone tables with no foreign key into the core graph. The diagram shows vendor/device ownership; the normalized policy model (the \texttt{policy\_rule}$\leftrightarrow$\texttt{network\_object} and \texttt{policy\_rule}$\leftrightarrow$\texttt{service\_object} bridges, and the canonical normalization layer reached through \texttt{object\_/service\_normalization\_mapping}); the analysis tier (\texttt{rule\_anomaly} with a self-referential \texttt{related\_rule}, the \texttt{anomaly\_execution\_log} run that aggregates anomalies and \texttt{risk\_assessment}); the CTI \texttt{cti\_indicator}/\texttt{cti\_observation} axis (including the device firmware axis); the \texttt{benchmark\_case}/\texttt{benchmark\_result} pair; acquisition (\texttt{acquisition\_job}, \texttt{raw\_artifact}, \texttt{rule\_snapshot}); and reporting (\texttt{llm\_report}), with the standalone \texttt{schedule\_config} and \texttt{notification} tables. Cardinalities are shown as 1 / * (and 0..1 for optional). Dashed edges mark the many-to-many correlations resolved by bridge tables.}
 \label{fig:erd}
-\end{figure}
+\end{sidewaysfigure}
 
 \subsection{Entity Descriptions}
 
-\begin{longtable}{L{0.24\textwidth} L{0.12\textwidth} L{0.58\textwidth}}
+{\footnotesize
+% Allow long monospace identifiers (e.g. normalized_object_id) to wrap at
+% underscores and slashes so they never collide with the next column.
+\renewcommand{\_}{\discretionary{}{}{}\textunderscore\discretionary{}{}{}}%
+\begin{longtable}{L{2.7cm} L{3.1cm} L{8.4cm}}
 \caption{Core entities of the normalized Schema~v4 and their salient attributes.}
 \label{tab:ch3-erd-entities}\\
 \hline
@@ -1280,6 +1654,7 @@ The persistence layer is a single relational schema (Schema~v4) defined in \text
 \altrow
 \texttt{llm\_report} & \texttt{report\_id} & An evidence-grounded AI report; \texttt{scope\_type}, \texttt{provider}, \texttt{model}, \texttt{prompt\_version}, \texttt{evidence\_refs} (JSONB), \texttt{output}, \texttt{status}. \\
 \end{longtable}
+}
 
 \noindent The schema also carries a \texttt{threat\_exposure} concept: it is not a separate table but the \texttt{rule\_anomaly} row of \texttt{anomaly\_type="threat\_exposure"} and \texttt{detection\_mode="cti"} written by the CTI runner, linking a malicious \texttt{cti\_indicator} to the allow-rule that references it.
 
@@ -1292,7 +1667,125 @@ The relationships fall into three families. \textit{Ownership} relationships are
 
 The backend's service and domain layer is organised as a pipeline of cohesive classes, each owning one stage of the transformation from raw configuration to narrated intelligence. Figure~\ref{fig:class} shows the principal classes and their collaborations; the description below follows the data as it flows downstream.
 
-\uiplaceholder{Class Diagram}{Backend service and domain classes: connectors, parsers, normalization engine, anomaly engine and detectors, risk scorer, CTI providers/runner, LLM provider/reporter, benchmark scorer/runner.}{Class diagram of the LuminaFPM backend services.}{fig:class}
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\textwidth,max totalheight=0.88\textheight,center}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  node distance=0pt,
+  >={Stealth[length=2mm]},
+  % --- UML compartment styles (no shapes.multipart needed) ---
+  ubox/.style={draw=black, thick, text width=38mm, inner sep=2.4pt, align=left, fill=LightGray!18},
+  uhead/.style={ubox, fill=NavyBlue, text=white, align=center, font=\scriptsize\bfseries, minimum height=5mm},
+  uabs/.style={uhead, fill=MidBlue, font=\scriptsize\bfseries\itshape},
+  umid/.style={ubox},
+  ufoot/.style={ubox},
+  % --- relations ---
+  inherit/.style={-{Triangle[open,length=3.2mm,width=3.4mm]}, thick, NavyBlue},
+  assoc/.style={-{Stealth[length=2mm]}, MidBlue, thick},
+  feed/.style={-{Stealth[length=2mm]}, MidBlue, thick, dashed},
+  lbl/.style={fill=white, inner sep=1pt, text=MidBlue, font=\scriptsize\itshape},
+]
+
+% =================== ACQUISITION LAYER ===================
+% ConnectorConfig (dataclass)
+\node[uhead] (cfgH) {ConnectorConfig};
+\node[umid, below=of cfgH] (cfgM)
+  {+ device\_id : int\\+ vendor\_type : str\\+ management\_ip : str\\+ secret : str\\+ auth\_type : str\\+ scheme : str = "https"};
+\node[ufoot, below=of cfgM, minimum height=4mm] (cfgF) {\itshape «dataclass»};
+
+% ConnectorInterface (abstract)
+\node[uabs, right=24mm of cfgH] (ifH) {ConnectorInterface \itshape«abstract»};
+\node[umid, below=of ifH] (ifM)
+  {+ vendor\_type : str\\+ connector\_version : str};
+\node[ufoot, below=of ifM] (ifF)
+  {+ authenticate() : None\\+ validate\_connection() : bool\\+ collect() : AcquisitionBundle};
+
+% FortiGateConnector
+\node[uhead, below left=14mm and -12mm of ifF] (fgH) {FortiGateConnector};
+\node[umid, below=of fgH] (fgM) {+ vendor\_type = "fortinet"};
+\node[ufoot, below=of fgM] (fgF)
+  {+ authenticate()\\+ validate\_connection()\\+ collect()};
+
+% PaloAltoConnector
+\node[uhead, below right=14mm and -12mm of ifF] (paH) {PaloAltoConnector};
+\node[umid, below=of paH] (paM) {+ vendor\_type = "paloalto"};
+\node[ufoot, below=of paM] (paF)
+  {+ authenticate()\\+ validate\_connection()\\+ collect()};
+
+% =================== NORMALIZATION LAYER ===================
+\node[uhead, below=26mm of cfgF] (nH) {NormalizationEngine};
+\node[umid, below=of nH] (nM) {-- canonical action / logging /\\\hspace*{2mm}inspection mappings};
+\node[ufoot, below=of nM] (nF)
+  {+ normalize\_payloads(payloads)\\\hspace*{2mm}: NormalizationResult};
+
+\node[uhead, below=20mm of nF] (nrH) {NormalizationResult};
+\node[umid, below=of nrH] (nrM)
+  {+ rules : List[NormalizedRule]\\+ normalized\_objects : Dict\\+ normalized\_services : Dict\\+ warnings : List[str]};
+\node[ufoot, below=of nrM, minimum height=4mm] (nrF) {\itshape «dataclass»};
+
+% =================== ANOMALY LAYER ===================
+\node[uhead, right=30mm of nrH] (aeH) {AnomalyEngine};
+\node[umid, below=of aeH] (aeM)
+  {+ ALL\_DETECTORS : tuple\\\hspace*{2mm}{\scriptsize(14 set-theoretic detectors)}};
+\node[ufoot, below=of aeM] (aeF) {+ analyze(result) : List[Finding]};
+
+\node[uhead, right=26mm of aeH] (fH) {Finding};
+\node[umid, below=of fH] (fM)
+  {+ anomaly\_type : str\\+ severity : str\\+ confidence : float\\+ evidence : Dict\\+ detection\_mode : str};
+\node[ufoot, below=of fM, minimum height=4mm] (fF) {\itshape «dataclass»};
+
+% =================== RISK / CTI / REPORT LAYER ===================
+\node[uhead, above=22mm of fH] (rH) {RiskScorer};
+\node[umid, below=of rH] (rM) {RISK\_VERSION = "1.0.0"};
+\node[ufoot, below=of rM] (rF)
+  {+ score\_rule(findings) : dict\\+ score\_device(rule\_scores,\\\hspace*{2mm}device\_factors) : dict};
+
+\node[uhead, right=20mm of rH] (cH) {CtiRunner};
+\node[umid, below=of cH] (cM) {-- indicator + firmware-CVE\\\hspace*{2mm}intel (fail-soft)};
+\node[ufoot, below=of cM] (cF) {+ run\_cti(db, run\_id) : dict};
+
+\node[uhead, below=16mm of cF] (repH) {Reporter};
+\node[umid, below=of repH] (repM) {-- LLM provider (executive prose)};
+\node[ufoot, below=of repM] (repF)
+  {+ generate\_report(db, scope\_type,\\\hspace*{2mm}scope\_id) : dict};
+
+\node[uhead, below=12mm of repF] (bH) {ReportBuilder};
+\node[umid, below=of bH] (bM) {-- deterministic DB assembly};
+\node[ufoot, below=of bM] (bF)
+  {+ build\_executive\_document()\\+ build\_rule\_document()};
+
+% =================== RELATIONS ===================
+% inheritance: subclasses --|> ConnectorInterface
+\draw[inherit] (fgH.north) -- ++(0,5mm) -| (ifF.south);
+\draw[inherit] (paH.north) -- ++(0,5mm) -| (ifF.south);
+
+% connectors use ConnectorConfig
+\draw[assoc] (ifM.west) -- node[lbl,pos=0.5]{«uses»} (cfgM.east);
+
+% collectors feed normalization
+\draw[feed] (fgF.south) to[out=-90,in=80] node[lbl,pos=0.6]{«feeds»} (nH.north);
+
+% normalize -> result
+\draw[assoc] (nF.south) -- node[lbl,pos=0.5]{«produces»} (nrH.north);
+% engine reads result
+\draw[assoc] (nrM.east) -- node[lbl,pos=0.5]{«reads»} (aeM.west);
+% engine produces findings
+\draw[assoc] (aeM.east) -- node[lbl,pos=0.5]{«produces»} (fM.west);
+% findings scored
+\draw[assoc] (fH.north) -- node[lbl,pos=0.5]{«scores»} (rF.south);
+% cti enriches risk
+\draw[assoc] (cM.west) -- node[lbl,pos=0.5]{«enriches»} (rM.east);
+% risk consumed by reporter
+\draw[assoc] (rH.east) to[out=20,in=180] node[lbl,pos=0.5]{«consumed by»} (repH.west);
+% reporter delegates to builder
+\draw[assoc] (repF.south) -- node[lbl,pos=0.5]{«delegates»} (bH.north);
+
+\end{tikzpicture}%
+}
+\caption{Backend service and domain classes: connectors, parsers, normalization engine, anomaly engine and detectors, risk scorer, CTI providers/runner, LLM provider/reporter, benchmark scorer/runner.}
+\label{fig:class}
+\end{figure}
 
 \textbf{Acquisition.} The contract is the abstract \texttt{ConnectorInterface}, with \texttt{vendor\_type} and \texttt{connector\_version} class attributes and the abstract methods \texttt{authenticate()}, \texttt{validate\_connection()} and \texttt{collect()}. It is realised by \texttt{FortiGateConnector} and \texttt{PaloAltoConnector}, each constructed from a \texttt{ConnectorConfig} dataclass (management IP, decrypted secret, auth type, TLS/scheme). A registry selects the connector at runtime; \texttt{collect()} returns an \texttt{AcquisitionBundle} of raw artifacts.
 
@@ -1343,15 +1836,13 @@ The most important interaction in the platform is the end-to-end pipeline that t
 \label{fig:seq-pipeline}
 \end{figure}
 
-The sequence begins synchronously. The analyst issues \texttt{POST /api/v1/devices/\{device\_id\}/poll}; the API verifies the device exists and that a credential is configured (returning \texttt{409} if absent), inserts an \texttt{AcquisitionJob} row with status \texttt{queued}, dispatches \texttt{poll\_device.delay(job\_id)} onto the \texttt{acquisition} queue, and immediately returns \texttt{202 Accepted} with the \texttt{job\_id} --- performing no firewall I/O in the request cycle.
+The sequence begins synchronously. The analyst issues \texttt{POST}~\path{/api/v1/devices/{device_id}/poll}; the API verifies the device exists and that a credential is configured (returning \texttt{409} if absent), inserts an \texttt{AcquisitionJob} row with status \texttt{queued}, dispatches \texttt{poll\_device.delay(job\_id)} onto the \texttt{acquisition} queue, and immediately returns \texttt{202 Accepted} with the \texttt{job\_id} --- performing no firewall I/O in the request cycle.
 
 The remainder runs asynchronously as an automatic chain. The \texttt{poll\_device} worker decrypts the credential in memory, resolves the vendor type, sets the job \texttt{running}, builds the connector, calls \texttt{collect()}, stores the raw artifacts with their SHA-256 manifest, updates the device's freshness and firmware, sets the job \texttt{success} or \texttt{partial\_success}, and on either success state chains \texttt{normalize\_device.delay(job\_id)} onto the \texttt{normalization} queue. The \texttt{normalize\_device} worker loads the job's artifacts from disk and runs \texttt{parse\_artifacts} $\rightarrow$ \texttt{normalize\_payloads} $\rightarrow$ \texttt{persist\_result} (the idempotent Schema~v4 upsert), then chains \texttt{run\_anomaly\_analysis\_task.delay(device\_id)} onto the \texttt{analysis} queue.
 
-The \texttt{run\_anomaly\_analysis} worker opens an \texttt{AnomalyExecutionLog} (\texttt{status="running"}), reconstructs the \texttt{NormalizationResult} via \texttt{load\_normalized\_result}, calls \texttt{analyze(result)}, maps each \texttt{Finding} \texttt{(device\_id, rule\_uuid)} onto its \texttt{PolicyRule.rule\_id} (skipping rules absent from the repository rather than guessing), inserts the \texttt{RuleAnomaly} rows, finalises the log with \texttt{completed} and \texttt{findings\_count}, and as a best-effort final step calls \texttt{run\_risk(db, run\_id)} --- a risk failure must never fail the analysis. (For cross-device detectors an all-scope run is invoked with \texttt{device\_id=None}, analysing every device together.) Optionally, the analyst then triggers \texttt{POST /api/v1/cti/run} (enrichment and correlation, with a follow-on risk recompute) and \texttt{POST /api/v1/reports/generate} (the evidence-grounded report, persisted even on provider failure).
+The \texttt{run\_anomaly\_analysis} worker opens an \texttt{AnomalyExecutionLog} (\texttt{status="running"}), reconstructs the \texttt{NormalizationResult} via \texttt{load\_normalized\_result}, calls \texttt{analyze(result)}, maps each \texttt{Finding} \texttt{(device\_id, rule\_uuid)} onto its \texttt{PolicyRule.rule\_id} (skipping rules absent from the repository rather than guessing), inserts the \texttt{RuleAnomaly} rows, finalises the log with \texttt{completed} and \texttt{findings\_count}, and as a best-effort final step calls \texttt{run\_risk(db, run\_id)} --- a risk failure must never fail the analysis. (For cross-device detectors an all-scope run is invoked with \texttt{device\_id=None}, analysing every device together.) Optionally, the analyst then triggers \texttt{POST}~\path{/api/v1/cti/run} (enrichment and correlation, with a follow-on risk recompute) and \texttt{POST}~\path{/api/v1/reports/generate} (the evidence-grounded report, persisted even on provider failure).
 
 Throughout, the frontend never blocks: it polls job and run status through the read-only endpoints \texttt{GET /api/v1/jobs/\{job\_id\}}, \texttt{GET /api/v1/anomalies/runs} and the resource readers, then renders findings, risk, CTI and reports from PostgreSQL. The diagram thus makes visible the platform's governing rule --- slow, fallible, external work is confined to the worker tier behind the Redis broker, while the request cycle does only fast transactional work and read-back.
-
----
 
 \chapter{Implementation and Testing}
 \label{ch:implementation}
@@ -1395,14 +1886,14 @@ HTTP client & requests & FortiGate REST and CTI API calls. \\
 Front-end build & Vite + @vitejs/plugin-react & Dev server, build, lint, typecheck. \\
 UI framework & React~19 + TypeScript~5.7 & Single-page console; incremental TS migration. \\
 LLM provider & Google Gemini (+ offline fallback) & Evidence-grounded SOC reporting; deterministic offline renderer. \\
-Orchestration & Docker Compose & Multi-service runtime (db, redis, api, celery\_worker, frontend). \\
+Orchestration & Docker Compose & Multi-service runtime (db, redis, api, celery\_worker, celery\_beat, frontend). \\
 \hline
 \end{tabular}
 \end{table}
 
 Two reproducibility caveats are documented honestly rather than smoothed over. First, the backend \texttt{requirements.txt} is \textbf{unpinned} --- every package is named but no version is fixed --- so builds are not deterministic across time; the only version constraint is the Python base image. Front-end dependencies, by contrast, are pinned with caret (\textasciicircum{}) ranges in \texttt{package.json}. Second, the front-end Docker image runs the \emph{Vite development server} (not a production build): an Nginx production-serve configuration (\texttt{frontend/nginx.conf}) exists but is not wired into the Compose deployment.
 
-The Compose stack defines five active services. The \texttt{api} service runs Uvicorn with \texttt{-{}-reload}; the \texttt{celery\_worker} runs under \texttt{watchmedo auto-restart} and explicitly consumes the queues \texttt{acquisition,\,normalization,\,analysis,\,cti,\,reporting,\,celery} (without the explicit \texttt{-Q} list the routed tasks would never run). PostgreSQL and Redis are \emph{not} published to the host (internal Docker network only), a deliberate security posture. A \texttt{tor-proxy} service and a commented-out ``Robin'' dark-web OSINT pair (\texttt{robin\_ui}/\texttt{robin\_api}) support the optional, off-by-default threat-intelligence subsystem and are not part of the running v1 stack.
+The Compose stack defines six active services. The \texttt{api} service runs Uvicorn with \texttt{-{}-reload}; the \texttt{celery\_worker} runs under \texttt{watchmedo auto-restart} and explicitly consumes the queues \texttt{acquisition,\,normalization,\,analysis,\,cti,\,reporting,\,celery} (without the explicit \texttt{-Q} list the routed tasks would never run); and the \texttt{celery\_beat} service drives the scheduler tick every 60 seconds that powers the Settings scheduling feature. PostgreSQL and Redis are \emph{not} published to the host (internal Docker network only), a deliberate security posture. A \texttt{tor-proxy} service and a commented-out ``Robin'' dark-web OSINT pair (\texttt{robin\_ui}/\texttt{robin\_api}) support the optional, off-by-default threat-intelligence subsystem and are not part of the running v1 stack.
 
 \section{Project Structure}
 \label{sec:ch4-structure}
@@ -1463,7 +1954,7 @@ The \texttt{collect()} contract distinguishes \emph{required} from \emph{optiona
 
 \subsection*{FortiGate connector}
 
-\texttt{fortigate.py} implements \texttt{FortiGateConnector} (\texttt{vendor\_type="fortinet"}). Authentication uses a Bearer API token (a dedicated read-only API admin account) injected via \texttt{\_headers()}; \texttt{validate\_connection()} performs a cheap \texttt{GET} of \texttt{/api/v2/monitor/system/status}. There is exactly one HTTP helper, \texttt{\_get(path)} --- and \emph{no} write verb anywhere in the module, which is precisely how read-only is enforced at the code level. Its exception-to-error mapping converts \texttt{requests} SSL/timeout/connection exceptions and HTTP status codes (401$\rightarrow$\texttt{AuthenticationError}, 403$\rightarrow$\texttt{AuthorizationError}, 404$\rightarrow$\texttt{UnsupportedEndpointError}, other $\geq$400$\rightarrow$\texttt{ConnectionFailedError}) into the normalized taxonomy. The connector iterates a static endpoint table covering policies, address objects, address groups, service objects, service groups, and device metadata (all required), plus interfaces and schedules (optional). Each successful response is captured as a \texttt{RawArtifact}.
+\texttt{fortigate.py} implements \texttt{FortiGateConnector} (\texttt{vendor\_type="fortinet"}). Authentication uses a Bearer API token (a dedicated read-only API admin account) injected via \texttt{\_headers()}; \texttt{validate\_connection()} performs a cheap \texttt{GET} of \path{/api/v2/monitor/system/status}. There is exactly one HTTP helper, \texttt{\_get(path)} --- and \emph{no} write verb anywhere in the module, which is precisely how read-only is enforced at the code level. Its exception-to-error mapping converts \texttt{requests} SSL/timeout/connection exceptions and HTTP status codes (401$\rightarrow$\texttt{AuthenticationError}, 403$\rightarrow$\texttt{AuthorizationError}, 404$\rightarrow$\texttt{UnsupportedEndpointError}, other $\geq$400$\rightarrow$\texttt{ConnectionFailedError}) into the normalized taxonomy. The connector iterates a static endpoint table covering policies, address objects, address groups, service objects, service groups, and device metadata (all required), plus interfaces and schedules (optional). Each successful response is captured as a \texttt{RawArtifact}.
 
 \subsection*{Palo Alto connector}
 
@@ -1570,7 +2061,8 @@ Two detectors operate \emph{across} devices and surface the platform's core cros
 
 The full specification defines a 46-type anomaly taxonomy. Version~1 ships the ``config-only core'': fourteen deterministic detectors (in \texttt{ALL\_DETECTORS}) emitting fourteen distinct \texttt{anomaly\_type} values, plus \texttt{threat\_exposure} written by the CTI runner, for fifteen persisted types in total. Table~\ref{tab:ch4-anomaly-taxonomy} lists every implemented type --- its description, the detection mode it is emitted in, and whether it is realized as a live policy-rule detector. Types from the broader framework that remain \emph{simulated} or \emph{future} (e.g.\ ordering anomaly, temporary-rule, poor-naming, zone-mismatch, NAT-risk, asymmetric-rule, and all \texttt{conditional}/\texttt{future\_enhanced} entries) are specified but \textbf{not implemented} in v1 and are marked accordingly.
 
-\begin{longtable}{L{3.4cm}L{5.4cm}C{1.7cm}C{1.5cm}C{1.5cm}}
+{\footnotesize
+\begin{longtable}{L{3.3cm}L{5.6cm}C{1.4cm}C{1.7cm}C{1.4cm}}
 \caption{Implemented anomaly taxonomy: the config-detectable core actually emitted by the engine, versus the simulated/future remainder of the 46-type framework.}
 \label{tab:ch4-anomaly-taxonomy}\\
 \hline
@@ -1585,23 +2077,24 @@ The full specification defines a 46-type anomaly taxonomy. Version~1 ships the `
 \endfoot
 \hline
 \endlastfoot
-\texttt{unprotected\_allow} & Enabled allow rule with no security inspection enabled. & high & config\_only & Yes \\
+\texttt{unprotected\_\allowbreak allow} & Enabled allow rule with no security inspection enabled. & high & config\_only & Yes \\
 \texttt{shadowing} & Earlier blocking rule whose set covers a later rule; later never matches. & high & config\_only & Yes \\
 \texttt{redundancy} & Later rule (same action) fully covered by an earlier rule; adds nothing. & medium & config\_only & Yes \\
-\texttt{duplicate\_rules} & Two rules with identical src/dst/service sets and identical action. & medium & config\_only & Yes \\
+\texttt{duplicate\_\allowbreak rules} & Two rules with identical src/dst/service sets and identical action. & medium & config\_only & Yes \\
 \texttt{conflict} & Overlapping match space with differing actions on the same device. & high & config\_only & Yes \\
-\texttt{any\_to\_sensitive} & Allow from ANY source to a sensitive (admin/database/critical) asset. & critical & config\_only & Yes \\
-\texttt{overly\_permissive} & Allow with ANY source, ANY destination, and ANY service. & critical & config\_only & Yes \\
-\texttt{wide\_port\_range} & Allow referencing a service spanning more than 1024 ports. & medium & config\_only & Yes \\
-\texttt{missing\_description} & Rule with empty/whitespace description (fires even when disabled). & low & config\_only & Yes \\
-\texttt{missing\_logging} & Enabled rule with logging disabled. & medium & config\_only & Yes \\
-\texttt{disabled\_rule\_review} & Disabled rule flagged for lifecycle review. & low & config\_only & Yes \\
-\texttt{object\_sprawl} & More than 50 distinct objects on one side of a rule. & low & config\_only & Yes \\
+\texttt{any\_to\_\allowbreak sensitive} & Allow from ANY source to a sensitive (admin/database/critical) asset. & critical & config\_only & Yes \\
+\texttt{overly\_\allowbreak permissive} & Allow with ANY source, ANY destination, and ANY service. & critical & config\_only & Yes \\
+\texttt{wide\_port\_\allowbreak range} & Allow referencing a service spanning more than 1024 ports. & medium & config\_only & Yes \\
+\texttt{missing\_\allowbreak description} & Rule with empty/whitespace description (fires even when disabled). & low & config\_only & Yes \\
+\texttt{missing\_\allowbreak logging} & Enabled rule with logging disabled. & medium & config\_only & Yes \\
+\texttt{disabled\_\allowbreak rule\_\allowbreak review} & Disabled rule flagged for lifecycle review. & low & config\_only & Yes \\
+\texttt{object\_\allowbreak sprawl} & More than 50 distinct objects on one side of a rule. & low & config\_only & Yes \\
 \texttt{cross\_device\_\allowbreak inconsistency} & Equal canonical access but conflicting action across two devices. & critical & config\_only & Yes \\
-\texttt{cross\_device\_security\_\allowbreak posture\_inconsistency} & Equal allow access but differing logging/inspection across devices. & medium & config\_only & Yes \\
-\texttt{threat\_exposure} & Allow rule referencing an indicator a CTI provider flags malicious. & from CTI & cti & Yes (CTI runner) \\
-Ordering, temporary-rule, poor-naming, zone-mismatch, NAT-risk, asymmetric-rule, $\dots$ & Remaining entries of the 46-type framework requiring logs, history, or telemetry. & varies & conditional / future\_enhanced & No (future) \\
+\texttt{cross\_device\_\allowbreak security\_\allowbreak posture\_\allowbreak inconsistency} & Equal allow access but differing logging/inspection across devices. & medium & config\_only & Yes \\
+\texttt{threat\_\allowbreak exposure} & Allow rule referencing an indicator a CTI provider flags malicious. & from CTI & cti & Yes (CTI runner) \\
+Ordering, temporary-rule, poor-naming, zone-mismatch, NAT-risk, asymmetric-rule, $\dots$ & Remaining entries of the 46-type framework requiring logs, history, or telemetry. & varies & conditional / future\_\allowbreak enhanced & No (future) \\
 \end{longtable}
+}
 
 The single-rule detectors map almost verbatim onto the set model: \texttt{unprotected\_allow} fires on an enabled allow rule with \texttt{security\_inspection\_enabled=="false"}; \texttt{overly\_permissive} on any/any/any allow; \texttt{any\_to\_sensitive} on an ANY-source allow whose destination keys include a sensitive-class object; \texttt{wide\_port\_range} when a service's \texttt{(port\_end - port\_start) > 1024}; and \texttt{object\_sprawl} when any side exceeds 50 distinct keys. The pairwise detectors implement the subset/equivalence/overlap relations of Section~\ref{sec:ch4-settheory} exactly, with each finding attributed to the appropriate rule and its peer recorded in \texttt{related\_rule\_uuid}.
 
@@ -1612,11 +2105,14 @@ Risk scoring (\texttt{backend/services/risk/}) converts deterministic findings i
 
 The per-rule composite is the clamped sum of eight factors:
 \[
-\text{risk} = \min\!\big(100,\; \text{anomaly} + \text{exposure} + \text{asset\_sensitivity} + \text{security\_posture} + \text{logging} + \text{cross\_vendor} + \text{cti} + \text{lifecycle}\big).
+\begin{aligned}
+\text{risk} = \min\big(100,\ &\text{anomaly} + \text{exposure} + \text{asset\_sensitivity} + \text{security\_posture} \\
+&{}+ \text{logging} + \text{cross\_vendor} + \text{cti} + \text{lifecycle}\big).
+\end{aligned}
 \]
 \texttt{score\_rule(findings)} builds a \texttt{factors} dictionary in which only non-zero factors appear, and each factor is taken as a \emph{maximum} across findings so it stays inside its allotted range regardless of how many findings hit it. The severity-point constants are \texttt{critical}=35, \texttt{high}=22, \texttt{medium}=12, \texttt{low}=4. The \emph{anomaly} factor is the dominant severity plus a small ``stacked-findings'' compound bonus, $\max(\text{sev\_points}) + \min(8,\, 2(|\text{findings}|-1))$. A factor-contribution map routes specific anomaly types to specific factors --- for example \texttt{overly\_permissive}$\rightarrow$exposure ($+20$), \texttt{any\_to\_sensitive}$\rightarrow$asset\_sensitivity ($+15$), \texttt{unprotected\_allow}$\rightarrow$security\_posture ($+20$), \texttt{missing\_logging}$\rightarrow$logging ($+15$), and the two cross-device types$\rightarrow$cross\_vendor ($+28$/$+18$). The \emph{cti} factor is added only when a \texttt{threat\_exposure} finding is present, scaled by the provider's verdict severity (critical=38, high=28, medium=18, low=10). In v1 the \emph{lifecycle} factor is fed only by \texttt{disabled\_rule\_review}; no age/history/drift factors exist yet.
 
-Scores are bucketed by \texttt{tier\_of(score)} into \texttt{critical} ($\geq$90), \texttt{high} ($\geq$70), \texttt{medium} ($\geq$40), \texttt{low} ($\geq$1), and \texttt{informational} (0). The device-level blend (\texttt{score\_device}) deliberately weights the worst rule rather than averaging: it takes the top-5 rule scores and computes $0.6\,\text{max} + 0.4\,\text{avg(top5)}$, then adds a modifier $\min(10,\, 4\times\text{critical\_count})$ before clamping to 100, so a single critical rule is not diluted by many benign ones. The runner scores every active \texttt{PolicyRule}, is idempotent per run (it deletes that run's prior assessments but preserves other runs as history), and is read-only against firewalls.
+Scores are bucketed by \texttt{tier\_of(score)} into \texttt{critical} ($\geq$90), \texttt{high} ($\geq$70), \texttt{medium} ($\geq$40), \texttt{low} ($\geq$1), and \texttt{informational} (0). The device-level blend (\texttt{score\_device}) deliberately weights the worst rule rather than averaging: it takes the top-5 rule scores and computes $0.6\,\text{max} + 0.4\,\text{avg(top5)}$, then adds a modifier $\min(10,\, 4\times\text{critical\_count})$ before clamping to 100, so a single critical rule is not diluted by many benign ones. Separately from the eight rule-level factors, the device score also admits an optional device-scope \texttt{firmware\_modifier} (\texttt{critical}=40, \texttt{high}=30, \texttt{medium}=18, \texttt{low}=10 points, with the result still clamped to 100) fed by the firmware-CVE intelligence axis (\S\ref{sec:ch4-cti}); this is a device-level adjustment, \emph{not} a ninth rule-level factor. The runner scores every active \texttt{PolicyRule}, is idempotent per run (it deletes that run's prior assessments but preserves other runs as history), and is read-only against firewalls.
 
 \section{Threat Intelligence (CTI)}
 \label{sec:ch4-cti}
@@ -1629,6 +2125,10 @@ Providers (\texttt{providers.py}) implement a common \texttt{CtiProvider} ABC re
 
 The correlation step is where CTI feeds the rest of the platform. \texttt{\_correlate\_threat} takes each malicious indicator, finds every \texttt{NetworkObject} matching its value, then every rule referencing those objects \emph{across all devices}, and raises a \texttt{RuleAnomaly} of type \texttt{threat\_exposure} (\texttt{detection\_mode="cti"}) \textbf{only on rules whose action is \texttt{allow}} --- i.e.\ rules that actually permit traffic to or from the known-bad indicator. Critically, CTI is \emph{not} an anomaly by default: \texttt{threat\_exposure} is a separately labeled \texttt{cti}-mode finding (excluded from the config-only benchmark) that \emph{feeds risk}. After correlation, \texttt{run\_cti} invokes the risk runner so the \texttt{cti} factor lands, wrapped in a guard that only warns on failure. Internal indicators never leave the platform.
 
+\subsection*{Axis 2: firmware-CVE device intelligence}
+
+Alongside the indicator axis above, the CTI layer carries a second, device-scoped axis (\texttt{vuln\_intel.py}, \texttt{vuln\_runner.py}) that correlates each device's acquired \texttt{firmware\_version} against a curated, versioned offline dataset of known firmware vulnerabilities. The dataset (\texttt{backend/data/cve\_reference.json}) holds five vendor-specific CVEs with their CVSS scores, severity bands, and CISA Known-Exploited-Vulnerabilities (KEV) flags: \texttt{CVE-2024-21762} and \texttt{CVE-2024-23113} (FortiOS, both critical and KEV-listed), and \texttt{CVE-2024-3400}, \texttt{CVE-2024-0012}, and \texttt{CVE-2025-0108} (PAN-OS). For every match the runner writes a \texttt{CtiIndicator} of type \texttt{firmware\_version} together with a \texttt{CtiObservation} whose \texttt{threat\_type} is \texttt{vulnerability}. Crucially, this axis writes \emph{zero} \texttt{rule\_anomaly} rows, so it can never perturb the deterministic config-only benchmark; its sole downstream effect is to raise a device-scope \texttt{firmware\_modifier} on the risk score (\S\ref{sec:ch4-risk}), \emph{not} a rule-level anomaly. The default \texttt{VULN\_PROVIDER=offline} keeps the axis fully deterministic and network-free; a live provider that queries the CISA KEV catalog and NVD exists but is dormant and fail-soft, so an outage or missing key degrades silently rather than breaking enrichment.
+
 \section{AI-Assisted Reporting}
 \label{sec:ch4-llm}
 
@@ -1636,15 +2136,18 @@ The AI layer (\texttt{backend/services/llm/}) produces SOC-grade narrative repor
 
 A provider abstraction (\texttt{providers.py}) defines \texttt{LLMProvider.generate(system, user) -> LlmResult}. \texttt{GeminiProvider} (default model \texttt{gemini-2.5-flash}) calls the Gemini REST endpoint with \texttt{temperature=0.2} and, importantly, \texttt{thinkingBudget=0} --- without which the 2.5 models can spend their entire token budget on internal reasoning and return no text. It hardens against transient failures with up to three retries on network errors and HTTP 429/503. \texttt{OfflineProvider} is a deterministic, network-free fallback that renders the evidence prompt verbatim under an explicit ``deterministic rendering --- no LLM configured \dots not an AI analysis'' header, guaranteeing the platform still reports when no key is present. \texttt{build\_provider} returns Gemini only when both the name is \texttt{gemini} and a key is configured; otherwise it falls back to offline.
 
-The guardrail system prompt (\texttt{prompts.py}, \texttt{PROMPT\_VERSION = "soc-report/1.0"}) instructs the model to use \emph{only} the supplied evidence, to never invent CVEs, exploit claims, IP reputations, or unsupported remediations, to separate evidence from interpretation, to attribute every threat-intel claim to its provider, and states explicitly that ``the deterministic engine --- not you --- decides what is an anomaly.'' The evidence-grounded user prompt tags every deterministic finding with an \texttt{[anomaly\_id=\dots]} and every CTI observation with an \texttt{[observation\_id=\dots]}, presenting CTI evidence as clearly separate from the engine. The reporter (\texttt{reporter.py::generate\_report}) assembles an \texttt{evidence\_refs} dictionary (\texttt{anomaly\_ids}, \texttt{risk\_id}, \texttt{cti\_observation\_ids}) and \textbf{always persists} an \texttt{LlmReport} --- even when the provider fails, the report is stored with \texttt{status="failed"} because the underlying deterministic data is unchanged and remains the source of truth.
+The guardrail system prompt (\texttt{prompts.py}, \texttt{PROMPT\_VERSION = "soc-report/2.1"}) instructs the model to use \emph{only} the supplied evidence, to never invent CVEs, exploit claims, IP reputations, or unsupported remediations, to separate evidence from interpretation, to attribute every threat-intel claim to its provider, and states explicitly that ``the deterministic engine --- not you --- decides what is an anomaly.'' The current \texttt{2.1} prompt adds two SOC-report disciplines: the model writes \emph{prose only} (no Markdown tables or pipe characters, because the deterministic builder owns every table), and it refers to each finding by a human-readable name (e.g.\ ``the unprotected allow on POL-037, FGT-LAB'') rather than a raw database identifier, with the bracketed evidence IDs used purely as internal grounding anchors. The evidence-grounded user prompt tags every deterministic finding with an \texttt{[anomaly\_id=\dots]} and every CTI observation with an \texttt{[observation\_id=\dots]}, presenting CTI evidence as clearly separate from the engine. The reporter (\texttt{reporter.py::generate\_report}) assembles an \texttt{evidence\_refs} dictionary (\texttt{anomaly\_ids}, \texttt{risk\_id}, \texttt{cti\_observation\_ids}) and \textbf{always persists} an \texttt{LlmReport} --- even when the provider fails, the report is stored with \texttt{status="failed"} because the underlying deterministic data is unchanged and remains the source of truth.
+
+The ``LLM explains, it never detects'' mandate is enforced structurally by a \textbf{deterministic structured report builder} (\texttt{report\_builder.py}), which assembles the entire body of every report --- all of its tables --- directly from the database with \emph{no} LLM involvement. The builder is pure DB assembly: it composes a \emph{Prioritized Remediation} table, a \emph{Risk Posture} table on the device axis, a \emph{Firmware Vulnerabilities} table on the CVE axis, and a \emph{Per-Finding Evidence} table, together with the report totals and metadata. The language model authors \emph{only} the executive-summary prose that sits on top of this deterministic document; every figure, finding, and citation in the body is computed, not generated. The builder serves two report scopes through one shape: an \emph{executive} scope spanning the whole estate and a \emph{per-rule} scope focused on a single policy, both rendered to the identical document structure. Reports export to Markdown --- GitHub-flavored pipe tables retrieved via \texttt{GET /api/v1/reports/\{id\}/markdown} --- and to PDF, for which the front end builds print-ready HTML that the browser saves as a PDF. Because the tables are independent of the model, the deterministic document stands on its own when the LLM is unavailable: the report is persisted with \texttt{status="failed"} and the prose section is simply omitted, with no empty ``\texttt{\#\# Summary}'' heading left behind.
 
 \section{Backend API}
 \label{sec:ch4-api}
 
 The backend exposes a REST API under \texttt{/api/v1}; all routers are registered in \texttt{backend/main.py}. The read-only semantics hold at the API boundary: no endpoint writes to a firewall. POSTs that trigger background work dispatch a Celery task and return \texttt{202 Accepted} with a task/job/run id, while the benchmark/risk/CTI/reports POSTs run synchronous, pure-DB analysis with no firewall contact. Table~\ref{tab:ch4-endpoints} lists the principal analysis and acquisition endpoints (resource CRUD endpoints for vendors, devices, rules, and network objects follow the conventional REST pattern and are omitted for brevity).
 
-\begin{longtable}{L{1.3cm}L{7.6cm}L{5.0cm}}
-\caption{Principal LuminaFPM REST endpoints (analysis, acquisition, and jobs).}
+{\footnotesize
+\begin{xltabular}{\linewidth}{L{1.1cm} X X}
+\caption{Principal LuminaFPM REST endpoints (acquisition, analysis, reporting, scheduling, and notifications).}
 \label{tab:ch4-endpoints}\\
 \hline
 \hcell{Method} & \hcell{Path} & \hcell{Purpose} \\
@@ -1667,7 +2170,7 @@ POST & \texttt{/api/v1/anomalies/run} & Trigger anomaly analysis (omit \texttt{d
 GET & \texttt{/api/v1/anomalies} & List findings; filter by severity, type, status, device, run; paginated. \\
 GET & \texttt{/api/v1/anomalies/runs} & List anomaly execution runs (observability). \\
 GET & \texttt{/api/v1/anomalies/\{id\}} & Finding detail with evidence and rule context. \\
-PATCH & \texttt{/api/v1/anomalies/\{id\}} & Analyst lifecycle (open/resolved/suppressed/accepted\_risk/false\_positive); reason required for the latter three. \\
+PATCH & \texttt{/api/v1/anomalies/\{id\}} & Analyst lifecycle (open, resolved, suppressed, accepted-risk, or false-positive); a reason is required for the latter three. \\
 POST & \texttt{/api/v1/risk/run} & Recalculate risk (pure-DB); persists rule + device assessments. \\
 GET & \texttt{/api/v1/risk} & Latest risk assessments (\texttt{scope\_type}=rule\textbar device), highest first. \\
 POST & \texttt{/api/v1/cti/run} & Enrich indicators, persist observations, correlate, recalc risk. \\
@@ -1677,7 +2180,13 @@ GET & \texttt{/api/v1/benchmark/report} & Read persisted benchmark results (reca
 POST & \texttt{/api/v1/reports/generate} & Generate an evidence-grounded SOC report (rule\textbar executive). \\
 GET & \texttt{/api/v1/reports} & List generated LLM reports. \\
 GET & \texttt{/api/v1/reports/\{id\}} & Report detail (output + evidence\_refs + provider/model/prompt\_version). \\
-\end{longtable}
+GET & \texttt{/api/v1/reports/\{id\}/markdown} & Download the report as Markdown (GFM tables; the basis for PDF export). \\
+GET & \texttt{/api/v1/schedules} & List the per-operation schedules (acquisition, detection, threat\_intel). \\
+PATCH & \texttt{/api/v1/schedules/\{op\}} & Enable/disable and set the interval or cron expression for an operation. \\
+POST & \texttt{/api/v1/schedules/\{op\}/run-now} & Dispatch the chosen operation immediately. \\
+GET & \texttt{/api/v1/notifications} & List in-app notifications with the unread count (\texttt{unread\_only}, \texttt{limit}). \\
+POST & \texttt{/api/v1/notifications/read-all} & Mark all notifications as read. \\
+\end{xltabular}}
 
 CORS is restricted to the configured origins with credentials. Two honest gaps are noted: the route handlers carry no per-endpoint authentication dependency (RBAC is specified but not enforced in the route layer), and several endpoint names in the internal target contract (e.g.\ \texttt{/policies}, \texttt{/risks}) differ from the implemented names (\texttt{/rules}, \texttt{/risk}). The read-only-against-firewalls guarantee, however, holds throughout in code.
 
@@ -1692,26 +2201,58 @@ Routing is a hand-rolled, hash-based router in \texttt{app.jsx} (the installed \
 
 \subsection*{Screens}
 
-The console presents eight screens. The \textbf{Dashboard} (Figure~\ref{fig:ui-dashboard}) is the most data-dense screen and is explicitly de-mocked: five clickable hero KPIs (average fleet risk computed from real per-device V8 risk, open issues, critical CVEs, fleet-online, threat findings) deep-link into filtered views, and hand-drawn SVG charts render a risk-trend line, a real anomaly-type distribution colored by worst severity, and vendor-risk tiles built from the vendors actually present in the fleet.
+The console presents eight screens. The screenshots in this section are captured live from LuminaFPM's bundled demonstration tenant (\emph{NovaTech}) in the light theme to show the interface; the quantitative laboratory results in Section~\ref{sec:ch4-test-cases} come from the live two-vendor lab. The \textbf{Dashboard} (Figure~\ref{fig:ui-dashboard}) is the most data-dense screen and is explicitly de-mocked: five clickable hero KPIs (average fleet risk computed from real per-device V8 risk, open issues, critical CVEs, fleet-online, threat findings) deep-link into filtered views, and hand-drawn SVG charts render a risk-trend line, a real anomaly-type distribution colored by worst severity, and vendor-risk tiles built from the vendors actually present in the fleet.
 
-\uiplaceholder{Dashboard}{Fleet overview: average fleet risk, open issues, anomalies-by-type, per-vendor risk, and the firewall fleet table.}{LuminaFPM dashboard (overview).}{fig:ui-dashboard}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-dashboard.png}}
+\caption{LuminaFPM dashboard (overview).}\label{fig:ui-dashboard}
+\end{figure}
 
 The \textbf{Policy Audit} screen (Figure~\ref{fig:ui-audit}) is the analyst's primary workspace. It lists run-scoped, per-rule anomalies with severity-based status and real V8 risk, offers faceted filters (saved views, severity, vendor, firewall, action, a minimum-risk slider), sortable columns, CSV export, and deep-link intent application. A row click opens the slide-over \textbf{Inspector}, whose \texttt{AnomalyCard} exposes the analyst lifecycle (\emph{resolve} / \emph{false\_positive} / \emph{accept\_risk}), each issuing a \texttt{PATCH /anomalies/\{id\}} with a prompted reason where required.
 
-\uiplaceholder{Policy Audit and Inspector}{Faceted policy ruleset with severity-based status, and the per-rule inspector showing findings, evidence, and the analyst lifecycle.}{LuminaFPM policy audit and rule inspector.}{fig:ui-audit}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-audit.png}}
+\caption{LuminaFPM policy audit and rule inspector.}\label{fig:ui-audit}
+\end{figure}
 
 The \textbf{Risk Posture}, \textbf{SOC Reports}, and \textbf{CTI / Threat Center} screens are the typed (\texttt{.tsx}) surfaces. Risk Posture renders device-risk cards and a top-risky-rules table with \texttt{factor\_breakdown} chips and the tier legend. SOC Reports (Figure~\ref{fig:ui-reports}) drives \texttt{reports.generate}/\texttt{list}/\texttt{get}, rendering the LLM output through a dependency-free markdown renderer alongside its \texttt{evidence\_refs} and \texttt{confidence\_note}, and gracefully handling the \texttt{failed} status when no provider is configured. The CTI Center renders the indicator table (provider verdict, threat type, confidence) joined to the affected ALLOW rules from \texttt{threat\_exposure} anomalies.
 
-\uiplaceholder{SOC Reports}{Evidence-grounded AI report viewer: generated SOC/executive reports with cited DB evidence references.}{LuminaFPM AI-assisted SOC report viewer.}{fig:ui-reports}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-reports.png}}
+\caption{LuminaFPM AI-assisted SOC report viewer.}\label{fig:ui-reports}
+\end{figure}
 
-The \textbf{Topology} screen (Figure~\ref{fig:ui-topology}) visualizes the fleet --- firewalls, zones, monitored assets, and CTI threat vectors --- as a hand-rolled static SVG (the installed Cytoscape stack is not used), supporting focus mode, a severity edge filter, layer toggles, SVG export, and the \texttt{?device=} deep-link. The \textbf{Benchmark Center} surfaces the acceptance gate (Part~B) as a first-class screen, running \texttt{benchmark.run} then \texttt{benchmark.report} and displaying precision/recall/F1, severity-match, the TP/FP/FN counts, per-type coverage, and a per-case matrix. The \textbf{Threat Intelligence} screen hosts the optional LTI/CVE-scan feature, and \textbf{Settings} is a labelled read-only demo console whose firewall-fleet connector rows are real (per-device \emph{Sync} buttons) while its threat-feed, schedule, and access tabs are cosmetic.
+The \textbf{Topology} screen (Figure~\ref{fig:ui-topology}) visualizes the fleet --- firewalls, zones, monitored assets, and CTI threat vectors --- as an \emph{interactive} graph built on Cytoscape.js. It uses a vendor-lane compound layout (each firewall is a lane containing its zone stacks and monitored assets), with draggable nodes whose positions persist to \texttt{localStorage}, wheel-zoom and pan, a live firmware-CVE badge sourced from each device's acquired \texttt{firmware\_version}, PNG export, and the \texttt{?device=} deep-link; clicking any node opens the Inspector with the firewall, zone, host, external-indicator, or path payload. The \textbf{Benchmark Center} surfaces the acceptance gate (Part~B) as a first-class screen, running \texttt{benchmark.run} then \texttt{benchmark.report} and displaying precision/recall/$F_1$, severity-match, the TP/FP/FN counts, per-type coverage, and a per-case matrix. The \textbf{Threat Center} presents the two CTI axes side by side: the \emph{indicator} axis lists enriched indicators (provider verdict, threat type, confidence) joined to the ALLOW rules they expose through \texttt{threat\_exposure} findings, while the \emph{firmware-CVE} axis lists each device's installed firmware and the CVEs that firmware matches. \textbf{Settings} is a functional administrative console: its \emph{Firewalls} tab performs full device management toward the platform's own database --- add, edit, delete, set or rotate the encrypted credential, test the connection, and trigger an acquisition --- while remaining strictly read-only toward the firewalls themselves; its \emph{Scheduling} tab configures interval or cron schedules for acquisition, detection, and threat intelligence with an immediate run-now action; and its \emph{Notifications} tab shows the in-app notification feed. The remaining tabs (access and roles, API and secrets, audit log) are descriptive placeholders pending the authentication work described in Future Work.
 
-\uiplaceholder{Network Topology}{Logical policy graph: firewalls, zones, monitored assets, and CTI threat vectors.}{LuminaFPM logical policy topology.}{fig:ui-topology}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-topology.png}}
+\caption{LuminaFPM logical policy topology.}\label{fig:ui-topology}
+\end{figure}
 
-Several divergences are documented plainly rather than hidden: the topology is static SVG (nodes are not draggable); the login screen is a cosmetic mock with no backend auth route; a handful of Cisco/ASA code paths remain dormant though v1 supports FortiGate and Palo Alto only; and a small set of installed dependencies (Cytoscape, Recharts, react-router-dom, lucide-react) are present but unused because the corresponding features are hand-rolled. These are recorded as known states and candidates for cleanup, consistent with the project's commitment to honest documentation.
+Several divergences are documented plainly rather than hidden: the login screen is a cosmetic mock with no backend authentication route, and the API route handlers enforce no per-endpoint authorization (RBAC is specified but not yet wired into the routers); a handful of Cisco/ASA code paths remain dormant though v1 supports FortiGate and Palo Alto only; and a few installed front-end dependencies (\texttt{recharts} and \texttt{react-router-dom}) are present but unused because the corresponding features --- charts and routing --- are deliberately hand-rolled (Cytoscape.js, by contrast, is now used by the topology). These are recorded as known states and candidates for cleanup, consistent with the project's commitment to honest documentation.
 
 
-Above is the complete LaTeX body content for **Chapter 4 — Part A (Implementation)**. It is ready to be concatenated into the assembler.
+\section{Settings, Scheduling, and Notifications}
+\label{sec:ch4-settings}
+
+A late addition to the platform turns the \emph{Settings} screen from a descriptive placeholder into a functional administrative console, and adds two supporting subsystems --- scheduling and in-app notifications --- that operationalize the pipeline. All three are built strictly within the project's read-only-against-firewalls mandate: every mutation they perform targets LuminaFPM's own database, never a vendor device.
+
+The \emph{Firewalls} tab performs full device lifecycle management against the platform's own database: it can create, edit, and delete devices, set or rotate each device's Fernet-encrypted credential, and trigger an acquisition, while remaining strictly read-only toward the firewalls themselves. The credential is write-only --- it is encrypted at rest and never returned by the API --- and the only outbound operation is a read-only \texttt{test-connection} that authenticates and validates reachability without modifying any vendor state. A new per-device \texttt{use\_http} column on \texttt{firewall\_device} provides a lab HTTP escape hatch for the FortiGate appliance whose HTTPS stack is broken. The tab can onboard a device against an empty database --- the user interface find-or-creates the owning vendor --- so the platform bootstraps cleanly from a clean install.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-settings.png}}
+\caption{The functional Settings console: the \emph{Firewalls} tab manages the device fleet (add, edit, delete, set/rotate the encrypted credential, test connection, and acquire) while remaining strictly read-only toward the firewalls; the \emph{Scheduling} and \emph{Notifications} tabs sit alongside.}
+\label{fig:ui-settings}
+\end{figure}
+
+Scheduling is backed by a new \texttt{schedule\_config} table holding one row per operation (\texttt{acquisition}, \texttt{detection}, and \texttt{threat\_intel}), a dependency-free five-field cron evaluator (\texttt{services/scheduling.py}), and a Celery Beat task, \texttt{scheduler.tick}, that fires every 60 seconds, reads the editable table, and dispatches any operation whose next run is due. Each operation can be run immediately (run-now) or on a fixed interval or cron schedule. The control surface is exposed through \texttt{GET /api/v1/schedules}, \texttt{PATCH /api/v1/schedules/\{operation\}}, and \texttt{POST /api/v1/schedules/\{operation\}/run-now}.
+
+In-app notifications are persisted in a new \texttt{notification} table. The pipeline emits a notification on the completion or failure of each major operation (acquisition, detection, and threat-intel) and on every high- or critical-severity finding; emission goes through an \texttt{emit\_safe} helper so that a notification failure can never break the pipeline. The top-bar bell polls the unread count and exposes the feed through \texttt{GET /api/v1/notifications}, \texttt{POST /api/v1/notifications/\{id\}/read}, and \texttt{POST /api/v1/notifications/read-all}. Consistent with the read-only mandate, none of this scheduling or notification machinery ever writes to a firewall.
 
 \section{Testing and Evaluation Strategy}
 \label{sec:ch4-testing-strategy}
@@ -1729,9 +2270,10 @@ The three layers are intentionally redundant in coverage but distinct in fidelit
 \section{Unit Testing}
 \label{sec:ch4-unit-testing}
 
-The backend unit suite lives under \path{backend/tests/} and comprises eight subsystem test files. Each is structured to exercise the \emph{pure} core of its subsystem --- the scoring, parsing, or detection logic that contains no I/O --- so that correctness is asserted independently of the database-backed runners that persist results. Where real vendor data is required, the suite uses fixtures captured directly from the lab firewalls (e.g.\ \path{backend/tests/fixtures/fortigate_policy.json} and \path{paloalto_rulebase.xml}, the genuine FortiOS~v7.0.5 and PAN-OS responses), so the parsers and the normalizer are validated against real-world payload shapes, not synthetic mock-ups. Table~\ref{tab:ch4-unit-tests} summarizes the coverage of each file.
+The backend unit suite lives under \path{backend/tests/} and comprises eleven subsystem test files. Each is structured to exercise the \emph{pure} core of its subsystem --- the scoring, parsing, or detection logic that contains no I/O --- so that correctness is asserted independently of the database-backed runners that persist results. Where real vendor data is required, the suite uses fixtures captured directly from the lab firewalls (e.g.\ \path{backend/tests/fixtures/fortigate_policy.json} and \path{paloalto_rulebase.xml}, the genuine FortiOS~v7.0.5 and PAN-OS responses), so the parsers and the normalizer are validated against real-world payload shapes, not synthetic mock-ups. Table~\ref{tab:ch4-unit-tests} summarizes the coverage of each file.
 
-\begin{longtable}{L{0.26\textwidth} L{0.66\textwidth}}
+{\small
+\begin{longtable}{L{3.8cm}L{10.8cm}}
 \caption{Backend unit-test coverage by subsystem (\texttt{backend/tests/}).}
 \label{tab:ch4-unit-tests}\\
 \hline
@@ -1744,6 +2286,8 @@ The backend unit suite lives under \path{backend/tests/} and comprises eight sub
 \endhead
 \hline
 \endfoot
+\hline
+\endlastfoot
 \texttt{test\_acquisition.py} & Read-only connectors and raw-artifact storage. Monkey-patched FortiOS JSON and PAN-OS XML responses; firmware extraction (FortiGate v7.4.1, Palo Alto 11.1.3); partial-success behaviour on an optional-endpoint 404; raw-artifact manifest with per-artifact SHA-256 and replay. No network or DB required. \\
 \texttt{test\_parsing.py} & Vendor parsers against \emph{real captured lab artifacts} (FortiOS v7.0.5, PAN-OS). Asserts both vendors parse to a uniform \texttt{ParsedDevicePayload} and that the cross-device benchmark pair (LAN\_NET$\rightarrow$WEB\_SERVER, HTTPS, allow, no inspection) is equivalent at the parse level. \\
 \texttt{test\_normalization.py} & The cross-vendor normalization keystone. Asserts that the FortiGate and Palo Alto definitions of \texttt{LAN\_NET} (10.10.10.0/24) and \texttt{WEB\_SERVER} (10.10.20.10/32) correlate to a single canonical object each (confidence 1.00), that PAN's predefined \texttt{service-https} resolves to the same \texttt{tcp/443} canonical service as FortiGate's custom HTTPS, and that repeated runs produce identical content hashes (determinism). \\
@@ -1752,10 +2296,14 @@ The backend unit suite lives under \path{backend/tests/} and comprises eight sub
 \texttt{test\_benchmark.py} & The pure benchmark scorer (Volume~7): a perfect-match case, a false negative driving recall down, a false positive driving precision down, a cross-device pair matched on either side, and a severity mismatch driving the severity-match rate down. \\
 \texttt{test\_cti.py} & v1 API-based CTI (Volume~9): \texttt{is\_public\_ip}/\texttt{classify}/\texttt{extract\_indicators} with RFC1918 data-minimization, the deterministic \texttt{LabOfflineProvider} verdict, the provider registry, and the \texttt{threat\_exposure}$\rightarrow$CTI risk-factor path (+28). \\
 \texttt{test\_llm.py} & v1 LLM SOC reporting (Volume~10): the guardrail \texttt{SYSTEM\_PROMPT} (``use only evidence'', ``do not invent'', ``the deterministic engine --- not you --- decides''), \texttt{OfflineProvider} determinism, provider fallback when unkeyed, and evidence-ID embedding in the rendered prompt. \\
+\texttt{test\_benchmark\_matrix.py} & The offline engine acceptance gate. Inlines the enriched 26-rule matrix (10 FortiGate + 16 Palo Alto) and asserts the deterministic engine reproduces the ground-truth answer key exactly --- 43 expected cases, 0 false positives, 0 false negatives, 0 severity mismatches --- before any device is provisioned, so a detection regression fails the suite without a live lab. \\
+\texttt{test\_vuln.py} & The firmware-CVE device axis (Volume~9). Version-tuple and affected-range parsing, CVSS-to-severity banding, the offline lab CVE dataset (Fortinet and Palo Alto only --- Cisco-free), the device-affected predicate, and the firmware modifier that raises device risk. \\
+\texttt{test\_scheduling.py} & The dependency-free five-field cron engine behind the Settings scheduler. Field parsing with range/step/list validation, match evaluation (daily, step, day-of-week), and the next-run computation that drives Celery Beat. \\
 \hline
 \end{longtable}
+}
 
-The optional Lumina-Threat-Intel (LTI) module carries its own separate tests under \path{backend/services/lumina_threat_intel/tests/} (diff-tracker hashing, the LLM-client JSON extraction and retry path, and prompt anti-hallucination checks); these are not part of the v1 acceptance suite and are documented only for completeness. The eight v1 files above constitute the regression gate that must pass before any live run.
+The optional Lumina-Threat-Intel (LTI) module carries its own separate tests under \path{backend/services/lumina_threat_intel/tests/} (diff-tracker hashing, the LLM-client JSON extraction and retry path, and prompt anti-hallucination checks); these are not part of the v1 acceptance suite and are documented only for completeness. The eleven v1 files above constitute the regression gate that must pass before any live run.
 
 \section{Benchmark Evaluation (Acceptance Gate)}
 \label{sec:ch4-benchmark}
@@ -1785,14 +2333,15 @@ The runner (\texttt{runner.py}) resolves the matrix only against \emph{deployed}
 \section{Test Cases and Outputs}
 \label{sec:ch4-test-cases}
 
-This section presents concrete test cases and their outputs from the live lab, focused on the canonical end-to-end run, \textbf{analysis run~\#18}, executed against both vendors. It proceeds from individual rule-level cases, through the aggregate run output, to the benchmark scorecard and the CTI and AI-reporting cases.
+This section presents concrete test cases and their outputs from the live lab, focused on the canonical end-to-end run, \textbf{analysis run~\#25}, executed against both vendors. It proceeds from individual rule-level cases, through the aggregate run output, to the benchmark scorecard and the CTI and AI-reporting cases.
 
 \subsection{Representative rule-level cases}
 
 Table~\ref{tab:ch4-rule-cases} lists representative policy rules deployed on the lab firewalls and the anomalies the deterministic engine produced for each. Every entry is reproducible: the rule is read from live vendor configuration, normalized to the canonical model, and evaluated by the fixed-order detector chain, so the same input always yields the same findings.
 
-\begin{longtable}{L{0.20\textwidth} C{0.07\textwidth} L{0.55\textwidth}}
-\caption{Representative live rule-level test cases and the engine's findings (run~\#18).}
+{\footnotesize
+\begin{xltabular}{\linewidth}{L{2.6cm} C{1.0cm} X}
+\caption{Representative live rule-level test cases and the engine's findings (run~\#25).}
 \label{tab:ch4-rule-cases}\\
 \hline
 \hcell{Rule} & \hcell{Dev.} & \hcell{Engine findings (anomaly\_type)} \\
@@ -1806,32 +2355,31 @@ Table~\ref{tab:ch4-rule-cases} lists representative policy rules deployed on the
 \endfoot
 \texttt{FGT\_ANY\_ANY} & FGT & \texttt{overly\_permissive}, \texttt{unprotected\_allow}, \texttt{missing\_logging}, \texttt{missing\_description}, \texttt{conflict} --- an any/any/any allow with no inspection or logging. \\
 \texttt{PA\_ANY\_ANY} & PA & \texttt{overly\_permissive}, \texttt{unprotected\_allow}, \texttt{missing\_logging}, \texttt{missing\_description}, \texttt{conflict} --- the Palo Alto mirror of the above. \\
-\texttt{FGT\_ANY\_DB} & FGT & \texttt{any\_to\_sensitive} (ANY source to a \emph{database}-class destination), \texttt{unprotected\_allow}, \texttt{missing\_logging}, \texttt{missing\_description}. \\
+\texttt{FGT\_ANY\_DB} & FGT & \texttt{any\_to\_sensitive} (ANY source to a \emph{database}-class destination), \texttt{unprotected\_allow}, \texttt{missing\_logging}, \texttt{missing\_description}; plus a separate cti-mode \texttt{threat\_exposure} (its object set references the known-bad indicator --- Section~\ref{sec:ch4-cti-case}). \\
 \texttt{PA\_ANY\_DB} & PA & \texttt{any\_to\_sensitive}, \texttt{unprotected\_allow}, \texttt{missing\_logging}, \texttt{missing\_description} --- the Palo Alto mirror. \\
 \texttt{FGT\_SHADOWED\_WEB2} & FGT & \texttt{shadowing}, \texttt{conflict} --- preceded by a blocking rule whose canonical sets cover it, so it can never match; the differing action is also flagged as a conflict. \\
 \texttt{PA\_SHADOWED\_WEB2} & PA & \texttt{shadowing}, \texttt{conflict} --- the Palo Alto shadowed pair. \\
 \texttt{FGT\_REDUNDANT\_WEB} & FGT & \texttt{redundancy}, \texttt{duplicate\_rules} --- a later rule fully covered by an earlier same-action rule. \\
 \texttt{FGT\_WIDE\_PORTS} & FGT & \texttt{wide\_port\_range} (a single service spanning $>1024$ ports), \texttt{redundancy}. \\
-\texttt{FGT\_DB\_ACCESS\_XDEV} / \texttt{PA\_DB\_ACCESS\_XDEV} & FGT/PA & \texttt{cross\_device\_inconsistency} (critical) --- identical canonical LAN\_NET$\rightarrow$DB\_SERVER MySQL access; FortiGate \emph{allows}, Palo Alto \emph{denies}. The keystone cross-vendor finding. \\
-\texttt{FGT\_ALLOW\_MALICIOUS} & FGT & config-only: \texttt{unprotected\_allow}, \texttt{missing\_description}, \texttt{redundancy}; plus a separate cti-mode \texttt{threat\_exposure} (see Section~\ref{sec:ch4-cti-case}). \\
-\texttt{PA\_ALLOW\_MALICIOUS} & PA & config-only: \texttt{unprotected\_allow}, \texttt{missing\_description}, \texttt{redundancy}; plus a separate cti-mode \texttt{threat\_exposure}. \\
+\texttt{FGT\_DB\_ACCESS\_XDEV} / \texttt{PA\_DB\_ACCESS\_XDEV} & FGT, PA & \texttt{cross\_device\_inconsistency} (critical) --- identical canonical LAN\_NET$\rightarrow$DB\_SERVER MySQL access; FortiGate \emph{allows}, Palo Alto \emph{denies}. The keystone cross-vendor finding. \\
+\texttt{PA\_ALLOW\_MALICIOUS} & PA & Config-clean (inspected, logged, described, narrow source) --- the engine raises \emph{no} configuration anomaly; only a separate cti-mode \texttt{threat\_exposure} fires because the rule permits traffic to the known-bad indicator (Section~\ref{sec:ch4-cti-case}). \\
 \hline
-\end{longtable}
+\end{xltabular}}
 
 Three properties are visible in this table and are central to the platform's thesis. First, \emph{compound findings}: a single permissive rule such as \texttt{FGT\_ANY\_ANY} legitimately produces five distinct findings, each with its own evidence and recommendation. Second, \emph{cross-vendor equivalence}: the FortiGate and Palo Alto mirrors produce the same finding sets because detection operates over the normalized model, not vendor syntax. Third, the \texttt{*\_DB\_ACCESS\_XDEV} pair demonstrates the engine's signature capability --- detecting that two different vendors have reached \emph{contradictory access decisions} about the same canonical traffic, an inconsistency no single-vendor tool could surface.
 
-\subsection{Aggregate run output (run \#18)}
+\subsection{Aggregate run output (run \#25)}
 
 The all-scope analysis run aggregated across both devices. The aggregate output is summarized below and the per-type distribution is given in Table~\ref{tab:ch4-type-distribution}.
 
 \begin{itemize}[leftmargin=1.4em]
-  \item \textbf{Scope:} 2~devices (FGT-LAB, PA-LAB), 20~active policy rules (FortiGate~10 under the VM cap, Palo Alto~10), evaluated by the fixed-order chain of 14 deterministic detectors.
-  \item \textbf{Current findings:} 54~open config-only findings for the run (distinct from the 440~historical anomalies accumulated across earlier runs; the frontend scopes to the latest completed all-scope run to avoid cross-run inflation).
-  \item \textbf{Device risk (Volume~8):} Palo Alto~100 and FortiGate~96, both \emph{critical}. The device blend is dominated by the worst rules: \texttt{PA\_ANY\_DB}/\texttt{FGT\_ANY\_DB} score~99 and \texttt{FGT\_ANY\_ANY}/\texttt{PA\_ANY\_ANY} score~98, with a top-5 max-weighted blend plus a critical-count modifier of $+8$.
+  \item \textbf{Scope:} 2~devices (FGT-LAB, PA-LAB), 26~active policy rules (FortiGate~10 under the VM cap, Palo Alto~16), evaluated by the fixed-order chain of 14 deterministic detectors.
+  \item \textbf{Current findings:} 43~config-only findings scored for the run --- 40 intra-device plus 3 cross-device pair findings (the frontend scopes to the latest completed all-scope run, separating these from the historical anomalies of earlier runs to avoid cross-run inflation).
+  \item \textbf{Device risk (Volume~8):} both Palo Alto and FortiGate score~100 (\emph{critical}). The blend is dominated by the worst rules --- \texttt{PA\_ANY\_DB}/\texttt{FGT\_ANY\_DB} score~99 and \texttt{FGT\_ANY\_ANY}/\texttt{PA\_ANY\_ANY} score~98 --- under a top-5 max-weighted blend plus a critical-count modifier; FortiGate's base of~96 is additionally lifted to the ceiling by a firmware-CVE device modifier of $+40$, and Palo Alto (already at~100) carries a $+30$ firmware modifier, reflecting the device CVEs in Section~\ref{sec:ch4-cti}.
 \end{itemize}
 
 \begin{longtable}{L{0.40\textwidth} C{0.18\textwidth} C{0.30\textwidth}}
-\caption{Anomaly-type distribution and benchmark coverage, run~\#18.}
+\caption{Anomaly-type distribution and benchmark coverage, run~\#25.}
 \label{tab:ch4-type-distribution}\\
 \hline
 \hcell{anomaly\_type} & \hcell{Count} & \hcell{Detected?} \\
@@ -1843,49 +2391,58 @@ The all-scope analysis run aggregated across both devices. The aggregate output 
 \endhead
 \hline
 \endfoot
-\texttt{unprotected\_allow} & 10 & \checkmark \\
-\texttt{redundancy} & 9 & \checkmark \\
-\texttt{missing\_description} & 8 & \checkmark \\
-\texttt{conflict} & 6 & \checkmark \\
-\texttt{missing\_logging} & 5 & \checkmark \\
-\texttt{duplicate\_rules} & 4 & \checkmark \\
-\texttt{any\_to\_sensitive} & 2 & \checkmark \\
-\texttt{cross\_device\_security\_posture\_inconsistency} & 2 & \checkmark \\
-\texttt{overly\_permissive} & 2 & \checkmark \\
+\texttt{unprotected\_allow} & 8 & \checkmark \\
+\texttt{missing\_description} & 6 & \checkmark \\
+\texttt{missing\_logging} & 6 & \checkmark \\
+\texttt{conflict} & 5 & \checkmark \\
+\texttt{duplicate\_rules} & 3 & \checkmark \\
+\texttt{redundancy} & 3 & \checkmark \\
 \texttt{shadowing} & 2 & \checkmark \\
-\texttt{cross\_device\_inconsistency} & 1 & \checkmark \\
-\texttt{wide\_port\_range} & 1 & \checkmark \\
+\texttt{any\_to\_sensitive} & 2 & \checkmark \\
+\texttt{overly\_permissive} & 2 & \checkmark \\
+\texttt{wide\_port\_range} & 2 & \checkmark \\
+\texttt{cross\_device\_\allowbreak security\_\allowbreak posture\_\allowbreak inconsistency} & 2 & \checkmark \\
+\texttt{disabled\_rule\_review} & 1 & \checkmark \\
+\texttt{cross\_device\_\allowbreak inconsistency} & 1 & \checkmark \\
 \hline
 \end{longtable}
 
-The distribution is the engine's real, deterministic output; it spans all twelve config-only anomaly types that the deployed lab policy set can exercise. The two-sided symmetry of several types (e.g.\ two \texttt{overly\_permissive}, two \texttt{any\_to\_sensitive}, two \texttt{shadowing}) reflects the deliberate mirroring of the benchmark dataset across both vendors, which in turn validates that cross-vendor normalization yields identical detection on equivalent configurations.
+The distribution is the engine's real, deterministic output; it spans all thirteen config-only anomaly types that the deployed lab policy set can exercise (only \texttt{object\_sprawl}, which needs more than fifty objects on one side, is not exercised by this deliberately small lab set). The two-sided symmetry of several types (e.g.\ two \texttt{overly\_permissive}, two \texttt{any\_to\_sensitive}, two \texttt{shadowing}) reflects the deliberate mirroring of the benchmark dataset across both vendors, which in turn validates that cross-vendor normalization yields identical detection on equivalent configurations.
 
 \subsection{Benchmark scorecard (the acceptance gate)}
 
-The benchmark runner scored run~\#18's config-only findings against the deployed-rule-resolved ground-truth matrix. The result is a perfect scorecard:
+The benchmark runner scored run~\#25's config-only findings against the deployed-rule-resolved ground-truth matrix. The result is a perfect scorecard:
 
 \begin{itemize}[leftmargin=1.4em]
-  \item \textbf{47 expected cases}, \textbf{TP~47}, \textbf{FP~0}, \textbf{FN~0}.
+  \item \textbf{43 expected cases}, \textbf{TP~43}, \textbf{FP~0}, \textbf{FN~0}.
   \item \textbf{Precision $=1.0$}, \textbf{recall $=1.0$}, \textbf{$F_1=1.0$}.
   \item \textbf{Severity-match rate $=1.0$} --- every detected finding also carried the severity that Volume~6 Table~7 fixes for its type.
 \end{itemize}
 
-\uiplaceholder{Benchmark Center}{Acceptance-gate scorecard: precision, recall, F1, severity-match, and the per-case TP/FP/FN detail.}{LuminaFPM benchmark center (acceptance gate).}{fig:ui-benchmark}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-benchmark.png}}
+\caption{LuminaFPM benchmark center (acceptance gate).}\label{fig:ui-benchmark}
+\end{figure}
 
-Figure~\ref{fig:ui-benchmark} shows the Benchmark Center screen (\path{frontend/src/benchmark.tsx}) rendering this scorecard live: the headline precision/recall/$F_1$/severity-match tiles all read 100\%, the TP/FP/FN/cases summary reads 47/0/0/47, and the coverage-by-anomaly-type table confirms every type was detected. Each of the 47 per-case rows is an exact match. It is important to be precise about what this scorecard certifies: \emph{within the config-only taxonomy bucket and the deployed lab policy set}, the engine detects every expected anomaly, raises no spurious ones, and assigns the correct severity. It does \emph{not} claim coverage of the full 46-type taxonomy --- the not-yet-implemented and telemetry-dependent types are deliberately out of this bucket (Section~\ref{sec:ch4-findings}).
+The Benchmark Center screen (\path{frontend/src/benchmark.tsx}, Figure~\ref{fig:ui-benchmark}) renders this scorecard as live tiles --- precision, recall, $F_1$, and severity-match --- alongside the TP/FP/FN/cases summary, a coverage-by-anomaly-type table, and a per-case matrix. On run~\#25 every tile reads 100\%, the summary reads 43/0/0/43, and each of the 43 per-case rows is an exact match. It is important to be precise about what this scorecard certifies: \emph{within the config-only taxonomy bucket and the deployed lab policy set}, the engine detects every expected anomaly, raises no spurious ones, and assigns the correct severity. It does \emph{not} claim coverage of the full 46-type taxonomy --- the not-yet-implemented and telemetry-dependent types are deliberately out of this bucket (Section~\ref{sec:ch4-findings}).
 
 \subsection{CTI test case}
 \label{sec:ch4-cti-case}
 
-The CTI subsystem was validated end-to-end with the deterministic, network-free \texttt{LabOfflineProvider}, whose \texttt{KNOWN\_BAD} table maps the indicator \texttt{185.220.101.1} (a long-standing Tor exit / abuse source) to a verdict of \emph{malicious}, threat type \texttt{tor\_exit}, severity \emph{high}, confidence~0.85. Two rules were deployed that permit traffic to this indicator: \texttt{FGT\_ALLOW\_MALICIOUS} and \texttt{PA\_ALLOW\_MALICIOUS}. The CTI runner extracted the indicator, enriched it, and correlated it across \emph{all} devices' objects, raising a \texttt{threat\_exposure} finding (\texttt{detection\_mode="cti"}) on each allow rule --- surfaced in the UI on policies \texttt{POL-019} and \texttt{POL-020}, one per device. The test also confirmed the platform's data-minimization guarantee: \texttt{internal\_indicators\_sent} was \texttt{false}, i.e.\ the RFC1918 lab objects were never transmitted to any external provider. Because \texttt{threat\_exposure} is a cti-mode finding rather than a config anomaly, it is excluded from the config-only benchmark scorecard above while still feeding the risk recalculation, which lifted the affected FortiGate rule's risk through an added \texttt{cti} factor (+28).
+The CTI subsystem was validated end-to-end with the deterministic, network-free \texttt{LabOfflineProvider}, whose \texttt{KNOWN\_BAD} table maps the indicator \texttt{185.220.101.1} (a long-standing Tor exit / abuse source) to a verdict of \emph{malicious}, threat type \texttt{tor\_exit}, severity \emph{high}, confidence~0.85. Two rules permit traffic to this indicator: \texttt{FGT\_ANY\_DB} (whose database-object set resolves to include the indicator) and the deliberately config-clean demonstrator \texttt{PA\_ALLOW\_MALICIOUS}. The CTI runner extracted the indicator, enriched it, and correlated it across \emph{all} devices' objects, raising a \texttt{threat\_exposure} finding (\texttt{detection\_mode="cti"}) on each of those allow rules --- one per device. The test also confirmed the platform's data-minimization guarantee: \texttt{internal\_indicators\_sent} was \texttt{false}, i.e.\ the RFC1918 lab objects were never transmitted to any external provider. Because \texttt{threat\_exposure} is a cti-mode finding rather than a config anomaly, it is excluded from the config-only benchmark scorecard above while still feeding the risk recalculation, which lifted the affected FortiGate rule's risk through an added \texttt{cti} factor (+28).
 
-\uiplaceholder{Risk Posture}{Deterministic V8 risk: per-device risk cards and the top risky rules with their factor breakdown.}{LuminaFPM risk posture screen.}{fig:ui-risk}
+\begin{figure}[htbp]
+\centering
+\fbox{\includegraphics[width=0.97\linewidth]{figures/ui-risk.png}}
+\caption{LuminaFPM risk posture screen.}\label{fig:ui-risk}
+\end{figure}
 
-Figure~\ref{fig:ui-risk} shows the Risk Posture screen (\path{frontend/src/risk.tsx}) for run~\#18, with the PA-LAB~100 and FGT-LAB~96 device cards and their aggregation factors (max-rule-risk~$+99$, top-rules-average~$+80.8/72.2$, critical-rule-count~2, modifier~$+8$), and the top-risky-rules table where \texttt{PA\_ANY\_DB}/\texttt{FGT\_ANY\_DB} read~99 and \texttt{FGT\_ANY\_ANY}/\texttt{PA\_ANY\_ANY} read~98, each with its per-rule factor breakdown (anomaly, exposure, posture, logging, asset-sensitivity). The breakdown is the audit trail that explains \emph{why} a rule scored as it did.
+The Risk Posture screen (\path{frontend/src/risk.tsx}, Figure~\ref{fig:ui-risk}) renders per-device risk cards and a top-risky-rules table with \texttt{factor\_breakdown} chips and the tier legend. On run~\#25 both the PA-LAB and FGT-LAB cards reach the critical ceiling of~100 (FortiGate's rule-blend base of~96 is lifted to~100 by its firmware-CVE device modifier), with \texttt{PA\_ANY\_DB}/\texttt{FGT\_ANY\_DB} at~99 and \texttt{FGT\_ANY\_ANY}/\texttt{PA\_ANY\_ANY} at~98, each carrying its per-rule factor breakdown (anomaly, exposure, posture, logging, asset-sensitivity). That breakdown is the audit trail that explains \emph{why} a rule scored as it did.
 
 \subsection{AI-report test case}
 
-The LLM SOC-reporting path was validated for a rule-scoped report on \texttt{FGT\_ALLOW\_MALICIOUS}. The reporter assembled that rule's deterministic findings, its risk assessment, and the CTI observation, embedding their database IDs as \texttt{evidence\_refs}: \texttt{\{anomaly\_ids:[391,410,424,440], risk\_id:243, cti\_observation\_ids:[4]\}}. With a valid key, \texttt{gemini-2.5-flash} produced a polished SOC report that cited each evidence ID, attributed the CTI verdict explicitly to the \texttt{lab\_offline} provider, labelled its prose as ``Analysis'', and invented nothing --- demonstrating the Volume~10 guardrail that \emph{the deterministic engine, not the LLM, decides what is an anomaly; the LLM explains and prioritizes}. The same test also exercised the graceful-failure path: when an earlier key returned \texttt{API\_KEY\_INVALID}, the platform fell back to the deterministic \texttt{OfflineProvider}, which renders the same grounded evidence verbatim under an explicit ``not an AI analysis'' header, and the report was still persisted with \texttt{status} recorded. This proves the platform always reports, with or without a working LLM, and never lets the AI layer fabricate a finding.
+The LLM SOC-reporting path was validated for a rule-scoped report on \texttt{FGT\_ANY\_DB}. The reporter assembled that rule's four deterministic findings, its risk assessment, and the CTI observation, embedding their database IDs as \texttt{evidence\_refs}: \texttt{\{anomaly\_ids:[391,410,424,440], risk\_id:243, cti\_observation\_ids:[4]\}}. With a valid key, \texttt{gemini-2.5-flash} produced a polished SOC report that cited each evidence ID, attributed the CTI verdict explicitly to the \texttt{lab\_offline} provider, labelled its prose as ``Analysis'', and invented nothing --- demonstrating the Volume~10 guardrail that \emph{the deterministic engine, not the LLM, decides what is an anomaly; the LLM explains and prioritizes}. The same test also exercised the graceful-failure path: when an earlier key returned \texttt{API\_KEY\_INVALID}, the platform fell back to the deterministic \texttt{OfflineProvider}, which renders the same grounded evidence verbatim under an explicit ``not an AI analysis'' header, and the report was still persisted with \texttt{status} recorded. This proves the platform always reports, with or without a working LLM, and never lets the AI layer fabricate a finding.
 
 \section{Findings and Limitations}
 \label{sec:ch4-findings}
@@ -1895,9 +2452,9 @@ The evaluation establishes that LuminaFPM's core thesis holds: a strictly read-o
 \begin{itemize}[leftmargin=1.4em]
   \item \textbf{Config-detectable subset, not the full taxonomy.} v1 ships 14 deterministic detectors (plus the cti-mode \texttt{threat\_exposure}), covering the config-only core of the 46-type taxonomy (shadowing, redundancy, conflict, permissiveness, posture, sensitivity, cross-device). The remaining $\sim$32 types --- firewall-specific (zone mismatch, NAT risk, weak profile, direction), lifecycle/history (drift, age, rule explosion, change frequency), and runtime/advanced (hit distribution, time-of-day, geo, compliance, asymmetric) --- are \emph{specified but not implemented}, because they require hit-counts, history, or enterprise telemetry that the config-only pipeline does not ingest. The perfect benchmark scorecard certifies the config-only bucket only.
   \item \textbf{Benchmark gate is reported, not enforced in CI.} The runner computes and exposes the metrics, but no automated pass/fail threshold is wired into a build or CI pipeline; acceptance is currently a qualitative human gate against Volume~7 Table~7.
-  \item \textbf{Topology view is schematic.} The dashboard's topology is a hand-rolled SVG rendering of config- and asset-derived relationships, not the mandated Cytoscape.js logical graph (the dependency is present but unimported), and there is no backend graph-relationships endpoint; it visualizes logical structure, not runtime packet flow.
+  \item \textbf{Topology depicts logical intent, not traffic.} The topology view has been rebuilt as an interactive Cytoscape.js graph (draggable nodes with a layout persisted to \texttt{localStorage}, zoom/pan, a live firmware-CVE badge, and PNG export). By design it depicts the \emph{configured} logical relationships derived from policy and asset context, not runtime packet flow, NetFlow, or sessions --- a deliberate architectural boundary rather than a limitation of the renderer.
   \item \textbf{Cosmetic login.} The frontend retains a cosmetic lab login gate; the backend exposes no authentication route in v1, so the login does not enforce real access control and is an intentional placeholder.
-  \item \textbf{FortiGate-VM constraints.} The unlicensed FortiGate VM imposes a ten-policy cap, which forced trade-offs in the deployed benchmark set (e.g.\ dropping \texttt{FGT\_ADMIN\_DB\_NOLOG} and \texttt{FGT\_DISABLED\_RISKY}), so \texttt{disabled\_rule\_review} and \texttt{object\_sprawl} are implemented but not exercised live. The same VM's admin HTTPS listener could not negotiate a usable TLS cipher, requiring a lab-only, explicitly-allow-listed HTTP escape hatch (\texttt{FIREWALL\_INSECURE\_HTTP\_HOSTS}); production remains HTTPS-only.
+  \item \textbf{FortiGate-VM constraints.} The unlicensed FortiGate VM imposes a ten-policy cap, which forced trade-offs in the deployed FortiGate set (a disabled-rule case and an object-sprawl case could not both be fitted under the cap), so \texttt{object\_sprawl} is implemented but not exercised by this small lab set; \texttt{disabled\_rule\_review} \emph{is} exercised, on the Palo Alto side, via \texttt{PA\_DISABLED\_RISKY}. The same VM's admin HTTPS listener could not negotiate a usable TLS cipher, requiring a lab-only, explicitly-allow-listed HTTP escape hatch (\texttt{FIREWALL\_INSECURE\_HTTP\_HOSTS}); production remains HTTPS-only.
   \item \textbf{Lab, not production.} All live results are from a parallel two-device VMware lab on a thin, purpose-built policy set. The numbers demonstrate correctness on a controlled ground truth; they are not a statement about behaviour or scale on a large production estate, and the dark-web LTI subsystem remains optional and off by default.
 \end{itemize}
 
@@ -1926,6 +2483,8 @@ On top of the normalised model runs the project's analytical core: a \emph{deter
 
 Around this deterministic spine the platform layers three further capabilities that turn raw findings into operator-actionable intelligence. A deterministic \emph{risk-scoring} subsystem (\texttt{RISK\_VERSION} \texttt{1.0.0}) assigns each finding and each device a bounded $0$--$100$ score from a fixed, auditable formula combining anomaly severity, exposure, asset sensitivity, security posture, logging, cross-vendor weight, CTI signal, and lifecycle factors, and assigns tier bands so that operators can triage by priority. An API-based \emph{cyber threat intelligence} layer correlates policy exposure against external indicators. Finally, an \emph{AI-assisted reporting} layer generates SOC-oriented and executive reports through an LLM provider abstraction (\texttt{GeminiProvider} as the documented default, with a deterministic, network-free \texttt{OfflineProvider} fallback). Crucially, the LLM is never an anomaly authority: it ``explains, never detects.'' Every generated report is \emph{evidence-grounded}, carrying explicit \texttt{evidence\_refs} that point back to the database identifiers of the deterministic findings it describes, so that no claim in a report exists without a verifiable, machine-checked basis in the engine's output. This separation --- deterministic engine as the source of truth, LLM as a bounded narrator --- is what makes \textsc{LuminaFPM}'s AI output trustworthy in a security context.
 
+Beyond the originally scoped plan, the delivered system carries several further capabilities that proved valuable in practice. The threat-intelligence layer gained a second, \emph{firmware-CVE device-vulnerability} axis: a device's reported firmware version is correlated against a curated CVE reference (including CISA-KEV-listed entries), raising a device-scope risk modifier without emitting any rule-level findings, so the vulnerability signal sharpens device prioritisation while leaving the benchmarked detection corpus untouched. The reporting layer is underpinned by a \emph{deterministic, structured report builder} --- pure database assembly that produces the prioritised-remediation, risk-posture, firmware-vulnerability, and per-finding-evidence tables independently of the LLM --- with the assembled report exportable as GitHub-flavoured Markdown and as a browser-rendered PDF. Finally, the platform ships a functional \emph{Settings console} that exposes device management, scheduled (Celery Beat) acquisition, detection, and threat-intelligence jobs, and in-app notifications emitted from the pipeline, turning the system from a one-shot analysis tool into a continuously operable platform.
+
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
@@ -1945,7 +2504,7 @@ Around this deterministic spine the platform layers three further capabilities t
 
 The system's correctness was not asserted but measured. A dedicated benchmark subsystem (\texttt{services/benchmark/} comprising \texttt{ground\_truth.py}, \texttt{scorer.py}, and \texttt{runner.py}, surfaced through \texttt{/api/v1/benchmark}) scores the live engine output against a hand-curated ground-truth matrix at \emph{(rule, anomaly\_type)} granularity, computing true positives, false positives, false negatives, and the standard information-retrieval metrics precision $=\text{TP}/(\text{TP}+\text{FP})$, recall $=\text{TP}/(\text{TP}+\text{FN})$, and $F_1 = 2PR/(P+R)$, together with a severity-match rate.
 
-Run against the parallel VMware laboratory --- a live FortiGate (\texttt{192.168.55.10}) and a live Palo Alto (\texttt{192.168.55.20}) on the shared \texttt{192.168.55.0/24} network --- the platform read-synced both devices, executed an all-scope detection run, and produced \textbf{54 findings across 2 devices and 20 rules}. Scored against the ground truth, the deterministic engine achieved \textbf{precision, recall, and $F_1$ all equal to $1.0$}, with \textbf{zero false positives and zero false negatives} (47/47 expected cases matched). This is the project's headline result: on the validated laboratory corpus the engine detected every anomaly it was expected to detect and reported no spurious findings, confirming both the soundness of the set-theoretic model and the fidelity of its deterministic implementation. Because the benchmark is wired as a first-class, re-runnable acceptance gate in both the API and the user interface (the Benchmark Center), this result functions as a standing regression guard rather than a one-off measurement.
+Run against the parallel VMware laboratory --- a live FortiGate (\texttt{192.168.55.10}) and a live Palo Alto (\texttt{192.168.55.20}) on the shared \texttt{192.168.55.0/24} network --- the platform read-synced both devices, executed an all-scope detection run, and analysed \textbf{26 active rules across 2 devices} (10 on FortiGate and 16 on Palo Alto). Scored against the ground truth, the deterministic engine achieved \textbf{precision, recall, and $F_1$ all equal to $1.0$}, with \textbf{43 true positives, zero false positives, and zero false negatives} (43 of 43 expected cases matched) and a \textbf{severity-match rate of $1.0$}. This is the project's headline result: on the validated laboratory corpus the engine detected every anomaly it was expected to detect, assigned the correct severity in every case, and reported no spurious findings, confirming both the soundness of the set-theoretic model and the fidelity of its deterministic implementation. Because the benchmark is wired as a first-class, re-runnable acceptance gate in both the API and the user interface (the Benchmark Center), this result functions as a standing regression guard rather than a one-off measurement.
 
 In summary, \textsc{LuminaFPM} meets its objectives: it is a strictly read-only, multi-vendor firewall anomaly-management platform whose normalised model and deterministic, explainable engine were validated at perfect precision, recall, and $F_1$ on a live two-vendor laboratory, and whose risk-scoring, threat-intelligence, and evidence-grounded AI-reporting layers translate findings into intelligence a security operations team can act on with confidence.
 
@@ -1957,7 +2516,7 @@ The v1 system is complete and validated within its declared scope, and that scop
 \subsection{Interactive logical topology on Cytoscape.js}
 \label{sec:ch5-cytoscape}
 
-The current topology view (\texttt{frontend/src/topology.jsx}) renders real platform data --- firewalls, zones, monitored assets, and CTI threat vectors --- but does so through a hand-rolled static SVG layout of roughly a thousand lines. The approved stack already names Cytoscape.js (the \texttt{cytoscape}, \texttt{cytoscape-dagre}, and \texttt{react-cytoscapejs} packages are present in \texttt{package.json} but presently unimported). The clear next step is to rebuild the topology as a true interactive graph on Cytoscape.js with an automatic directed layout (Dagre), giving operators draggable nodes, expand/collapse, live filtering, and focus traversal over the logical policy relationships. It must be stressed that this graph would continue to depict \emph{logical policy intent} --- the relationships configured in policy --- and never live packet forwarding, NetFlow, sessions, or deep packet inspection; that distinction is architectural and must remain explicit in the user interface.
+The topology view has been rebuilt as a true interactive graph on Cytoscape.js, replacing the earlier hand-rolled static SVG layout. It renders the same real platform data --- firewalls, zones, monitored assets, and CTI threat vectors --- now as draggable nodes whose positions persist across sessions (in browser local storage), with zoom and pan, a live firmware-CVE badge sourced from each device's acquired firmware version, and PNG export of the current view. The graph continues to depict \emph{logical policy intent} --- the relationships configured in policy --- and never live packet forwarding, NetFlow, sessions, or deep packet inspection; that distinction is architectural and remains explicit in the user interface. The residual work is therefore polish rather than rebuild: wiring an automatic directed layout (Dagre) as an alternative to the persisted manual arrangement, and adding expand/collapse with focus traversal over larger estates.
 
 \subsection{Real authentication and RBAC enforcement}
 \label{sec:ch5-rbac}
@@ -1972,7 +2531,7 @@ v1 implements the fourteen-detector config-only core out of the specified forty-
 \subsection{Activating the threat-intelligence and dark-web module}
 \label{sec:ch5-lti}
 
-The Lumina Threat-Intel (LTI/Robin) subsystem, including dark-web and OSINT source curation and a richer LLM model-routing layer, already exists in the codebase but is off by default and treated as optional. Maturing this module --- enabling its curated clear-net and dark-web feeds, validating its correlation against the deterministic findings, and integrating its output into the risk score and reports under explicit operator control --- would extend \textsc{LuminaFPM} from policy-posture analysis toward proactive, externally-informed exposure assessment. As with the LLM reporter, any such integration must keep the deterministic engine as the authority and the threat-intel layer as an evidence-grounded enrichment, never an unverifiable signal.
+The cyber threat-intelligence layer is delivered and active by default across two axes. The \emph{indicator} axis correlates policy exposure against external indicators of compromise --- shipping an offline indicator set so it operates without network access, with an optional keyed online provider --- and the \emph{firmware-CVE} axis correlates each device's firmware version against a curated CVE reference, both feeding the risk score under deterministic control. What remains genuinely future is the dark-web / OSINT subsystem (the LTI/Robin curation layer and its richer LLM model-routing): it exists in the codebase but is off by default and treated as optional. Maturing it --- enabling its curated clear-net and dark-web feeds, validating their correlation against the deterministic findings, and integrating that output into the risk score and reports under explicit operator control --- would extend \textsc{LuminaFPM} from policy-posture analysis toward proactive, externally-informed exposure assessment. As with the LLM reporter, any such integration must keep the deterministic engine as the authority and the threat-intel layer as an evidence-grounded enrichment, never an unverifiable signal.
 
 \subsection{Additional vendors}
 \label{sec:ch5-vendors}
@@ -1982,7 +2541,7 @@ v1 supports FortiGate and Palo Alto only; Cisco was explicitly de-scoped (ADR-00
 \subsection{Report export to PDF}
 \label{sec:ch5-pdf}
 
-The platform already generates evidence-grounded SOC and executive reports and offers CSV and SVG exports in several screens. A frequently-requested operational feature is direct export of the generated reports to PDF, producing a self-contained, distributable artefact suitable for audit trails, management reporting, and compliance evidence, while preserving the underlying \texttt{evidence\_refs} linkage so that every exported claim remains traceable.
+Direct export of the evidence-grounded reports has been delivered. The platform now exports each generated SOC and executive report both as GitHub-flavoured Markdown (served directly from the API) and as a self-contained PDF produced through the browser's print pipeline, yielding a distributable artefact suitable for audit trails, management reporting, and compliance evidence. The underlying \texttt{evidence\_refs} linkage is preserved through the export, so every exported claim remains traceable to the deterministic finding that produced it. The residual future work is purely presentational: a richer, server-side native PDF renderer with bespoke typographic styling, should fully controlled print layout become a requirement.
 
 \subsection{Operator-supplied topology and asset context}
 \label{sec:ch5-topology-input}
