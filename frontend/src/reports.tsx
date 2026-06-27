@@ -30,6 +30,7 @@ function renderMarkdown(md: string): React.ReactNode {
   const lines = md.split('\n');
   const out: React.ReactNode[] = [];
   let bullets: string[] = [];
+  let tableBuf: string[] = [];
   const flush = () => {
     if (bullets.length) {
       out.push(
@@ -39,8 +40,33 @@ function renderMarkdown(md: string): React.ReactNode {
       bullets = [];
     }
   };
+  const cells = (row: string) => row.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+  // Render an accumulated GFM pipe table as a real HTML table (header row + separator + body);
+  // if it isn't actually a table, fall back to paragraphs so nothing renders as raw pipe-text.
+  const flushTable = () => {
+    if (!tableBuf.length) return;
+    const rows = tableBuf; tableBuf = [];
+    const isSep = (s: string) => /^[\s|:-]+$/.test(s) && s.includes('-');
+    if (rows.length >= 2 && isSep(rows[1])) {
+      const header = cells(rows[0]);
+      const body = rows.slice(2).map(cells);
+      out.push(
+        <table key={`tbl-${out.length}`} className="t" style={{ margin: '6px 0 12px' }}>
+          <thead><tr>{header.map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{inlineBold(h)}</th>)}</tr></thead>
+          <tbody>{body.map((r, ri) => (
+            <tr key={ri}>{r.map((c, ci) => <td key={ci} style={{ fontSize: 11.5 }}>{inlineBold(c)}</td>)}</tr>
+          ))}</tbody>
+        </table>);
+    } else {
+      rows.forEach((r, ri) => out.push(
+        <p key={`tp-${out.length}-${ri}`} style={{ margin: '0 0 8px', fontSize: 12.5, lineHeight: 1.6, color: 'var(--fg-1)' }}>{inlineBold(r)}</p>));
+    }
+  };
   lines.forEach((raw, i) => {
     const line = raw.trimEnd();
+    const isPipeRow = line.includes('|') && !/^#{1,6}\s+/.test(line);
+    if (isPipeRow) { flush(); tableBuf.push(line); return; }
+    flushTable();
     if (/^#{1,2}\s+/.test(line)) {
       flush();
       out.push(<h3 key={i} style={{ margin: '14px 0 6px', fontSize: 14, color: 'var(--fg-0)' }}>{line.replace(/^#{1,2}\s+/, '')}</h3>);
@@ -57,6 +83,7 @@ function renderMarkdown(md: string): React.ReactNode {
     }
   });
   flush();
+  flushTable();
   return out;
 }
 

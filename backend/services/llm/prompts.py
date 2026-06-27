@@ -9,17 +9,23 @@ from __future__ import annotations
 
 from typing import Dict
 
-PROMPT_VERSION = "soc-report/2.0"
+PROMPT_VERSION = "soc-report/2.1"
 
 SYSTEM_PROMPT = (
     "You are a cybersecurity analyst assistant for LuminaFPM, a READ-ONLY firewall "
     "policy analysis platform. Use ONLY the evidence supplied in the user message. "
     "Do NOT invent CVEs, exploit claims, threat-intel verdicts, IP reputations, or "
     "remediation actions that are not supported by that evidence. Clearly SEPARATE "
-    "evidence (deterministic engine findings, risk scores, and CTI provider results, "
-    "each with an ID) from your INTERPRETATION. Attribute every threat-intel claim to "
-    "its provider. The deterministic engine — not you — decides what is an anomaly; "
-    "your job is to explain and prioritize. Write a concise, professional SOC report."
+    "evidence (deterministic engine findings, risk scores, and CTI provider results) "
+    "from your INTERPRETATION. Attribute every threat-intel claim to its provider. "
+    "The deterministic engine — not you — decides what is an anomaly; your job is to "
+    "explain and prioritize. "
+    "OUTPUT FORMAT: write PROSE ONLY — do NOT use markdown tables, pipe characters, or "
+    "column layouts; the structured findings tables are rendered separately below your "
+    "summary. Refer to each finding by its human-readable name (the anomaly type plus its "
+    "policy/device, e.g. \"the unprotected allow on POL-037, FGT-LAB\"), NOT by raw numeric "
+    "IDs. The bracketed IDs in the evidence are internal grounding anchors only — never print "
+    "them in the report. Write a concise, professional SOC report."
 )
 
 
@@ -61,10 +67,11 @@ def render_rule_prompt(ctx: Dict) -> str:
         f"CTI PROVIDER EVIDENCE (separate from the engine):\n"
         f"{_fmt_cti(ctx.get('cti', []))}\n"
         "TASK: Write a CONCISE analytical SUMMARY of this rule's risk (2-4 short paragraphs): "
-        "what the rule allows, why it is risky, and how urgently to fix it — citing the "
-        "anomaly_id / risk_id / observation_id evidence above. The per-finding details and "
-        "recommendations are TABULATED BELOW this summary, so synthesize rather than restate every "
-        "row. Use ONLY the evidence above; do not invent findings/CVEs/remediations. Label prose as analysis."
+        "what the rule allows, why it is risky, and how urgently to fix it — referring to each "
+        "finding by its anomaly type and this rule's policy/device, NOT by raw IDs. The per-finding "
+        "details and recommendations are TABULATED BELOW this summary, so synthesize rather than "
+        "restate every row. PROSE ONLY — no markdown tables or pipes. Use ONLY the evidence above; "
+        "do not invent findings/CVEs/remediations."
     )
 
 
@@ -84,9 +91,10 @@ def render_executive_prompt(ctx: Dict) -> str:
     lines.append(
         "\nTASK: Write a concise, professional EXECUTIVE SUMMARY (3-5 short paragraphs, no "
         "jargon) of the firewall posture: the overall risk picture, the few rules that must be "
-        "fixed first and why, any firmware-vulnerability exposure, and the recurring themes "
-        "(e.g. unprotected allows, missing logging, overly permissive rules). Use ONLY the "
-        "evidence above; do NOT invent findings, CVEs, or remediations. This summary sits ABOVE "
-        "the deterministic remediation/evidence tables, so do not restate every row — synthesize."
+        "fixed first and why (name them by policy/device), any firmware-vulnerability exposure, "
+        "and the recurring themes (e.g. unprotected allows, missing logging, overly permissive "
+        "rules). PROSE ONLY — no markdown tables or pipes; refer to findings by name, not IDs. Use "
+        "ONLY the evidence above; do NOT invent findings, CVEs, or remediations. This summary sits "
+        "ABOVE the deterministic remediation/evidence tables, so do not restate every row — synthesize."
     )
     return "\n".join(lines)
