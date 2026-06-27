@@ -86,6 +86,7 @@ def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str
 
         inserted = 0
         skipped = 0
+        high_crit = 0
         for f in findings:
             rule_id = index.get((f.device_id, f.rule_uuid))
             if rule_id is None:
@@ -117,6 +118,8 @@ def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str
                 status="open",
             ))
             inserted += 1
+            if f.severity in ("critical", "high"):
+                high_crit += 1
 
         run.status = "completed"
         run.findings_count = inserted
@@ -127,6 +130,22 @@ def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str
             "Anomaly analysis run %s (scope=%s id=%s) completed: %d findings inserted, %d skipped.",
             run.run_id, scope_type, device_id, inserted, skipped,
         )
+
+        # Notify (best-effort): scan complete, plus a triage nudge if anything is hot.
+        from services.notifications import emit_safe
+        emit_safe(
+            db, "warning" if high_crit else "info", "detection",
+            f"Anomaly scan complete - {inserted} finding(s)",
+            body=f"Scope: {scope_type}." + (f" {high_crit} high/critical." if high_crit else ""),
+            link="#/audit",
+        )
+        if high_crit:
+            emit_safe(
+                db, "warning", "finding",
+                f"{high_crit} high/critical finding(s) need review",
+                body="Open the Policy Audit to triage the latest run.",
+                link="#/audit",
+            )
 
         # Lifecycle step 8 (V6 §11): trigger risk recalculation for this run.
         # Best-effort — a risk failure must never fail the anomaly analysis.
@@ -166,6 +185,12 @@ def run_anomaly_analysis_task(self, device_id: Optional[int] = None) -> Dict[str
                     db.commit()
             except Exception:  # noqa: BLE001
                 db.rollback()
+        try:
+            from services.notifications import emit_safe
+            emit_safe(db, "critical", "detection", "Anomaly scan failed",
+                      body="The deterministic engine errored; see server logs.", link="#/audit")
+        except Exception:  # noqa: BLE001
+            pass
         return {"status": "failed", "error": "internal_error"}
     finally:
         db.close()

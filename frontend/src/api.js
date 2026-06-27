@@ -591,6 +591,55 @@ export async function updateAnomalyStatus(anomalyId, status, reason) {
   return res.json();
 }
 
+/* ─────────────────────────────────────────────────────────────────
+ * Settings: device management · scheduling · notifications
+ * Thin wrappers over the read-only/config REST endpoints. The platform never
+ * writes to a firewall — these manage LuminaFPM's own configuration only.
+ * ───────────────────────────────────────────────────────────────── */
+async function reqJSON(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+const jsonPost = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const jsonPatch = (body) => ({ method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+export const fetchVendors = () => reqJSON('/api/v1/vendors/');
+export const fetchDevices = () => reqJSON('/api/v1/devices/');
+
+/* Find-or-create the vendor row for a connector type so the Settings page can
+ * onboard a firewall on a brand-new database (no manual seeding). Returns vendor_id. */
+export async function ensureVendor(vendorType) {
+  const vendors = (await fetchVendors()) || [];
+  const want = vendorType === 'paloalto' ? 'palo' : 'forti';
+  const match = vendors.find(v => (v.name || '').toLowerCase().includes(want));
+  if (match) return match.vendor_id;
+  const name = vendorType === 'paloalto' ? 'Palo Alto Networks' : 'Fortinet';
+  const api_type = vendorType === 'paloalto' ? 'panos_xml' : 'fortios_rest';
+  const created = await reqJSON('/api/v1/vendors/', jsonPost({ name, api_type }));
+  return created.vendor_id;
+}
+
+export async function createDevice(payload) {
+  // payload: { vendor_type, hostname, management_ip, location?, use_http }
+  const vendor_id = await ensureVendor(payload.vendor_type);
+  return reqJSON('/api/v1/devices/', jsonPost({ ...payload, vendor_id, status: 'unknown' }));
+}
+export const updateDevice = (id, payload) => reqJSON(`/api/v1/devices/${id}`, jsonPatch(payload));
+export const deleteDevice = (id) => reqJSON(`/api/v1/devices/${id}`, { method: 'DELETE' });
+export const setDeviceCredential = (id, auth_type, secret) =>
+  reqJSON(`/api/v1/devices/${id}/credentials`, jsonPost({ auth_type, secret }));
+export const testDeviceConnection = (id) => reqJSON(`/api/v1/devices/${id}/test-connection`, { method: 'POST' });
+
+export const fetchSchedules = () => reqJSON('/api/v1/schedules');
+export const updateSchedule = (op, payload) => reqJSON(`/api/v1/schedules/${op}`, jsonPatch(payload));
+export const runScheduleNow = (op) => reqJSON(`/api/v1/schedules/${op}/run-now`, { method: 'POST' });
+
+export const fetchNotifications = (limit = 30) => reqJSON(`/api/v1/notifications?limit=${limit}`);
+export const markNotificationRead = (id) => reqJSON(`/api/v1/notifications/${id}/read`, { method: 'POST' });
+export const markAllNotificationsRead = () => reqJSON('/api/v1/notifications/read-all', { method: 'POST' });
+
 // (Retired) The dark-web/Tor threat-intel scan helpers (fetchThreatReports /
 // fetchThreatReportDetail / triggerThreatScan / subscribeThreatScanProgress) were
 // removed with the legacy Threat Intelligence wrapper. The two-axis Threat Center

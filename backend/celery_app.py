@@ -67,6 +67,17 @@ celery.conf.update(
         "analysis.*": {"queue": "analysis"},
         "cti.*": {"queue": "cti"},
         "reporting.*": {"queue": "reporting"},
+        # scheduler.* is intentionally unrouted -> default 'celery' queue (the worker
+        # consumes it). The tick only enqueues other tasks; it must stay lightweight.
+    },
+    # Celery Beat: a single lightweight tick reads the editable schedule_config table
+    # every 60s and dispatches due operations (see tasks/scheduler.py). This keeps the
+    # schedules user-editable from Settings without restarting Beat.
+    beat_schedule={
+        "scheduler-tick": {
+            "task": "scheduler.tick",
+            "schedule": 60.0,
+        },
     },
 )
 
@@ -78,4 +89,6 @@ celery.conf.include = [
     "tasks.normalization",
     "tasks.threat_intel",
     "tasks.anomaly",
+    "tasks.scheduler",
+    "tasks.cti_scan",
 ]

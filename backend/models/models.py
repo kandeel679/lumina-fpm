@@ -74,6 +74,10 @@ class FirewallDevice(Base):
     throughput = Column(String(50), nullable=True)
     last_poll_time = Column(DateTime, nullable=True)
     status = Column(String(20), default="unknown")
+    # Lab escape hatch: force plain HTTP for this device's API (e.g. a FortiGate whose
+    # HTTPS admin cert is broken). Read-only acquisition still applies; this only picks
+    # the URL scheme. Defaults to HTTPS. Complements FIREWALL_INSECURE_HTTP_HOSTS (env).
+    use_http = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     vendor = relationship("Vendor", back_populates="devices")
     assignments = relationship("AdminDeviceAssignment", back_populates="device", cascade="all, delete-orphan")
@@ -645,3 +649,59 @@ class DeviceCredential(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (Index("idx_devcred_device", "device_id"),)
+
+
+class ScheduleConfig(Base):
+    """User-configurable schedule for one background operation (Settings → Scheduling).
+
+    One row per operation: 'acquisition' | 'detection' | 'threat_intel'. The Celery
+    Beat ``scheduler.tick`` task (every 60s) reads the enabled rows and dispatches the
+    matching operation when ``next_run_at`` is due, then recomputes the next run.
+
+    Read-only toward firewalls: scheduling only triggers the existing read-only
+    acquisition / anomaly-analysis / CTI pipelines — it never modifies a device.
+
+      - mode 'interval'  -> fire every ``interval_minutes`` minutes
+      - mode 'cron'      -> fire when ``cron_expression`` (5-field) matches
+    """
+    __tablename__ = "schedule_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    operation = Column(String(30), nullable=False, unique=True)   # acquisition|detection|threat_intel
+    enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    mode = Column(String(10), nullable=False, default="interval") # interval|cron
+    interval_minutes = Column(Integer, nullable=True)
+    cron_expression = Column(String(120), nullable=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    next_run_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    def __repr__(self):
+        return f"<ScheduleConfig(operation='{self.operation}', enabled={self.enabled}, mode='{self.mode}')>"
+
+
+class Notification(Base):
+    """In-app notification (Settings → Notifications + the topbar bell).
+
+    Written by the background pipeline when an operation completes or fails, or when
+    a scan surfaces high/critical findings. Read/unread is tracked via ``read_at``.
+    Purely informational — no firewall side effects.
+    """
+    __tablename__ = "notification"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    level = Column(String(12), nullable=False, default="info")     # info|success|warning|critical
+    category = Column(String(20), nullable=False, default="system")# acquisition|detection|threat_intel|finding|system
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link = Column(String(120), nullable=True)                      # frontend hash route, e.g. '#/audit'
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_notification_created", "created_at"),
+        Index("idx_notification_read", "read_at"),
+    )
+
+    def __repr__(self):
+        return f"<Notification(id={self.id}, level='{self.level}', title='{self.title}')>"

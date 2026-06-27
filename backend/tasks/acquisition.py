@@ -77,7 +77,10 @@ def poll_device(self, job_id: int) -> dict:
         db.commit()
 
         scheme = (
-            "http" if device.management_ip in settings.firewall_insecure_http_hosts else "https"
+            "http"
+            if (getattr(device, "use_http", False)
+                or device.management_ip in settings.firewall_insecure_http_hosts)
+            else "https"
         )
         config = ConnectorConfig(
             device_id=device.device_id,
@@ -118,6 +121,18 @@ def poll_device(self, job_id: int) -> dict:
             "Acquisition job %s for device %s completed: %s (%d artifacts)",
             job_id, device.device_id, job.status, len(artifacts),
         )
+        # Notify (best-effort): acquisition completed.
+        from services.notifications import emit_safe
+        _fw = bundle.firmware_version
+        emit_safe(
+            db,
+            "success" if job.status == "success" else "warning",
+            "acquisition",
+            f"Acquisition {job.status}: {device.hostname}",
+            body=(f"{len(artifacts)} artifact(s) collected"
+                  + (f"; firmware {_fw}" if _fw else "") + "."),
+            link="#/",
+        )
         # Chain the normalization pipeline (parse -> normalize -> persist -> analyze).
         # Enqueued on success and partial_success so usable data is still processed.
         if job.status in ("success", "partial_success"):
@@ -149,3 +164,11 @@ def _fail_job(db, job, status: str, error_code: str, message: str) -> None:
     job.error_message = message  # already secret-safe (no secrets in connector messages)
     job.completed_at = models.utcnow()
     db.commit()
+    # Notify (best-effort): acquisition failed.
+    from services.notifications import emit_safe
+    emit_safe(
+        db, "critical", "acquisition",
+        f"Acquisition failed (device {job.device_id})",
+        body=f"{error_code}: {message}",
+        link="#/",
+    )

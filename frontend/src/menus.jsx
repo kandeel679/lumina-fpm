@@ -1,6 +1,7 @@
 import React from "react";
 import { Icons } from "./icons";
 import { useLFPM } from "./context/LFPMContext";
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * Toast system + popover menus
  *
@@ -159,44 +160,76 @@ function UserMenu({ user, onClose, onNavigate, onSignOut, theme, onToggleTheme }
 }
 
 /* ── Notification Menu ──────────────────────────────────────────── */
-function NotifMenu({ onClose, onOpenInspector, onNavigate }) {
-  const { data: LFPM } = useLFPM();
+/* Maps a notification level to the colored left-bar class used by .notif-row. */
+const NOTIF_KIND = { critical: 'crit', warning: 'high', success: 'med', info: 'read' };
+/* A notification's hash link ('#/audit', '#/threats', '#/') -> a nav page id. */
+function pageFromLink(link) {
+  const slug = String(link || '').replace(/^#\/?/, '').split(/[/?]/)[0];
+  return slug || 'dashboard';
+}
+function notifWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function NotifMenu({ onClose, onNavigate, onChanged }) {
   const I = window.Icons;
   const ref = useRefM(null);
+  const [items, setItems] = useStateM([]);
+  const [loading, setLoading] = useStateM(true);
   useOutsideClick(ref, onClose, true);
-  /* Live items: top of the activity feed (same source as the dashboard) */
-  const sevToKind = { critical:'crit', high:'high', medium:'med' };
-  const items = (LFPM.activityFeed || []).slice(0, 5).map((a, i) => ({
-    id: `n${i}`,
-    kind: sevToKind[a.sev] || (a.kind === 'alert' ? 'high' : 'read'),
-    title: a.text || '—',
-    t: a.t || '',
-    link: a.link || null,
-  }));
-  const openFor = (it) => {
-    if (it.link && onNavigate) onNavigate(it.link.page, it.link.params || null);
-    else window.toast('No linked view for this event', { kind:'info', sub: it.title });
+
+  const load = useCallbackM(async () => {
+    setLoading(true);
+    try { const d = await fetchNotifications(8); setItems((d && d.items) || []); }
+    catch { setItems([]); }
+    finally { setLoading(false); }
+  }, []);
+  useEffectM(() => { load(); }, [load]);
+
+  const unread = items.filter(n => !n.read).length;
+
+  const openFor = async (n) => {
+    if (!n.read) { try { await markNotificationRead(n.id); onChanged?.(); } catch { /* ignore */ } }
+    if (n.link && onNavigate) onNavigate(pageFromLink(n.link), null);
     onClose();
   };
+  const markAll = async () => {
+    try { await markAllNotificationsRead(); onChanged?.(); await load(); }
+    catch { /* ignore */ }
+  };
+
   return (
     <div ref={ref} className="popover" style={{ right: 92, top: 'calc(var(--topbar-h) + 4px)', width: 360 }}>
       <div className="popover-head" style={{ display:'flex', alignItems:'center' }}>
         <div className="popover-title">notifications</div>
-        <span className="muted mono" style={{ marginLeft: 'auto', fontSize: 10.5 }}>3 unread</span>
+        <span className="muted mono" style={{ marginLeft: 'auto', fontSize: 10.5 }}>{unread} unread</span>
       </div>
-      <div className="popover-body" style={{ padding: 0 }}>
-        {items.map(it => (
-          <div key={it.id} className="notif-row" onClick={() => openFor(it)}>
-            <span className={`left ${it.kind}`} />
+      <div className="popover-body" style={{ padding: 0, maxHeight: 360, overflow: 'auto' }}>
+        {loading && <div className="muted" style={{ padding: 14, fontSize: 12 }}>loading…</div>}
+        {!loading && items.length === 0 && (
+          <div className="muted" style={{ padding: 14, fontSize: 12 }}>No notifications yet. Run or schedule a scan to see activity.</div>
+        )}
+        {items.map(n => (
+          <div key={n.id} className="notif-row" onClick={() => openFor(n)} style={n.read ? { opacity: 0.6 } : null}>
+            <span className={`left ${NOTIF_KIND[n.level] || 'read'}`} />
             <div className="body">
-              <div className="title">{it.title}</div>
-              <div className="meta">{it.t}</div>
+              <div className="title">{n.title}</div>
+              {n.body && <div className="meta" style={{ whiteSpace: 'normal' }}>{n.body}</div>}
+              <div className="meta">{notifWhen(n.created_at)}</div>
             </div>
           </div>
         ))}
       </div>
       <div className="popover-footer" style={{ justifyContent: 'space-between' }}>
-        <span className="sb-link" onClick={() => { window.toast('Marked all as read'); onClose(); }}>mark all as read</span>
+        <span className="sb-link" onClick={markAll}>mark all as read</span>
         <span className="muted">esc to close</span>
       </div>
     </div>

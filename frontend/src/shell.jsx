@@ -1,12 +1,12 @@
 import React from "react";
 import { Icons } from "./icons";
 import { useLFPM } from "./context/LFPMContext";
-import { triggerRulesSync } from "./api";
+import { triggerRulesSync, fetchNotifications } from "./api";
 /* ─────────────────────────────────────────────────────────────────
  * App shell — left rail, topbar, status bar
  * ───────────────────────────────────────────────────────────────── */
 
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useCallback } = React;
 
 /* ── Sparkline (used in KPI strip + threat hits) ────────────────── */
 function Sparkline({ data, w = 140, h = 18, color = 'var(--accent)' }) {
@@ -89,6 +89,18 @@ function Topbar({ crumbs = [], onPalette, user, timeRange, timeRangeLabel, onTim
   const I = window.Icons;
   const [open, setOpen] = useState(null); // 'user' | 'notif' | 'tenant' | 'range' | null
   const [syncing, setSyncing] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  // Live unread count for the bell. Polls every 30s (request/response — no websocket).
+  const refreshNotif = useCallback(async () => {
+    try { const d = await fetchNotifications(1); setUnread((d && d.unread_count) || 0); }
+    catch { /* offline — leave the last known count */ }
+  }, []);
+  useEffect(() => {
+    refreshNotif();
+    const t = setInterval(refreshNotif, 30000);
+    return () => clearInterval(t);
+  }, [refreshNotif]);
 
   const handleSync = async () => {
     if (syncing) return;
@@ -160,11 +172,12 @@ function Topbar({ crumbs = [], onPalette, user, timeRange, timeRangeLabel, onTim
 
       <button
         className="tb-iconbtn"
-        title="Notifications · 3 unread"
+        title={`Notifications · ${unread} unread`}
         onClick={() => setOpen(open === 'notif' ? null : 'notif')}
+        style={{ position: 'relative' }}
       >
         <I.Bell size={15} />
-        <span className="dot" />
+        {unread > 0 && <span className="rail-badge" style={{ top: 3, right: 3 }}>{unread > 9 ? '9+' : unread}</span>}
       </button>
 
       <button
@@ -200,7 +213,7 @@ function Topbar({ crumbs = [], onPalette, user, timeRange, timeRangeLabel, onTim
 
       {open === 'tenant' && <window.TenantMenu onClose={() => setOpen(null)} />}
       {open === 'range'  && <window.TimeRangeMenu current={timeRange} onPick={onTimeRange} onClose={() => setOpen(null)} />}
-      {open === 'notif'  && <window.NotifMenu onClose={() => setOpen(null)} onOpenInspector={onOpenInspector} onNavigate={onNavigate} />}
+      {open === 'notif'  && <window.NotifMenu onClose={() => setOpen(null)} onOpenInspector={onOpenInspector} onNavigate={onNavigate} onChanged={refreshNotif} />}
       {open === 'user'   && <window.UserMenu user={user} onClose={() => setOpen(null)} onNavigate={onNavigate} onSignOut={onSignOut} theme={theme} onToggleTheme={onToggleTheme} />}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

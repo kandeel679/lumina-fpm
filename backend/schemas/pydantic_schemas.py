@@ -60,12 +60,14 @@ class DeviceBase(BaseModel):
     firmware_version: Optional[str] = None
     last_poll_time: Optional[datetime] = None
     status: Optional[str] = "unknown"
+    use_http: Optional[bool] = False    # lab: force plain HTTP for this device's API
 
 class DeviceCreate(DeviceBase):
     pass
 
 class DeviceUpdate(BaseModel):
     vendor_id: Optional[int] = None
+    vendor_type: Optional[str] = None
     hostname: Optional[str] = None
     management_ip: Optional[str] = None
     location: Optional[str] = None
@@ -74,6 +76,7 @@ class DeviceUpdate(BaseModel):
     firmware_version: Optional[str] = None
     last_poll_time: Optional[datetime] = None
     status: Optional[str] = None
+    use_http: Optional[bool] = None
 
 class DeviceResponse(DeviceBase):
     model_config = ConfigDict(from_attributes=True)

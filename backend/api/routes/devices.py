@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -91,11 +92,82 @@ def update_device(device_id: int, device: DeviceUpdate, db: Session = Depends(ge
     return updated
 
 
+def _purge_device(db: Session, device_id: int) -> None:
+    """Delete a device and ALL rows that reference it, in FK-safe order.
+
+    A device fans out across many tables (rules, mappings, jobs, artifacts,
+    credentials, CTI, benchmark). The generic CRUD delete only knew about the
+    ORM-cascaded relationships (rules, assignments) and 500'd on the rest, so a
+    device that had ever been polled could not be removed. This bulk-deletes the
+    dependent rows children-first, then the device. Read-only toward firewalls —
+    it only clears LuminaFPM's own database.
+    """
+    M = models
+    rule_ids = [r[0] for r in db.query(M.PolicyRule.rule_id).filter(M.PolicyRule.device_id == device_id)]
+    obj_ids = [r[0] for r in db.query(M.NetworkObject.object_id).filter(M.NetworkObject.device_id == device_id)]
+    svc_ids = [r[0] for r in db.query(M.ServiceObject.service_object_id).filter(M.ServiceObject.device_id == device_id)]
+    ind_ids = [r[0] for r in db.query(M.CtiIndicator.indicator_id).filter(M.CtiIndicator.source_device_id == device_id)]
+    job_ids = [r[0] for r in db.query(M.AcquisitionJob.job_id).filter(M.AcquisitionJob.device_id == device_id)]
+    case_ids = [r[0] for r in db.query(M.BenchmarkCase.case_id).filter(
+        or_(M.BenchmarkCase.device_a_id == device_id, M.BenchmarkCase.device_b_id == device_id))]
+
+    def purge(query):
+        query.delete(synchronize_session=False)
+
+    # Acquisition artifacts/jobs + credentials (direct device children).
+    if job_ids:
+        purge(db.query(M.RawArtifact).filter(M.RawArtifact.job_id.in_(job_ids)))
+    purge(db.query(M.RawArtifact).filter(M.RawArtifact.device_id == device_id))
+    purge(db.query(M.AcquisitionJob).filter(M.AcquisitionJob.device_id == device_id))
+    purge(db.query(M.DeviceCredential).filter(M.DeviceCredential.device_id == device_id))
+
+    # Rule children (anomalies, object/service mappings, snapshots).
+    if rule_ids:
+        purge(db.query(M.RuleAnomaly).filter(
+            or_(M.RuleAnomaly.rule_id.in_(rule_ids), M.RuleAnomaly.related_rule_id.in_(rule_ids))))
+        purge(db.query(M.RuleObjectMapping).filter(M.RuleObjectMapping.rule_id.in_(rule_ids)))
+        purge(db.query(M.RuleServiceMapping).filter(M.RuleServiceMapping.rule_id.in_(rule_ids)))
+        purge(db.query(M.RuleSnapshot).filter(M.RuleSnapshot.rule_id.in_(rule_ids)))
+    purge(db.query(M.RuleSnapshot).filter(M.RuleSnapshot.device_id == device_id))
+
+    # Object/service normalization mappings, then the vendor objects themselves.
+    if obj_ids:
+        purge(db.query(M.ObjectNormalizationMapping).filter(M.ObjectNormalizationMapping.object_id.in_(obj_ids)))
+        purge(db.query(M.RuleObjectMapping).filter(M.RuleObjectMapping.object_id.in_(obj_ids)))
+    if svc_ids:
+        purge(db.query(M.ServiceNormalizationMapping).filter(M.ServiceNormalizationMapping.service_object_id.in_(svc_ids)))
+        purge(db.query(M.RuleServiceMapping).filter(M.RuleServiceMapping.service_object_id.in_(svc_ids)))
+
+    purge(db.query(M.NormalizationWarning).filter(M.NormalizationWarning.device_id == device_id))
+
+    # CTI (observations cascade off indicators) + benchmark (results off cases).
+    if ind_ids:
+        purge(db.query(M.CtiObservation).filter(M.CtiObservation.indicator_id.in_(ind_ids)))
+    purge(db.query(M.CtiIndicator).filter(M.CtiIndicator.source_device_id == device_id))
+    if case_ids:
+        purge(db.query(M.BenchmarkResult).filter(M.BenchmarkResult.case_id.in_(case_ids)))
+        purge(db.query(M.BenchmarkCase).filter(M.BenchmarkCase.case_id.in_(case_ids)))
+
+    # Vendor objects, rules, admin assignments, then the device row.
+    purge(db.query(M.NetworkObject).filter(M.NetworkObject.device_id == device_id))
+    purge(db.query(M.ServiceObject).filter(M.ServiceObject.device_id == device_id))
+    purge(db.query(M.PolicyRule).filter(M.PolicyRule.device_id == device_id))
+    purge(db.query(M.AdminDeviceAssignment).filter(M.AdminDeviceAssignment.device_id == device_id))
+    purge(db.query(M.FirewallDevice).filter(M.FirewallDevice.device_id == device_id))
+    db.commit()
+
+
 @router.delete("/{device_id}", status_code=204)
 def delete_device(device_id: int, db: Session = Depends(get_db_session)):
-    deleted = crud.delete_data(db, models.FirewallDevice, "device_id", device_id)
-    if not deleted:
+    device = crud.get_by_id(db, models.FirewallDevice, "device_id", device_id)
+    if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    try:
+        _purge_device(db, device_id)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Failed to delete device %s", device_id)
+        raise HTTPException(status_code=500, detail=f"Failed to delete device: {exc}")
     return None
 
 
@@ -126,7 +198,12 @@ def _connector_config(db: Session, device) -> ConnectorConfig:
     vendor_type = resolve_device_vendor_type(device)
     if not vendor_type:
         raise HTTPException(status_code=422, detail="Device vendor_type could not be determined")
-    scheme = "http" if device.management_ip in settings.firewall_insecure_http_hosts else "https"
+    scheme = (
+        "http"
+        if (getattr(device, "use_http", False)
+            or device.management_ip in settings.firewall_insecure_http_hosts)
+        else "https"
+    )
     return ConnectorConfig(
         device_id=device.device_id,
         vendor_type=vendor_type,

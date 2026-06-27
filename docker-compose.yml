@@ -123,6 +123,44 @@ services:
       - acquisition,normalization,analysis,cti,reporting,celery
     restart: unless-stopped
 
+    # ---------------------------------------------
+    # 5b. THE SCHEDULER (Celery Beat)
+    # ---------------------------------------------
+    # Emits the every-60s 'scheduler.tick', which reads the editable schedule_config
+    # table and dispatches due acquisition/detection/threat-intel runs. Beat only
+    # ENQUEUES; the celery_worker above executes. Its own schedule file lives in /tmp
+    # (writable) so the read-only-ish /app bind mount is untouched.
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - watchmedo
+      - auto-restart
+      - --directory=/app
+      - --pattern=*.py
+      - --recursive
+      - --ignore-patterns=*/.*;*/__pycache__/*
+      - --
+      - celery
+      - -A
+      - celery_app.celery
+      - beat
+      - --loglevel=info
+      - --schedule=/tmp/celerybeat-schedule
+    restart: unless-stopped
+
   # ---------------------------------------------
   # 6. THE FRONTEND (React / Vite)
   # ---------------------------------------------
