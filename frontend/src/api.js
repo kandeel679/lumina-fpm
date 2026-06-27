@@ -561,9 +561,10 @@ export async function fetchLFPMData() {
   }
 }
 
-// Interactive triggers
+// Interactive triggers. The read-only re-poll endpoint is /devices/{id}/poll (202 + job_id);
+// the platform never writes to the firewall — it re-acquires + re-normalizes the live config.
 export async function triggerRulesSync(deviceId) {
-  const res = await fetch(`/api/v1/devices/${deviceId}/sync`, { method: 'POST' });
+  const res = await fetch(`/api/v1/devices/${deviceId}/poll`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

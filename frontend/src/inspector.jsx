@@ -37,6 +37,7 @@ function SeverityChip({ sev }) {
 }
 
 function AnomalyCard({ anomaly }) {
+  const { refreshData } = useLFPM();
   const [busy, setBusy] = React.useState(false);
   const [status, setStatus] = React.useState(anomaly.status || 'open');
   const mode = DETECTION_LABEL[anomaly.detection_mode] || anomaly.detection_mode || 'config';
@@ -52,9 +53,10 @@ function AnomalyCard({ anomaly }) {
     try {
       await updateAnomalyStatus(anomaly.anomaly_id, next, reason);
       setStatus(next);
-      window.toast(`Finding ${next.replace(/_/g, ' ')}`, {
+      window.toast(next === 'open' ? 'Finding reopened' : `Finding ${next.replace(/_/g, ' ')}`, {
         kind: 'ok', sub: `${(anomaly.anomaly_type || '').replace(/_/g, ' ')} · #${anomaly.anomaly_id}`,
       });
+      refreshData?.();  // refresh dashboard/audit counts so they don't go stale until reload
     } catch (e) {
       window.toast('Update failed', { kind: 'crit', sub: String(e.message || e) });
     } finally { setBusy(false); }
@@ -101,6 +103,11 @@ function AnomalyCard({ anomaly }) {
           <button className="btn" disabled={busy} onClick={() => act('resolved', false)}>resolve</button>
           <button className="btn ghost" disabled={busy} onClick={() => act('false_positive', true)}>false positive</button>
           <button className="btn ghost" disabled={busy} onClick={() => act('accepted_risk', true)}>accept risk</button>
+        </div>
+      )}
+      {resolved && (
+        <div className="row gap-2" style={{ marginTop: 8 }}>
+          <button className="btn ghost" disabled={busy} onClick={() => act('open', false)} title="reopen this finding (back to open)">↩ undo</button>
         </div>
       )}
     </div>
@@ -218,8 +225,10 @@ function RuleDetail({ rule }) {
         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button
             className="btn"
-            onClick={() => navTo('audit', { firewall: rule.firewallId })}
-          >view in firewall</button>
+            disabled
+            title="Deep-link into the firewall's native console — planned for a future release (LuminaFPM is read-only)"
+            style={{ opacity: 0.55, cursor: 'not-allowed' }}
+          >view in firewall <span className="chip" style={{ fontSize: 9, marginLeft: 4 }}>soon</span></button>
           <button
             className="btn ghost"
             onClick={() => {

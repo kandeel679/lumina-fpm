@@ -28,6 +28,7 @@ export function CtiCenter() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null); // expanded indicator row
 
   const toast = (window as unknown as { toast?: (m: string, o?: unknown) => void }).toast;
 
@@ -133,9 +134,11 @@ export function CtiCenter() {
             const dev = ind.source_device_id != null ? devices[ind.source_device_id] : undefined;
             const rules = [...(rulesByIndicator[ind.value] || [])];
             const statusLabel = isFw ? 'vulnerable' : 'malicious';
+            const isOpen = openId === ind.indicator_id;
             return (
-              <tr key={ind.indicator_id}>
-                <td className="mono strong">{ind.value}{isFw && dev ? <span className="mono dim" style={{ fontSize: 10.5, marginLeft: 6 }}>{dev.vendor_type}</span> : null}</td>
+              <React.Fragment key={ind.indicator_id}>
+              <tr style={{ cursor: 'pointer' }} onClick={() => setOpenId(isOpen ? null : ind.indicator_id)} title="click to view details">
+                <td className="mono strong"><span className="dim" style={{ marginRight: 5 }}>{isOpen ? '▾' : '▸'}</span>{ind.value}{isFw && dev ? <span className="mono dim" style={{ fontSize: 10.5, marginLeft: 6 }}>{dev.vendor_type}</span> : null}</td>
                 <td className="mono dim" style={{ fontSize: 11 }}>{ind.type}</td>
                 <td>
                   {ind.malicious
@@ -158,6 +161,34 @@ export function CtiCenter() {
                       : <span className="muted">—</span>}
                 </td>
               </tr>
+              {isOpen && (
+                <tr>
+                  <td colSpan={7} style={{ background: 'var(--bg-1)', padding: '10px 16px' }}>
+                    <div className="col" style={{ gap: 8 }}>
+                      {ind.observations.map((o, i) => (
+                        <div key={i} className="col" style={{ gap: 3 }}>
+                          <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span className="mono strong">{isFw ? cveId(o.reference) : ind.value}</span>
+                            <span className={`chip ${sevClass(o.severity || 'high')}`} style={{ fontSize: 10 }}>{o.severity || '—'}</span>
+                            <span className="mono dim" style={{ fontSize: 10.5 }}>{o.provider}</span>
+                            {o.confidence != null && <span className="dim" style={{ fontSize: 10.5 }}>{Math.round(o.confidence * 100)}% conf.</span>}
+                          </div>
+                          {o.summary && <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.5 }}>{o.summary}</div>}
+                          {o.reference && <a href={o.reference} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: 'var(--accent)' }}>{o.reference}</a>}
+                        </div>
+                      ))}
+                      <div style={{ fontSize: 11 }}>
+                        {isFw
+                          ? <span className="dim">affected device: <span className="mono" style={{ color: 'var(--fg-1)' }}>{dev?.hostname || `device ${ind.source_device_id}`}</span></span>
+                          : rules.length
+                            ? <span className="dim">affected rules:{rules.map((r) => <span key={r} className="chip" style={{ fontSize: 10, marginLeft: 4 }}>{r}</span>)}</span>
+                            : <span className="muted">no correlated rules</span>}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             );
           })}
         </tbody>
