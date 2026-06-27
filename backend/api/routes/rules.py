@@ -20,12 +20,23 @@ router = APIRouter(prefix="/api/v1/rules", tags=["Policy Rules"])
 
 @router.get("/", response_model=List[PolicyRuleResponse])
 def list_rules(skip: int = 0, limit: int = 100, db: Session = Depends(get_db_session)):
-    return crud.get_all(db, models.PolicyRule, skip=skip, limit=limit)
+    # Exclude soft-deleted (reconciled-away) rules so the Audit table, the topology zone set, and
+    # the report rule-picker see only the LIVE snapshot — matching the `deleted_at IS NULL` filter
+    # every domain runner already uses (anomaly/benchmark/CTI/normalization). Without this the
+    # generic CRUD list leaks retired rows (e.g. 46 instead of the 26 live rules).
+    return (
+        db.query(models.PolicyRule)
+        .filter(models.PolicyRule.deleted_at.is_(None))
+        .offset(skip).limit(limit).all()
+    )
 
 
 @router.get("/{rule_id}", response_model=PolicyRuleResponse)
 def get_rule(rule_id: int, db: Session = Depends(get_db_session)):
-    rule = crud.get_by_id(db, models.PolicyRule, "rule_id", rule_id)
+    rule = db.query(models.PolicyRule).filter(
+        models.PolicyRule.rule_id == rule_id,
+        models.PolicyRule.deleted_at.is_(None),
+    ).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Policy rule not found")
     return rule
